@@ -3,8 +3,10 @@ const ctx = canvas.getContext("2d");
 
 const appShell = document.getElementById("appShell");
 const introCard = document.getElementById("coverScreen");
+const droneInset = document.getElementById("droneInset");
 const droneInsetMount = document.getElementById("droneInsetMount");
 const droneInsetStatus = document.getElementById("droneInsetStatus");
+const droneInsetResizeHandle = document.getElementById("droneInsetResizeHandle");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -622,6 +624,82 @@ function initializeDroneInsetRenderer() {
       droneInsetStatus.textContent = "3D error";
     }
   }
+}
+
+function initializeDroneInsetResizeHandle() {
+  if (!droneInset || !droneInsetResizeHandle) {
+    return;
+  }
+
+  let resizeSession = null;
+
+  const stopResize = () => {
+    if (!resizeSession) {
+      return;
+    }
+
+    resizeSession = null;
+    document.body.style.userSelect = "";
+  };
+
+  const handlePointerMove = (event) => {
+    if (!resizeSession) {
+      return;
+    }
+
+    const nextWidth = clamp(
+      resizeSession.startWidth + (resizeSession.startX - event.clientX),
+      resizeSession.minWidth,
+      resizeSession.maxWidth,
+    );
+    const nextHeight = clamp(
+      resizeSession.startHeight + (event.clientY - resizeSession.startY),
+      resizeSession.minHeight,
+      resizeSession.maxHeight,
+    );
+
+    droneInset.style.width = `${nextWidth}px`;
+    droneInset.style.height = `${nextHeight}px`;
+    resizeCanvas();
+  };
+
+  droneInsetResizeHandle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const parentRect = droneInset.parentElement
+      ? droneInset.parentElement.getBoundingClientRect()
+      : { width: window.innerWidth, height: window.innerHeight };
+    const insetRect = droneInset.getBoundingClientRect();
+    const computedStyle = window.getComputedStyle(droneInset);
+    const minWidth = parseFloat(computedStyle.minWidth) || 192;
+    const minHeight = parseFloat(computedStyle.minHeight) || 108;
+    const insetTop = parseFloat(computedStyle.top) || 0;
+    const insetRight = parseFloat(computedStyle.right) || 0;
+    const maxWidth = Math.max(minWidth, parentRect.width - insetRight - 12);
+    const maxHeight = Math.max(minHeight, parentRect.height - insetTop - 12);
+
+    resizeSession = {
+      startX: event.clientX,
+      startY: event.clientY,
+      startWidth: insetRect.width,
+      startHeight: insetRect.height,
+      minWidth,
+      minHeight,
+      maxWidth,
+      maxHeight,
+    };
+
+    document.body.style.userSelect = "none";
+    droneInsetResizeHandle.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  droneInsetResizeHandle.addEventListener("pointermove", handlePointerMove);
+  droneInsetResizeHandle.addEventListener("pointerup", stopResize);
+  droneInsetResizeHandle.addEventListener("pointercancel", stopResize);
+  droneInsetResizeHandle.addEventListener("lostpointercapture", stopResize);
 }
 
 function syncDroneInsetRoute() {
@@ -2658,6 +2736,7 @@ async function initializeGame() {
   statusText.textContent = "Loading settings";
   subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
 
+  initializeDroneInsetResizeHandle();
   initializeDroneInsetRenderer();
 
   await loadTuningConfig();

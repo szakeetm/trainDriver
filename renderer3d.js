@@ -52,6 +52,18 @@
     return current + delta * t;
   }
 
+  function applyLitFlatColor(material, colorValue, emissiveIntensity) {
+    if (!material) {
+      return;
+    }
+
+    material.color.set(colorValue);
+    if (material.emissive) {
+      material.emissive.set(colorValue);
+      material.emissiveIntensity = emissiveIntensity;
+    }
+  }
+
   function hashNoise(x, y) {
     const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
     return value - Math.floor(value);
@@ -409,6 +421,8 @@
 
       const bedMaterial = new THREE.MeshStandardMaterial({
         color: 0x3b3a36,
+        transparent: true,
+        opacity: 0.7,
         roughness: 0.96,
         metalness: 0.04,
         side: THREE.DoubleSide,
@@ -420,7 +434,7 @@
         side: THREE.DoubleSide,
       });
 
-      const bedMesh = this.createRibbonMesh(samples, bedWidth, 0.1, bedMaterial);
+      const bedMesh = this.createRibbonMesh(samples, bedWidth * 1.08, 0.1, bedMaterial);
       bedMesh.receiveShadow = true;
       this.trackGroup.add(bedMesh);
 
@@ -637,7 +651,7 @@
         const object = this.createSceneryObject(item);
         object.position.set(point.x, 0, point.y);
         object.rotation.y = item.rotation;
-        object.scale.setScalar(item.size);
+        object.scale.setScalar(item.size * 1.15);
         applyShadowFlags(object, true, true);
         this.sceneryGroup.add(object);
       });
@@ -788,13 +802,19 @@
 
         const bodyMaterial = new THREE.MeshStandardMaterial({
           color: new THREE.Color(unit.bodyColor),
-          roughness: 0.52,
-          metalness: 0.2,
+          emissive: new THREE.Color(unit.bodyColor),
+          emissiveIntensity: 0.18,
+          roughness: 0.44,
+          metalness: 0.12,
+          toneMapped: false,
         });
         const roofMaterial = new THREE.MeshStandardMaterial({
           color: new THREE.Color(unit.roofColor),
-          roughness: 0.36,
-          metalness: 0.12,
+          emissive: new THREE.Color(unit.roofColor),
+          emissiveIntensity: 0.12,
+          roughness: 0.28,
+          metalness: 0.08,
+          toneMapped: false,
         });
 
         const body = new THREE.Mesh(
@@ -831,7 +851,7 @@
         }
 
         this.trainGroup.add(group);
-        this.trainMeshes.push({ group, bodyMaterial });
+        this.trainMeshes.push({ group, bodyMaterial, roofMaterial });
       });
     }
 
@@ -982,9 +1002,14 @@
           return;
         }
 
+        const bodyColor = (overspeedTimer > 0.2 || derailment) && unit.type === "locomotive"
+          ? "#ff9b6d"
+          : unit.bodyColor;
+
         entry.group.position.set(unit.renderX, 0, unit.renderY);
         entry.group.rotation.y = Math.PI * 0.5 - unit.renderHeading;
-        entry.bodyMaterial.color.set((overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor);
+        applyLitFlatColor(entry.bodyMaterial, bodyColor, 0.18);
+        applyLitFlatColor(entry.roofMaterial, unit.roofColor, 0.12);
       });
     }
 
