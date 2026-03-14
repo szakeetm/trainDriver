@@ -105,7 +105,7 @@ const TUNING = {
     lateralSpanMin: 10, // Base side-to-side world span used for zoom when stopped.
     lateralSpanBySpeed: 280, // Extra side-to-side world span added as speed rises.
     stoppedZoomMultiplier: 3, // Extra zoom applied at zero speed after span-based scaling is computed.
-    movingZoomMultiplier: 1.7, // Zoom multiplier once the train is up to speed.
+    movingZoomMultiplier: 1.85, // Zoom multiplier once the train is up to speed, keeping more speed sensation at high velocity.
     anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
   },
   route: {
@@ -228,7 +228,7 @@ const TUNING = {
   visuals: {
     stopAssistMarkerMinPercent: 4, // Left clamp for the stop-assist front marker position.
     stopAssistMarkerMaxPercent: 96, // Right clamp for the stop-assist front marker position.
-    routePredictorWidth: 360, // Width in pixels of the lower-left route predictor panel.
+    routePredictorWidth: 400, // Width in pixels of the lower-left route predictor panel.
     routePredictorHeight: 172, // Height in pixels of the lower-left route predictor panel.
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
@@ -1013,46 +1013,16 @@ function getSignalAspect(signal) {
   return signal.kind === "red" ? signal.aspect : signal.kind;
 }
 
-function getActiveSignalRestriction(distance = state.distance) {
-  let activeRestriction = null;
-
-  route.signals.forEach((signal) => {
-    if (!signal.passed || signal.distance > distance) {
-      return;
-    }
-
-    const aspect = getSignalAspect(signal);
-    if (signal.kind === "yellow" && distance <= signal.releaseDistance) {
-      activeRestriction = {
-        limit: signal.speedLimit,
-        signal,
-      };
-    } else if (aspect === "green") {
-      activeRestriction = null;
-    }
-  });
-
-  return activeRestriction;
-}
-
 function getEffectiveSpeedLimitInfo(distance = state.distance) {
   const routeInfo = evaluateRoute(distance);
-  const signalRestriction = getActiveSignalRestriction(distance);
   let limit = routeInfo.speedLimit;
   let source = routeInfo.speedLimit == null ? null : "curve";
-  let signal = null;
-
-  if (signalRestriction && (limit == null || signalRestriction.limit < limit)) {
-    limit = signalRestriction.limit;
-    source = "signal";
-    signal = signalRestriction.signal;
-  }
 
   return {
     routeInfo,
     limit,
     source,
-    signal,
+    signal: null,
   };
 }
 
@@ -1360,14 +1330,8 @@ function checkFailureConditions() {
     return false;
   }
 
-  if (current.source === "signal") {
-    return false;
-  }
-
   if (state.speed > current.limit + OVERSPEED_FAIL_MARGIN) {
-    const failReason = current.source === "signal"
-      ? `Exceeded the ${Math.round(current.limit * 3.6)} km/h signal speed by more than 10 km/h.`
-      : `Exceeded the ${Math.round(current.limit * 3.6)} km/h limit by more than 10 km/h.`;
+    const failReason = `Exceeded the ${Math.round(current.limit * 3.6)} km/h limit by more than 10 km/h.`;
     beginDerailment(failReason);
     return true;
   }
@@ -1392,10 +1356,8 @@ function updatePenalties(dt) {
     const severity = excess / current.limit;
     state.penalties += dt * (TUNING.penalties.penaltyBase + severity * TUNING.penalties.penaltySeverityScale);
     state.overspeedTimer = Math.min(state.overspeedTimer + dt * TUNING.penalties.overspeedBuildRate, 1.2);
-    state.message = current.source === "signal" ? "Signal speed overspeed" : "Curve overspeed";
-    state.detail = current.source === "signal"
-      ? "You are above the active signal speed. Ease off before the next block tightens further."
-      : "Wheel wear penalty is rising. Brake early before sharp turns.";
+    state.message = "Curve overspeed";
+    state.detail = "Wheel wear penalty is rising. Brake early before sharp turns.";
   } else {
     state.overspeedTimer = Math.max(0, state.overspeedTimer - dt * TUNING.penalties.overspeedDecayRate);
   }
@@ -1503,9 +1465,7 @@ function updateUi() {
   lineLimitKph.textContent = shownLimit == null ? "No limit" : Math.round(shownLimit * 3.6);
   lineLimitSecondary.textContent = shownLimit == null
     ? "Line unrestricted"
-    : upcomingLimit.source === "signal"
-      ? `Signal limit ${Math.round(shownLimit * 3.6)} km/h`
-      : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
+    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
   distanceToStation.textContent = nextStation ? `${Math.max(0, Math.round(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
   elapsedTime.textContent = formatTime(state.elapsed);
@@ -2285,6 +2245,11 @@ function drawRoutePredictor(width, height) {
   const panelHeight = Math.min(TUNING.visuals.routePredictorHeight, height - 36);
   const panelX = 18;
   const panelY = height - panelHeight - 18;
+  const distColumnX = panelX + 18;
+  const markerColumnX = panelX + 28;
+  const distanceValueX = panelX + 42;
+  const typeColumnX = panelX + 118;
+  const actionColumnX = panelX + 252;
 
   ctx.save();
   ctx.fillStyle = "rgba(6, 16, 28, 0.58)";
@@ -2310,9 +2275,9 @@ function drawRoutePredictor(width, height) {
 
   ctx.fillStyle = "rgba(223, 242, 255, 0.46)";
   ctx.font = "600 11px Inter, sans-serif";
-  ctx.fillText("DIST", panelX + 18, panelY + 52);
-  ctx.fillText("TYPE", panelX + 92, panelY + 52);
-  ctx.fillText("ACTION", panelX + 186, panelY + 52);
+  ctx.fillText("DIST", distColumnX, panelY + 52);
+  ctx.fillText("TYPE", typeColumnX, panelY + 52);
+  ctx.fillText("ACTION", actionColumnX, panelY + 52);
 
   ctx.font = "700 15px Inter, sans-serif";
   upcomingEntries.forEach((entry, index) => {
@@ -2326,16 +2291,16 @@ function drawRoutePredictor(width, height) {
           : "#7dff8e";
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(panelX + 28, rowY - 5, 7, 0, Math.PI * 2);
+    ctx.arc(markerColumnX, rowY - 5, 7, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.fillStyle = "rgba(223, 242, 255, 0.78)";
-    ctx.fillText(`${Math.round(entry.distance)} m`, panelX + 42, rowY);
+    ctx.fillText(`${Math.round(entry.distance)} m`, distanceValueX, rowY);
 
     const typeLabel = entry.type === "curve"
       ? `${entry.direction} curve`
       : `${entry.aspect.toUpperCase()} signal`;
-    ctx.fillText(typeLabel, panelX + 92, rowY);
+    ctx.fillText(typeLabel, typeColumnX, rowY);
 
     const actionLabel = entry.type === "curve"
       ? `${entry.limitKph} km/h`
@@ -2344,7 +2309,7 @@ function drawRoutePredictor(width, height) {
         : entry.aspect === "red"
           ? "Stop"
           : "Proceed";
-    ctx.fillText(actionLabel, panelX + 186, rowY);
+    ctx.fillText(actionLabel, actionColumnX, rowY);
   });
 
   ctx.restore();
