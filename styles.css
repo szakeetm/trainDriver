@@ -287,6 +287,36 @@ button {
   margin: 4px 0 6px;
 }
 
+.progress-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.progress-header .secondary {
+  margin: 0;
+  text-align: right;
+}
+
+.progress-track {
+  position: relative;
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  box-shadow: 0 0 18px rgba(77, 208, 255, 0.24);
+  transition: width 120ms linear;
+}
+
 .stat-card h2 {
   font-size: 1.25rem;
 }
@@ -326,6 +356,34 @@ button {
 
 .control-card.compact {
   padding-top: 12px;
+}
+
+.station-progress-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 8px;
+}
+
+.station-progress-item,
+.station-progress-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.station-progress-item strong {
+  font-size: 0.94rem;
+}
+
+.station-progress-item span,
+.station-progress-empty {
+  color: var(--muted);
 }
 
 .bar-header {
@@ -449,6 +507,133 @@ button {
     overflow: visible;
     padding-right: 0;
     padding-bottom: 10px;
+  }
+}
+
+@media (max-height: 900px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr) 280px;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .canvas-wrap {
+    min-height: calc(100vh - 16px);
+  }
+
+  .hud-panel {
+    gap: 8px;
+    top: 8px;
+    max-height: calc(100vh - 16px);
+    font-size: 0.84rem;
+  }
+
+  .stat-grid {
+    gap: 8px;
+  }
+
+  .stat-card,
+  .control-card {
+    border-radius: 18px;
+    padding: 8px 10px;
+  }
+
+  .control-card.compact {
+    padding-top: 8px;
+  }
+
+  .label,
+  .secondary,
+  .tiny-help,
+  .control-readout,
+  .notes-list,
+  .station-progress-item span,
+  .station-progress-empty {
+    font-size: 0.72rem;
+  }
+
+  .stat-card p,
+  .control-card p {
+    margin: 0;
+  }
+
+  .stat-card h2 {
+    font-size: 0.94rem;
+  }
+
+  .stat-card h3,
+  .control-card h3 {
+    font-size: 0.84rem;
+  }
+
+  .stat-card h2,
+  .stat-card h3,
+  .control-card h3 {
+    margin: 1px 0 2px;
+    line-height: 1.15;
+  }
+
+  .speed-card h3,
+  .speed-card .secondary {
+    padding: 4px 7px;
+    border-radius: 10px;
+  }
+
+  .speed-card .secondary {
+    margin-top: 2px;
+  }
+
+  .progress-track {
+    height: 8px;
+    margin-top: 6px;
+  }
+
+  .station-progress-list {
+    margin-top: 6px;
+    gap: 5px;
+  }
+
+  .station-progress-item,
+  .station-progress-empty {
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 10px;
+  }
+
+  .station-progress-item strong {
+    font-size: 0.78rem;
+  }
+
+  .control-bar {
+    height: 10px;
+    margin-top: 5px;
+  }
+
+  .control-readout {
+    margin-top: 6px;
+  }
+
+  .button-row {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .control-button {
+    padding: 7px 8px;
+    font-size: 0.76rem;
+  }
+
+  .notes-list {
+    margin-top: 4px;
+    padding-left: 14px;
+  }
+
+  .notes-list li + li {
+    margin-top: 3px;
+  }
+
+  .tiny-help {
+    margin-top: 6px;
   }
 }
 

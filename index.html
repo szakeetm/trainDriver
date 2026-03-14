@@ -77,6 +77,25 @@
             <h3 id="stopError">—</h3>
             <p class="secondary">Best precision wins</p>
           </article>
+          <article class="stat-card stat-card-wide">
+            <div class="progress-header">
+              <div>
+                <p class="label">Game progress</p>
+                <h3><span id="gameProgress">0</span>%</h3>
+              </div>
+              <p class="secondary">Last station is 100%</p>
+            </div>
+            <div class="progress-track" aria-hidden="true">
+              <div class="progress-fill" id="gameProgressFill"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="control-card compact">
+          <h3>Remaining stations</h3>
+          <ul class="station-progress-list" id="remainingStations">
+            <li class="station-progress-empty">No remaining stations.</li>
+          </ul>
         </section>
 
         <section class="control-card">

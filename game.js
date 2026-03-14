@@ -16,6 +16,9 @@ const speedKph = document.getElementById("speedKph");
 const lineLimitKph = document.getElementById("lineLimitKph");
 const distanceToStation = document.getElementById("distanceToStation");
 const stationName = document.getElementById("stationName");
+const gameProgress = document.getElementById("gameProgress");
+const gameProgressFill = document.getElementById("gameProgressFill");
+const remainingStations = document.getElementById("remainingStations");
 const elapsedTime = document.getElementById("elapsedTime");
 const penaltyTime = document.getElementById("penaltyTime");
 const stopError = document.getElementById("stopError");
@@ -32,7 +35,7 @@ const assistFrontMarker = document.getElementById("assistFrontMarker");
 const assistLegendMin = document.getElementById("assistLegendMin");
 const assistLegendMax = document.getElementById("assistLegendMax");
 
-const TUNING = {
+const DEFAULT_TUNING = {
   limits: {
     maxLineSpeed: 72, // Base reference speed in m/s used by camera and speed effects.
     overspeedFailMarginKph: 10, // Extra km/h above a curve limit before the run fails.
@@ -265,23 +268,21 @@ const TUNING = {
   },
 };
 
-const MAX_LINE_SPEED = TUNING.limits.maxLineSpeed;
-const STATION_WINDOW = TUNING.stations.stopWindow;
-const STATION_PASS_MARGIN = TUNING.stations.passMargin;
-const STATION_STOP_SPEED = TUNING.stations.stopSpeed;
-const STATION_ASSIST_RANGE = TUNING.stations.assistRange;
-const STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
-const OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / 3.6;
-const TRACK_WIDTH = TUNING.train.trackWidth;
-const TRAIN_CONSIST = TUNING.train.consist;
-const COUPLER_GAP = TUNING.train.couplerGap;
-const MAX_POWER_KW = TUNING.train.maxPowerKw;
-const MAX_BRAKE_PRESSURE_BAR = TUNING.train.maxBrakePressureBar;
-const TRAIN_TOTAL_LENGTH = TRAIN_CONSIST.reduce(
-  (sum, unit, index) => sum + unit.length + (index === 0 ? 0 : COUPLER_GAP),
-  0,
-);
-const TOTAL_STATIONS = TUNING.stations.total;
+let TUNING = DEFAULT_TUNING;
+let MAX_LINE_SPEED = 0;
+let STATION_WINDOW = 0;
+let STATION_PASS_MARGIN = 0;
+let STATION_STOP_SPEED = 0;
+let STATION_ASSIST_RANGE = 0;
+let STATION_ASSIST_ZOOM = 0;
+let OVERSPEED_FAIL_MARGIN = 0;
+let TRACK_WIDTH = 0;
+let TRAIN_CONSIST = [];
+let COUPLER_GAP = 0;
+let MAX_POWER_KW = 0;
+let MAX_BRAKE_PRESSURE_BAR = 0;
+let TRAIN_TOTAL_LENGTH = 0;
+let TOTAL_STATIONS = 0;
 
 const keys = {
   accelerate: false,
@@ -291,6 +292,81 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
+
+function cloneConfigValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(cloneConfigValue);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [key, cloneConfigValue(nestedValue)]),
+    );
+  }
+
+  return value;
+}
+
+function mergeConfig(base, overrides) {
+  const result = cloneConfigValue(base);
+
+  if (!overrides || typeof overrides !== "object") {
+    return result;
+  }
+
+  Object.entries(overrides).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      result[key] = cloneConfigValue(value);
+      return;
+    }
+
+    if (value && typeof value === "object" && result[key] && typeof result[key] === "object" && !Array.isArray(result[key])) {
+      result[key] = mergeConfig(result[key], value);
+      return;
+    }
+
+    result[key] = value;
+  });
+
+  return result;
+}
+
+function applyTuning(configOverrides = null) {
+  TUNING = configOverrides ? mergeConfig(DEFAULT_TUNING, configOverrides) : cloneConfigValue(DEFAULT_TUNING);
+
+  MAX_LINE_SPEED = TUNING.limits.maxLineSpeed;
+  STATION_WINDOW = TUNING.stations.stopWindow;
+  STATION_PASS_MARGIN = TUNING.stations.passMargin;
+  STATION_STOP_SPEED = TUNING.stations.stopSpeed;
+  STATION_ASSIST_RANGE = TUNING.stations.assistRange;
+  STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
+  OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / 3.6;
+  TRACK_WIDTH = TUNING.train.trackWidth;
+  TRAIN_CONSIST = TUNING.train.consist;
+  COUPLER_GAP = TUNING.train.couplerGap;
+  MAX_POWER_KW = TUNING.train.maxPowerKw;
+  MAX_BRAKE_PRESSURE_BAR = TUNING.train.maxBrakePressureBar;
+  TRAIN_TOTAL_LENGTH = TRAIN_CONSIST.reduce(
+    (sum, unit, index) => sum + unit.length + (index === 0 ? 0 : COUPLER_GAP),
+    0,
+  );
+  TOTAL_STATIONS = TUNING.stations.total;
+}
+
+async function loadTuningConfig() {
+  try {
+    const response = await fetch("./tuning.json", { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const configOverrides = await response.json();
+    applyTuning(configOverrides);
+  } catch (error) {
+    console.warn("Using built-in tuning defaults.", error);
+    applyTuning();
+  }
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -330,6 +406,41 @@ function formatTime(totalSeconds) {
 
 function roundDisplayDistance(distance) {
   return Math.round(distance / 50) * 50;
+}
+
+function formatDistanceKm(distance) {
+  return `${(Math.max(0, distance) / 1000).toFixed(1)} km`;
+}
+
+function getGameProgressPercent() {
+  const finalStation = route?.stations?.[route.stations.length - 1];
+  if (!finalStation || finalStation.distance <= 0) {
+    return 0;
+  }
+
+  if (state.finished) {
+    return 100;
+  }
+
+  return clamp((state.distance / finalStation.distance) * 100, 0, 100);
+}
+
+function renderRemainingStations() {
+  const upcomingStations = route.stations.slice(state.stationIndex);
+
+  if (!upcomingStations.length) {
+    remainingStations.innerHTML = '<li class="station-progress-empty">No remaining stations.</li>';
+    return;
+  }
+
+  remainingStations.innerHTML = upcomingStations
+    .map((station) => `
+      <li class="station-progress-item">
+        <strong>${station.name}</strong>
+        <span>${formatDistanceKm(station.distance - state.distance)}</span>
+      </li>
+    `)
+    .join("");
 }
 
 function syncAssistLegend() {
@@ -1486,9 +1597,13 @@ function updateUi() {
     : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
   distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
+  const progressPercent = getGameProgressPercent();
+  gameProgress.textContent = Math.round(progressPercent);
+  gameProgressFill.style.width = `${progressPercent}%`;
   elapsedTime.textContent = formatTime(state.elapsed);
   penaltyTime.textContent = state.penalties.toFixed(1);
   stopError.textContent = state.lastStopError == null ? "—" : `${state.lastStopError.toFixed(1)} m`;
+  renderRemainingStations();
 
   updateBar(actualFill, state.actualControl);
   updateMarker(requestedMarker, state.requestedControl);
@@ -2416,6 +2531,10 @@ function loop(now) {
 }
 
 function startRun() {
+  if (!state) {
+    return;
+  }
+
   state = createInitialState();
   state.started = true;
   introCard.classList.add("hidden");
@@ -2428,7 +2547,17 @@ function startRun() {
 startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
 
-state = createInitialState();
-syncAssistLegend();
-updateUi();
-requestAnimationFrame(loop);
+async function initializeGame() {
+  statusText.textContent = "Loading settings";
+  subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
+
+  await loadTuningConfig();
+
+  state = createInitialState();
+  syncAssistLegend();
+  updateUi();
+  lastFrame = performance.now();
+  requestAnimationFrame(loop);
+}
+
+initializeGame();
