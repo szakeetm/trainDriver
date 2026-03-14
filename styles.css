@@ -1,0 +1,466 @@
+:root {
+  color-scheme: dark;
+  --bg: #07111f;
+  --panel: rgba(7, 19, 33, 0.86);
+  --panel-strong: rgba(10, 26, 43, 0.94);
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #edf6ff;
+  --muted: #98afc7;
+  --accent: #4dd0ff;
+  --accent-2: #85ffb6;
+  --warn: #ffbf52;
+  --danger: #ff6f78;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(circle at top, rgba(77, 208, 255, 0.16), transparent 30%),
+    linear-gradient(180deg, #08111b 0%, #040913 100%);
+  color: var(--text);
+}
+
+body {
+  min-height: 100vh;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 100vh;
+  gap: 12px;
+  padding: 12px;
+}
+
+.game-panel,
+.hud-panel {
+  min-height: 0;
+}
+
+.game-panel {
+  display: flex;
+}
+
+.canvas-wrap {
+  flex: 1;
+  position: relative;
+  min-height: calc(100vh - 24px);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0e2337 0%, #07121f 100%);
+  box-shadow: var(--shadow);
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.station-assist {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 22px;
+  width: auto;
+  padding: 16px 16px 14px;
+  border-radius: 20px;
+  background: rgba(5, 15, 28, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+}
+
+.station-assist h3,
+.station-assist p {
+  margin-top: 0;
+}
+
+.assist-copy {
+  min-height: 2.7em;
+  margin-bottom: 12px;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.assist-scale {
+  position: relative;
+  height: 68px;
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(77, 208, 255, 0.05), rgba(77, 208, 255, 0.015)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.assist-scale::before {
+  content: "";
+  position: absolute;
+  inset: 50% 0 auto;
+  height: 6px;
+  background: rgba(186, 209, 228, 0.15);
+  transform: translateY(-50%);
+}
+
+.assist-window {
+  position: absolute;
+  inset: 12px 46% 12px 46%;
+  border-radius: 12px;
+  background: rgba(133, 255, 182, 0.08);
+  border: 1px solid rgba(133, 255, 182, 0.22);
+}
+
+.assist-target,
+.assist-front {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  width: 0;
+}
+
+.assist-target {
+  left: 50%;
+  border-left: 2px solid rgba(133, 255, 182, 0.95);
+}
+
+.assist-front {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.assist-front::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 2px;
+  height: 38px;
+  background: rgba(255, 191, 82, 0.98);
+  transform: translateX(-50%);
+}
+
+.assist-front::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #ffbf52;
+  box-shadow: 0 0 0 4px rgba(255, 191, 82, 0.12);
+  transform: translateX(-50%);
+}
+
+.assist-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.overlay-card {
+  position: absolute;
+  left: 28px;
+  bottom: 28px;
+  width: min(420px, calc(100% - 56px));
+  padding: 24px;
+  border-radius: 24px;
+  background: rgba(5, 14, 26, 0.8);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow);
+}
+
+.hidden {
+  display: none;
+}
+
+.overlay-card h1,
+.overlay-card h2,
+.overlay-card p,
+.overlay-card ul {
+  margin-top: 0;
+}
+
+.eyebrow,
+.label,
+.secondary,
+.tiny-help {
+  color: var(--muted);
+}
+
+.eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.74rem;
+  margin-bottom: 10px;
+}
+
+.primary-button,
+.control-button {
+  border: none;
+  border-radius: 999px;
+  color: #04111d;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+.primary-button:hover,
+.control-button:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+}
+
+.primary-button {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--accent), #8ff4ff);
+}
+
+.finish-stats {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0 20px;
+}
+
+.finish-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hud-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-self: start;
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.stat-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stat-card,
+.control-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+
+.stat-card-wide {
+  grid-column: 1 / -1;
+  background: var(--panel-strong);
+}
+
+.stat-card h2,
+.stat-card h3,
+.control-card h3 {
+  margin: 4px 0 6px;
+}
+
+.stat-card h2 {
+  font-size: 1.25rem;
+}
+
+.stat-card h3,
+.control-card h3 {
+  font-size: 1rem;
+}
+
+.stat-card p,
+.control-card p,
+.notes-list li {
+  line-height: 1.35;
+}
+
+.control-card {
+  background: rgba(7, 19, 33, 0.94);
+}
+
+.control-card.compact {
+  padding-top: 12px;
+}
+
+.bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.control-bar {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  margin-top: 8px;
+}
+
+.bar-center {
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateX(-50%);
+}
+
+.bar-fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 0;
+  border-radius: 999px;
+  transition: width 80ms linear, left 80ms linear;
+}
+
+.actual-fill {
+  background: linear-gradient(90deg, #ff7d85, #ffca78 48%, #71dfff 52%, #7cf2d8);
+}
+
+.target-marker {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 50%;
+  width: 0;
+  border-left: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0 0 3px rgba(77, 208, 255, 0.16);
+  transform: translateX(-50%);
+  transition: left 80ms linear;
+}
+
+.control-readout {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.control-button {
+  padding: 12px 14px;
+  color: white;
+}
+
+.control-button.accel {
+  background: linear-gradient(135deg, #1890ff, #4dd0ff);
+}
+
+.control-button.brake {
+  background: linear-gradient(135deg, #f26478, #ff9e6f);
+}
+
+.control-button.active {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.7), 0 10px 24px rgba(0, 0, 0, 0.2);
+}
+
+.notes-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.notes-list li + li {
+  margin-top: 6px;
+}
+
+.tiny-help {
+  margin: 10px 0 0;
+  font-size: 0.82rem;
+}
+
+.hud-panel::-webkit-scrollbar {
+  width: 8px;
+}
+
+.hud-panel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+@media (max-width: 1040px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .canvas-wrap {
+    min-height: 62vh;
+  }
+
+  .hud-panel {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    padding-bottom: 10px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .canvas-wrap {
+    min-height: 56vh;
+    border-radius: 22px;
+  }
+
+  .overlay-card {
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+    width: auto;
+  }
+
+  .station-assist {
+    left: 14px;
+    right: 14px;
+    top: 14px;
+    width: auto;
+    padding: 14px;
+  }
+
+  .stat-grid {
+    grid-template-columns: 1fr;
+  }
+}

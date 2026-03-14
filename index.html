@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Train Driver</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <main class="game-panel">
+        <div class="canvas-wrap">
+          <canvas id="gameCanvas" aria-label="Top down train driving game"></canvas>
+          <div class="station-assist hidden" id="stationAssist" aria-live="polite">
+            <p class="eyebrow">Stop assist</p>
+            <h3 id="assistStationTitle">Next station</h3>
+            <p class="assist-copy" id="assistDistanceText">Hold the locomotive front on the stop mark.</p>
+            <div class="assist-scale" aria-hidden="true">
+              <div class="assist-window"></div>
+              <div class="assist-target"></div>
+              <div class="assist-front" id="assistFrontMarker"></div>
+            </div>
+            <div class="assist-legend">
+              <span id="assistLegendMin">-120 m</span>
+              <span>Target</span>
+              <span id="assistLegendMax">+120 m</span>
+            </div>
+          </div>
+          <div class="overlay-card intro-card" id="introCard">
+            <p class="eyebrow">Precision rail challenge</p>
+            <h1>Train Driver</h1>
+            <p>
+              Run between stations as quickly as possible, but stop accurately.
+              Curves appear at random and demand lower speed.
+            </p>
+            <ul>
+              <li>You are handling a 100 m locomotive-plus-two-car train.</li>
+              <li>Hold <strong>Accelerate</strong> to request power.</li>
+              <li>Hold <strong>Brake</strong> to request braking.</li>
+              <li>Actual traction and braking lag behind your request.</li>
+            </ul>
+            <button id="startButton" class="primary-button">Start run</button>
+          </div>
+          <div class="overlay-card finish-card hidden" id="finishCard">
+            <p class="eyebrow">Run complete</p>
+            <h2 id="finishTitle">Nice driving</h2>
+            <div class="finish-stats" id="finishStats"></div>
+            <button id="restartButton" class="primary-button">Drive again</button>
+          </div>
+        </div>
+      </main>
+
+      <aside class="hud-panel">
+        <section class="stat-grid">
+          <article class="stat-card stat-card-wide">
+            <p class="label">Status</p>
+            <h2 id="statusText">Waiting to depart</h2>
+            <p id="subStatus">Start the run to roll out from the origin station.</p>
+          </article>
+          <article class="stat-card">
+            <p class="label">Speed</p>
+            <h3><span id="speedKph">0</span> km/h</h3>
+            <p class="secondary">Line limit <span id="lineLimitKph">210</span> km/h</p>
+          </article>
+          <article class="stat-card">
+            <p class="label">Next station</p>
+            <h3 id="distanceToStation">0 m</h3>
+            <p class="secondary" id="stationName">Origin</p>
+          </article>
+          <article class="stat-card">
+            <p class="label">Time</p>
+            <h3 id="elapsedTime">00:00.0</h3>
+            <p class="secondary">Penalty <span id="penaltyTime">0.0</span>s</p>
+          </article>
+          <article class="stat-card">
+            <p class="label">Stop error</p>
+            <h3 id="stopError">—</h3>
+            <p class="secondary">Best precision wins</p>
+          </article>
+        </section>
+
+        <section class="control-card">
+          <div class="bar-header">
+            <h3>Power / brake</h3>
+            <span id="actualLabel">Coast</span>
+          </div>
+          <div class="control-bar" aria-hidden="true">
+            <div class="bar-center"></div>
+            <div class="bar-fill actual-fill" id="actualFill"></div>
+            <div class="target-marker" id="requestedMarker"></div>
+          </div>
+          <p class="control-readout"><span id="requestedLabel">Target Coast</span><span id="controlDelta">Tracking</span></p>
+
+          <div class="button-row">
+            <button id="accelerateButton" class="control-button accel">Accelerate</button>
+            <button id="brakeButton" class="control-button brake">Brake</button>
+          </div>
+          <p class="tiny-help">Keyboard: ↑ / W accelerate, ↓ / S brake</p>
+        </section>
+
+        <section class="control-card compact">
+          <h3>Route notes</h3>
+          <ul class="notes-list">
+            <li>Green rings mark stations.</li>
+            <li>Amber signs mark curve speed limits.</li>
+            <li>Excess speed in curves adds time penalties.</li>
+            <li>Stop within the platform for best results.</li>
+          </ul>
+        </section>
+      </aside>
+    </div>
+
+    <script src="game.js"></script>
+  </body>
+</html>
