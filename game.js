@@ -653,7 +653,7 @@ function initializeDroneInsetResizeHandle() {
       resizeSession.maxWidth,
     );
     const nextHeight = clamp(
-      resizeSession.startHeight + (event.clientY - resizeSession.startY),
+      resizeSession.startHeight + (resizeSession.startY - event.clientY),
       resizeSession.minHeight,
       resizeSession.maxHeight,
     );
@@ -675,10 +675,10 @@ function initializeDroneInsetResizeHandle() {
     const computedStyle = window.getComputedStyle(droneInset);
     const minWidth = parseFloat(computedStyle.minWidth) || 192;
     const minHeight = parseFloat(computedStyle.minHeight) || 108;
-    const insetTop = parseFloat(computedStyle.top) || 0;
+    const insetBottom = parseFloat(computedStyle.bottom) || 0;
     const insetRight = parseFloat(computedStyle.right) || 0;
     const maxWidth = Math.max(minWidth, parentRect.width - insetRight - 12);
-    const maxHeight = Math.max(minHeight, parentRect.height - insetTop - 12);
+    const maxHeight = Math.max(minHeight, parentRect.height - insetBottom - 12);
 
     resizeSession = {
       startX: event.clientX,

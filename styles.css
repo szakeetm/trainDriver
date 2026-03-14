@@ -168,7 +168,7 @@ button {
 
 .drone-inset {
   position: absolute;
-  top: 22px;
+  bottom: 22px;
   right: 22px;
   width: var(--drone-inset-width);
   height: var(--drone-inset-height);
@@ -191,8 +191,8 @@ button {
 
 .drone-inset__resize-handle {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
+  top: 8px;
+  right: 8px;
   width: 16px;
   height: 16px;
   background:
@@ -793,7 +793,7 @@ button {
   }
 
   .drone-inset {
-    top: 12px;
+    bottom: 12px;
     right: 12px;
     padding: 10px;
     border-radius: 18px;
@@ -840,7 +840,7 @@ button {
   }
 
   .drone-inset {
-    top: 14px;
+    bottom: 14px;
     right: 14px;
     padding: 8px;
     border-radius: 16px;
