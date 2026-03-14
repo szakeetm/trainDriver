@@ -3,6 +3,8 @@ const ctx = canvas.getContext("2d");
 
 const appShell = document.getElementById("appShell");
 const introCard = document.getElementById("coverScreen");
+const droneInsetMount = document.getElementById("droneInsetMount");
+const droneInsetStatus = document.getElementById("droneInsetStatus");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -293,6 +295,7 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
+let droneInsetRenderer = null;
 
 function cloneConfigValue(value) {
   if (Array.isArray(value)) {
@@ -527,6 +530,10 @@ function resizeCanvas() {
   canvas.width = Math.round(rect.width * dpr);
   canvas.height = Math.round(rect.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  if (droneInsetRenderer) {
+    droneInsetRenderer.resize();
+  }
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -546,6 +553,104 @@ function getTrainUnits() {
     };
     frontCursor = rearDistance - COUPLER_GAP;
     return result;
+  });
+}
+
+function getRenderedTrainUnits() {
+  const derailment = state.derailment;
+  const units = derailment ? derailment.units : getTrainUnits();
+  const derailProgress = derailment
+    ? easeOutCubic(clamp(derailment.timer / derailment.duration, 0, 1))
+    : 0;
+
+  return units.map((unit) => {
+    if (!derailment) {
+      return {
+        ...unit,
+        renderX: unit.pose.x,
+        renderY: unit.pose.y,
+        renderHeading: unit.pose.heading,
+        rearX: null,
+        rearY: null,
+        frontX: null,
+        frontY: null,
+      };
+    }
+
+    const forwardAmount = unit.forwardThrow * derailProgress * (1 + derailProgress * 0.35);
+    const lateralAmount = unit.lateralThrow * derailProgress;
+    const forwardX = Math.cos(unit.baseHeading) * forwardAmount;
+    const forwardY = Math.sin(unit.baseHeading) * forwardAmount;
+    const normalX = -Math.sin(unit.baseHeading) * lateralAmount;
+    const normalY = Math.cos(unit.baseHeading) * lateralAmount;
+    const renderHeading = unit.baseHeading + unit.twistOffset * derailProgress + unit.spinRate * derailProgress;
+    const renderX = unit.baseX + forwardX + normalX;
+    const renderY = unit.baseY + forwardY + normalY;
+
+    return {
+      ...unit,
+      renderX,
+      renderY,
+      renderHeading,
+      rearX: renderX - Math.cos(renderHeading) * unit.length * 0.5,
+      rearY: renderY - Math.sin(renderHeading) * unit.length * 0.5,
+      frontX: renderX + Math.cos(renderHeading) * unit.length * 0.5,
+      frontY: renderY + Math.sin(renderHeading) * unit.length * 0.5,
+    };
+  });
+}
+
+function initializeDroneInsetRenderer() {
+  if (!window.TrainDriver3DInsetRenderer || !droneInsetMount) {
+    if (droneInsetStatus) {
+      droneInsetStatus.textContent = "3D unavailable";
+    }
+    return;
+  }
+
+  try {
+    droneInsetRenderer = new window.TrainDriver3DInsetRenderer({
+      container: droneInsetMount,
+      statusElement: droneInsetStatus,
+    });
+  } catch (error) {
+    console.warn("3D inset renderer could not start.", error);
+    droneInsetRenderer = null;
+    if (droneInsetStatus) {
+      droneInsetStatus.textContent = "3D unavailable";
+    }
+  }
+}
+
+function syncDroneInsetRoute() {
+  if (!droneInsetRenderer || !route) {
+    return;
+  }
+
+  droneInsetRenderer.setRoute({
+    route,
+    trackWidth: TRACK_WIDTH,
+    trainConsist: TRAIN_CONSIST,
+    tuning: TUNING,
+    sampleRoute: evaluateRoute,
+    getSceneryPoint,
+  });
+}
+
+function renderDroneInset() {
+  if (!droneInsetRenderer || !route || !state || appShell.classList.contains("hidden")) {
+    return;
+  }
+
+  droneInsetRenderer.renderFrame({
+    trainPose: evaluateRoute(state.distance),
+    renderedUnits: getRenderedTrainUnits(),
+    activeStationIndex: state.stationIndex,
+    overspeedTimer: state.overspeedTimer,
+    derailment: state.derailment,
+    maxLineSpeed: MAX_LINE_SPEED,
+    speed: state.speed,
+    biomeBlend: getBiomeBlendAtDistance(),
   });
 }
 
@@ -2276,44 +2381,7 @@ function drawTrain(width, height) {
   const view = getViewMetrics(width, height);
   const { camera, scale } = view;
   const derailment = state.derailment;
-  const units = derailment ? derailment.units : getTrainUnits();
-  const derailProgress = derailment ? easeOutCubic(clamp(derailment.timer / derailment.duration, 0, 1)) : 0;
-
-  const renderUnits = units.map((unit, index) => {
-    if (!derailment) {
-      return {
-        ...unit,
-        renderX: unit.pose.x,
-        renderY: unit.pose.y,
-        renderHeading: unit.pose.heading,
-        rearX: null,
-        rearY: null,
-        frontX: null,
-        frontY: null,
-      };
-    }
-
-    const forwardAmount = unit.forwardThrow * derailProgress * (1 + derailProgress * 0.35);
-    const lateralAmount = unit.lateralThrow * derailProgress;
-    const forwardX = Math.cos(unit.baseHeading) * forwardAmount;
-    const forwardY = Math.sin(unit.baseHeading) * forwardAmount;
-    const normalX = -Math.sin(unit.baseHeading) * lateralAmount;
-    const normalY = Math.cos(unit.baseHeading) * lateralAmount;
-    const renderHeading = unit.baseHeading + unit.twistOffset * derailProgress + unit.spinRate * derailProgress;
-    const renderX = unit.baseX + forwardX + normalX;
-    const renderY = unit.baseY + forwardY + normalY;
-
-    return {
-      ...unit,
-      renderX,
-      renderY,
-      renderHeading,
-      rearX: renderX - Math.cos(renderHeading) * unit.length * 0.5,
-      rearY: renderY - Math.sin(renderHeading) * unit.length * 0.5,
-      frontX: renderX + Math.cos(renderHeading) * unit.length * 0.5,
-      frontY: renderY + Math.sin(renderHeading) * unit.length * 0.5,
-    };
-  });
+  const renderUnits = getRenderedTrainUnits();
 
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
@@ -2518,6 +2586,7 @@ function render() {
   drawTrain(width, height);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
+  renderDroneInset();
 }
 
 function update(dt) {
@@ -2567,6 +2636,7 @@ function startRun() {
 
   appShell.classList.remove("hidden");
   state = createInitialState();
+  syncDroneInsetRoute();
   state.started = true;
   introCard.classList.add("hidden");
   finishCard.classList.add("hidden");
@@ -2585,9 +2655,12 @@ async function initializeGame() {
   statusText.textContent = "Loading settings";
   subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
 
+  initializeDroneInsetRenderer();
+
   await loadTuningConfig();
 
   state = createInitialState();
+  syncDroneInsetRoute();
   syncAssistLegend();
   updateUi();
   lastFrame = performance.now();

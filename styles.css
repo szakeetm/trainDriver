@@ -134,6 +134,8 @@ button {
 }
 
 .canvas-wrap {
+  --drone-inset-width: 360px;
+  --drone-inset-height: 236px;
   flex: 1;
   position: relative;
   min-height: calc(100vh - 24px);
@@ -153,15 +155,67 @@ button {
 .station-assist {
   position: absolute;
   left: 22px;
-  right: 22px;
   top: 22px;
-  width: auto;
+  width: min(460px, calc(100% - var(--drone-inset-width) - 68px));
+  max-width: calc(100% - var(--drone-inset-width) - 68px);
   padding: 16px 16px 14px;
   border-radius: 20px;
   background: rgba(5, 15, 28, 0.58);
   border: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow);
+}
+
+.drone-inset {
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  width: var(--drone-inset-width);
+  height: var(--drone-inset-height);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 22px;
+  background: rgba(5, 14, 26, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  z-index: 3;
+}
+
+.drone-inset__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.drone-inset__header .eyebrow {
+  margin-bottom: 0;
+}
+
+.drone-inset__status {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.drone-inset__mount {
+  position: relative;
+  min-height: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 30%, rgba(122, 198, 244, 0.26), transparent 36%),
+    linear-gradient(180deg, rgba(12, 28, 44, 0.92), rgba(6, 15, 26, 0.96));
+  border: 1px solid rgba(162, 221, 255, 0.12);
+}
+
+.drone-inset__mount canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .station-assist h3,
@@ -578,6 +632,8 @@ button {
   }
 
   .canvas-wrap {
+    --drone-inset-width: 300px;
+    --drone-inset-height: 208px;
     min-height: 62vh;
   }
 
@@ -598,6 +654,8 @@ button {
   }
 
   .canvas-wrap {
+    --drone-inset-width: 280px;
+    --drone-inset-height: 188px;
     min-height: calc(100vh - 16px);
   }
 
@@ -715,6 +773,17 @@ button {
   .tiny-help {
     margin-top: 6px;
   }
+
+  .drone-inset {
+    top: 12px;
+    right: 12px;
+    padding: 10px;
+    border-radius: 18px;
+  }
+
+  .drone-inset__status {
+    font-size: 0.7rem;
+  }
 }
 
 @media (max-width: 640px) {
@@ -737,6 +806,8 @@ button {
   }
 
   .canvas-wrap {
+    --drone-inset-width: 220px;
+    --drone-inset-height: 154px;
     min-height: 56vh;
     border-radius: 22px;
   }
@@ -748,15 +819,34 @@ button {
     width: auto;
   }
 
+  .drone-inset {
+    top: 14px;
+    right: 14px;
+    padding: 8px;
+    border-radius: 16px;
+  }
+
   .station-assist {
     left: 14px;
-    right: 14px;
     top: 14px;
-    width: auto;
+    width: calc(100% - 248px);
+    max-width: calc(100% - 248px);
     padding: 14px;
   }
 
   .stat-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .drone-inset {
+    width: 180px;
+    height: 132px;
+  }
+
+  .station-assist {
+    width: calc(100% - 210px);
+    max-width: calc(100% - 210px);
   }
 }

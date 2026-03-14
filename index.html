@@ -35,6 +35,13 @@
       <main class="game-panel">
         <div class="canvas-wrap">
           <canvas id="gameCanvas" aria-label="Top down train driving game"></canvas>
+          <section class="drone-inset" id="droneInset" aria-label="3D drone view">
+            <div class="drone-inset__header">
+              <p class="eyebrow">3D view</p>
+              <span class="drone-inset__status" id="droneInsetStatus">Drone follow</span>
+            </div>
+            <div class="drone-inset__mount" id="droneInsetMount"></div>
+          </section>
           <div class="station-assist hidden" id="stationAssist" aria-live="polite">
             <p class="eyebrow">Stop assist</p>
             <h3 id="assistStationTitle">Next station</h3>
@@ -138,6 +145,8 @@
       </aside>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.min.js"></script>
+    <script src="renderer3d.js"></script>
     <script src="game.js"></script>
   </body>
 </html>
