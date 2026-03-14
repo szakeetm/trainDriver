@@ -52,14 +52,44 @@
     return current + delta * t;
   }
 
+  function normalizeCssColor(colorValue) {
+    if (typeof colorValue !== "string") {
+      return colorValue;
+    }
+
+    const trimmed = colorValue.trim();
+    const hslMatch = trimmed.match(/^hsla?\((.+)\)$/i);
+    if (!hslMatch) {
+      return trimmed;
+    }
+
+    const inner = hslMatch[1].replace(/\s*\/\s*/g, ", ");
+    if (inner.includes(",")) {
+      return trimmed;
+    }
+
+    const parts = inner.split(/\s+/).filter(Boolean);
+    if (parts.length < 3) {
+      return trimmed;
+    }
+
+    const fnName = trimmed.slice(0, trimmed.indexOf("(") + 1);
+    return `${fnName}${parts.join(", ")})`;
+  }
+
+  function createThreeColor(colorValue) {
+    return new THREE.Color(normalizeCssColor(colorValue));
+  }
+
   function applyLitFlatColor(material, colorValue, emissiveIntensity) {
     if (!material) {
       return;
     }
 
-    material.color.set(colorValue);
+    const normalizedColor = normalizeCssColor(colorValue);
+    material.color.set(normalizedColor);
     if (material.emissive) {
-      material.emissive.set(colorValue);
+      material.emissive.set(normalizedColor);
       material.emissiveIntensity = emissiveIntensity;
     }
   }
@@ -800,20 +830,12 @@
       trainConsist.slice(0, 2).forEach((unit) => {
         const group = new THREE.Group();
 
-        const bodyMaterial = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(unit.bodyColor),
-          emissive: new THREE.Color(unit.bodyColor),
-          emissiveIntensity: 0.18,
-          roughness: 0.44,
-          metalness: 0.12,
+        const bodyMaterial = new THREE.MeshBasicMaterial({
+          color: createThreeColor(unit.bodyColor),
           toneMapped: false,
         });
-        const roofMaterial = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(unit.roofColor),
-          emissive: new THREE.Color(unit.roofColor),
-          emissiveIntensity: 0.12,
-          roughness: 0.28,
-          metalness: 0.08,
+        const roofMaterial = new THREE.MeshBasicMaterial({
+          color: createThreeColor(unit.roofColor),
           toneMapped: false,
         });
 
@@ -827,10 +849,10 @@
         group.add(body);
 
         const roof = new THREE.Mesh(
-          new THREE.BoxGeometry(unit.width * 0.72, unit.type === "locomotive" ? 1.2 : 1, unit.length * 0.56),
+          new THREE.BoxGeometry(unit.width * 0.62, unit.type === "locomotive" ? 1.1 : 0.92, unit.length * 0.44),
           roofMaterial,
         );
-        roof.position.y = unit.type === "locomotive" ? 4.45 : 3.85;
+        roof.position.y = unit.type === "locomotive" ? 4.35 : 3.72;
         roof.castShadow = true;
         roof.receiveShadow = true;
         group.add(roof);
