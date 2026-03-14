@@ -9,6 +9,8 @@ const startButton = document.getElementById("startButton");
 const restartButton = document.getElementById("restartButton");
 const accelerateButton = document.getElementById("accelerateButton");
 const brakeButton = document.getElementById("brakeButton");
+const mobileAccelerateButton = document.getElementById("mobileAccelerateButton");
+const mobileBrakeButton = document.getElementById("mobileBrakeButton");
 
 const statusText = document.getElementById("statusText");
 const subStatus = document.getElementById("subStatus");
@@ -288,6 +290,9 @@ const keys = {
   brake: false,
 };
 
+const accelerateButtons = [accelerateButton, mobileAccelerateButton].filter(Boolean);
+const brakeButtons = [brakeButton, mobileBrakeButton].filter(Boolean);
+
 let route = null;
 let state = null;
 let lastFrame = performance.now();
@@ -352,8 +357,8 @@ function setButtonHold(button, key) {
   button.addEventListener("pointercancel", release);
 }
 
-setButtonHold(accelerateButton, "accelerate");
-setButtonHold(brakeButton, "brake");
+accelerateButtons.forEach((button) => setButtonHold(button, "accelerate"));
+brakeButtons.forEach((button) => setButtonHold(button, "brake"));
 
 window.addEventListener("keydown", (event) => {
   if (["ArrowUp", "w", "W"].includes(event.key)) {
@@ -1497,8 +1502,8 @@ function updateUi() {
   const delta = Math.abs(state.requestedControl - state.actualControl);
   controlDelta.textContent = delta < 0.04 ? "Tracking" : `Lag ${Math.round(delta * 100)}%`;
 
-  accelerateButton.classList.toggle("active", keys.accelerate);
-  brakeButton.classList.toggle("active", keys.brake);
+  accelerateButtons.forEach((button) => button.classList.toggle("active", keys.accelerate));
+  brakeButtons.forEach((button) => button.classList.toggle("active", keys.brake));
 
   if (assist) {
     stationAssist.classList.remove("hidden");
@@ -2263,7 +2268,8 @@ function drawRoutePredictor(width, height) {
   const panelWidth = Math.min(TUNING.visuals.routePredictorWidth, width - 36);
   const panelHeight = Math.min(TUNING.visuals.routePredictorHeight, height - 36);
   const panelX = 18;
-  const panelY = height - panelHeight - 18;
+  const panelBottomInset = width <= 640 ? 108 : 18;
+  const panelY = height - panelHeight - panelBottomInset;
   const distColumnX = panelX + 18;
   const markerColumnX = panelX + 28;
   const distanceValueX = panelX + 42;
