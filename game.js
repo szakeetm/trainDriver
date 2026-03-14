@@ -328,6 +328,10 @@ function formatTime(totalSeconds) {
   return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
+function roundDisplayDistance(distance) {
+  return Math.round(distance / 10) * 10;
+}
+
 function syncAssistLegend() {
   assistLegendMin.textContent = `-${STATION_ASSIST_ZOOM} m`;
   assistLegendMax.textContent = `+${STATION_ASSIST_ZOOM} m`;
@@ -1041,7 +1045,7 @@ function getUpcomingRouteEntries() {
     .filter((segment) => segment.speedLimit != null && segment.start >= state.distance)
     .map((segment) => ({
       type: "curve",
-      distance: segment.start - state.distance,
+      distance: roundDisplayDistance(segment.start - state.distance),
       limitKph: Math.round(segment.speedLimit * 3.6),
       direction: segment.curvature >= 0 ? "Right" : "Left",
     }));
@@ -1050,7 +1054,7 @@ function getUpcomingRouteEntries() {
     .filter((signal) => signal.distance >= state.distance)
     .map((signal) => ({
       type: "signal",
-      distance: signal.distance - state.distance,
+      distance: roundDisplayDistance(signal.distance - state.distance),
       aspect: getSignalAspect(signal),
       limitKph: signal.kind === "yellow" ? Math.round(signal.speedLimit * 3.6) : null,
     }));
@@ -1156,7 +1160,7 @@ function processSignals(dt) {
       const zoneGap = stopZone.centerDistance - state.distance;
       state.signalStatus = {
         message: "Red signal ahead",
-        detail: zoneGap > 0 ? `Stop in the red circle in ${Math.round(zoneGap)} m.` : "Hold the locomotive front inside the red circle.",
+        detail: zoneGap > 0 ? `Stop in the red circle in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red circle.",
       };
     }
   }
@@ -2283,7 +2287,7 @@ function drawRoutePredictor(width, height) {
   if (upcomingEntries.length === 0) {
     ctx.fillStyle = "rgba(223, 242, 255, 0.62)";
     ctx.font = "600 14px Inter, sans-serif";
-    ctx.fillText(`No curve or signal in the next ${Math.round(TUNING.route.upcomingCurveLookahead)} m`, panelX + 18, panelY + 62);
+    ctx.fillText(`No curve or signal in the next ${roundDisplayDistance(TUNING.route.upcomingCurveLookahead)} m`, panelX + 18, panelY + 62);
     ctx.restore();
     return;
   }
