@@ -331,6 +331,35 @@ function mergeConfig(base, overrides) {
   return result;
 }
 
+function formatHslColor(hue, saturation, lightness) {
+  return `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
+}
+
+function buildRandomizedConsist(consist) {
+  const sharedHue = Math.random() * 360;
+
+  return consist.map((unit, index) => {
+    const hueOffset = unit.type === "locomotive"
+      ? Math.random() * 36 - 18
+      : (index - 1) * 22 + (Math.random() * 28 - 14);
+    const hue = (sharedHue + hueOffset + 360) % 360;
+    const saturation = unit.type === "locomotive"
+      ? 72 + Math.random() * 18
+      : 32 + Math.random() * 22;
+    const lightness = unit.type === "locomotive"
+      ? 52 + Math.random() * 10
+      : 60 + Math.random() * 10;
+    const roofSaturation = Math.max(14, saturation * 0.28);
+    const roofLightness = Math.min(92, lightness + 26);
+
+    return {
+      ...unit,
+      bodyColor: formatHslColor(hue, saturation, lightness),
+      roofColor: formatHslColor(hue, roofSaturation, roofLightness),
+    };
+  });
+}
+
 function applyTuning(configOverrides = null) {
   TUNING = configOverrides ? mergeConfig(DEFAULT_TUNING, configOverrides) : cloneConfigValue(DEFAULT_TUNING);
 
@@ -342,7 +371,7 @@ function applyTuning(configOverrides = null) {
   STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
   OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / 3.6;
   TRACK_WIDTH = TUNING.train.trackWidth;
-  TRAIN_CONSIST = TUNING.train.consist;
+  TRAIN_CONSIST = buildRandomizedConsist(TUNING.train.consist);
   COUPLER_GAP = TUNING.train.couplerGap;
   MAX_POWER_KW = TUNING.train.maxPowerKw;
   MAX_BRAKE_PRESSURE_BAR = TUNING.train.maxBrakePressureBar;
