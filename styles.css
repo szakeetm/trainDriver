@@ -134,8 +134,8 @@ button {
 }
 
 .canvas-wrap {
-  --drone-inset-width: 520px;
-  --drone-inset-height: 293px;
+  --drone-inset-width: 780px;
+  --drone-inset-height: 352px;
   flex: 1;
   position: relative;
   min-height: calc(100vh - 24px);
@@ -192,14 +192,14 @@ button {
 .drone-inset__resize-handle {
   position: absolute;
   top: 8px;
-  right: 8px;
-  width: 16px;
-  height: 16px;
+  left: 8px;
+  width: 24px;
+  height: 19px;
   background:
-    linear-gradient(225deg, transparent 0 34%, rgba(255, 255, 255, 0.14) 34% 42%, transparent 42% 56%, rgba(255, 255, 255, 0.14) 56% 64%, transparent 64%),
-    linear-gradient(225deg, transparent 0 56%, rgba(77, 208, 255, 0.75) 56% 64%, transparent 64%);
+    linear-gradient(135deg, transparent 0 34%, rgba(255, 255, 255, 0.14) 34% 42%, transparent 42% 56%, rgba(255, 255, 255, 0.14) 56% 64%, transparent 64%),
+    linear-gradient(135deg, transparent 0 56%, rgba(77, 208, 255, 0.75) 56% 64%, transparent 64%);
   opacity: 0.95;
-  cursor: nesw-resize;
+  cursor: nwse-resize;
   z-index: 2;
 }
 
@@ -650,8 +650,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 400px;
-    --drone-inset-height: 225px;
+    --drone-inset-width: 600px;
+    --drone-inset-height: 270px;
     min-height: 62vh;
   }
 
@@ -672,8 +672,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 352px;
-    --drone-inset-height: 198px;
+    --drone-inset-width: 528px;
+    --drone-inset-height: 238px;
     min-height: calc(100vh - 16px);
   }
 
@@ -826,8 +826,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 256px;
-    --drone-inset-height: 144px;
+    --drone-inset-width: 308px;
+    --drone-inset-height: 173px;
     min-height: 56vh;
     border-radius: 22px;
   }
@@ -863,8 +863,8 @@ button {
 
 @media (max-width: 520px) {
   .drone-inset {
-    width: 224px;
-    height: 126px;
+    width: 336px;
+    height: 151px;
     min-width: 176px;
     min-height: 99px;
   }
