@@ -134,8 +134,8 @@ button {
 }
 
 .canvas-wrap {
-  --drone-inset-width: 440px;
-  --drone-inset-height: 292px;
+  --drone-inset-width: 480px;
+  --drone-inset-height: 270px;
   flex: 1;
   position: relative;
   min-height: calc(100vh - 24px);
@@ -183,8 +183,8 @@ button {
   box-shadow: var(--shadow);
   overflow: hidden;
   resize: both;
-  min-width: 260px;
-  min-height: 180px;
+  min-width: 256px;
+  min-height: 144px;
   max-width: min(62vw, calc(100% - 44px));
   max-height: min(62vh, calc(100% - 44px));
   z-index: 3;
@@ -651,8 +651,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 360px;
-    --drone-inset-height: 240px;
+    --drone-inset-width: 400px;
+    --drone-inset-height: 225px;
     min-height: 62vh;
   }
 
@@ -673,8 +673,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 340px;
-    --drone-inset-height: 220px;
+    --drone-inset-width: 352px;
+    --drone-inset-height: 198px;
     min-height: calc(100vh - 16px);
   }
 
@@ -798,8 +798,8 @@ button {
     right: 12px;
     padding: 10px;
     border-radius: 18px;
-    min-width: 220px;
-    min-height: 154px;
+    min-width: 224px;
+    min-height: 126px;
   }
 
   .drone-inset__status {
@@ -827,8 +827,8 @@ button {
   }
 
   .canvas-wrap {
-    --drone-inset-width: 260px;
-    --drone-inset-height: 180px;
+    --drone-inset-width: 256px;
+    --drone-inset-height: 144px;
     min-height: 56vh;
     border-radius: 22px;
   }
@@ -845,8 +845,8 @@ button {
     right: 14px;
     padding: 8px;
     border-radius: 16px;
-    min-width: 190px;
-    min-height: 132px;
+    min-width: 192px;
+    min-height: 108px;
   }
 
   .station-assist {
@@ -864,10 +864,10 @@ button {
 
 @media (max-width: 520px) {
   .drone-inset {
-    width: 210px;
-    height: 150px;
-    min-width: 170px;
-    min-height: 120px;
+    width: 224px;
+    height: 126px;
+    min-width: 176px;
+    min-height: 99px;
   }
 
   .station-assist {

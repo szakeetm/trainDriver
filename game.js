@@ -565,15 +565,17 @@ function getRenderedTrainUnits() {
 
   return units.map((unit) => {
     if (!derailment) {
+      const rearPose = evaluateRoute(unit.rearDistance);
+      const frontPose = evaluateRoute(unit.frontDistance);
       return {
         ...unit,
         renderX: unit.pose.x,
         renderY: unit.pose.y,
         renderHeading: unit.pose.heading,
-        rearX: null,
-        rearY: null,
-        frontX: null,
-        frontY: null,
+        rearX: rearPose.x,
+        rearY: rearPose.y,
+        frontX: frontPose.x,
+        frontY: frontPose.y,
       };
     }
 
@@ -614,10 +616,10 @@ function initializeDroneInsetRenderer() {
       statusElement: droneInsetStatus,
     });
   } catch (error) {
-    console.warn("3D inset renderer could not start.", error);
+    console.error("3D inset renderer could not start.", error);
     droneInsetRenderer = null;
     if (droneInsetStatus) {
-      droneInsetStatus.textContent = "3D unavailable";
+      droneInsetStatus.textContent = "3D error";
     }
   }
 }
@@ -645,6 +647,7 @@ function renderDroneInset() {
   droneInsetRenderer.renderFrame({
     trainPose: evaluateRoute(state.distance),
     renderedUnits: getRenderedTrainUnits(),
+    trainLength: TRAIN_TOTAL_LENGTH,
     activeStationIndex: state.stationIndex,
     overspeedTimer: state.overspeedTimer,
     derailment: state.derailment,

@@ -13,7 +13,7 @@
   function clearGroup(group) {
     while (group.children.length) {
       const child = group.children.pop();
-      if (child.children?.length) {
+      if (child.children && child.children.length) {
         clearGroup(child);
       }
       if (child.geometry) {
@@ -51,9 +51,9 @@
     }
     if (theme === "snow") {
       return {
-        base: [214, 225, 232],
-        alt: [173, 193, 207],
-        detail: [244, 248, 252],
+        base: [196, 208, 222],
+        alt: [150, 168, 186],
+        detail: [236, 241, 247],
       };
     }
     if (theme === "mountain") {
@@ -173,8 +173,12 @@
       this.groundTexture = new THREE.CanvasTexture(this.groundTextureCanvas);
       this.groundTexture.wrapS = THREE.RepeatWrapping;
       this.groundTexture.wrapT = THREE.RepeatWrapping;
-      this.groundTexture.repeat.set(34, 34);
-      if (this.renderer.capabilities?.getMaxAnisotropy) {
+      this.groundTexture.repeat.set(16, 16);
+      this.groundTexture.minFilter = THREE.LinearMipmapLinearFilter || THREE.LinearFilter;
+      this.groundTexture.magFilter = THREE.LinearFilter;
+      this.groundTexture.generateMipmaps = true;
+      this.groundWorldSize = 40000;
+      if (this.renderer.capabilities && this.renderer.capabilities.getMaxAnisotropy) {
         this.groundTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
       }
       if ("colorSpace" in this.groundTexture && THREE.SRGBColorSpace) {
@@ -183,9 +187,10 @@
         this.groundTexture.encoding = THREE.sRGBEncoding;
       }
       this.groundTexture.needsUpdate = true;
+      this.rebuildGroundTexture({ primary: "green", secondary: "green", mix: 0 });
 
       this.ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(40000, 40000),
+        new THREE.PlaneGeometry(this.groundWorldSize, this.groundWorldSize),
         new THREE.MeshStandardMaterial({
           color: 0x6c8d55,
           map: this.groundTexture,
@@ -227,7 +232,9 @@
       this.resizeObserver = typeof ResizeObserver === "function"
         ? new ResizeObserver(() => this.resize())
         : null;
-      this.resizeObserver?.observe(this.container);
+      if (this.resizeObserver) {
+        this.resizeObserver.observe(this.container);
+      }
 
       this.resize();
     }
@@ -416,13 +423,13 @@
 
         [-1, 1].forEach((side) => {
           const platform = new THREE.Mesh(
-            new THREE.BoxGeometry(6.5, 0.9, 38),
+            new THREE.BoxGeometry(8.5, 1.1, 48),
             platformMaterial,
           );
           platform.position.set(
-            point.x + normalX * side * (trackWidth * 1.65 + 4.8),
-            0.45,
-            point.y + normalZ * side * (trackWidth * 1.65 + 4.8),
+            point.x + normalX * side * (trackWidth * 1.75 + 5.8),
+            0.55,
+            point.y + normalZ * side * (trackWidth * 1.75 + 5.8),
           );
           platform.rotation.y = Math.PI * 0.5 - point.heading;
           platform.castShadow = true;
@@ -431,15 +438,15 @@
         });
 
         const marker = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.75, 0.75, 8, 18),
+          new THREE.CylinderGeometry(1.15, 1.15, 12, 20),
           markerMaterial,
         );
-        marker.position.set(point.x, 4.2, point.y);
+        marker.position.set(point.x, 6.2, point.y);
         marker.castShadow = true;
         group.add(marker);
 
         const halo = new THREE.Mesh(
-          new THREE.CylinderGeometry(6.5, 6.5, 0.18, 28),
+          new THREE.CylinderGeometry(9, 9, 0.22, 32),
           new THREE.MeshStandardMaterial({
             color: 0x8affb6,
             emissive: 0x4ee28f,
@@ -472,30 +479,30 @@
         const signalX = point.x + normalX * signal.side * (trackWidth * 0.8 + tuning.signals.sideOffset);
         const signalZ = point.y + normalZ * signal.side * (trackWidth * 0.8 + tuning.signals.sideOffset);
         const mast = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.24, 0.3, 8.2, 12),
+          new THREE.CylinderGeometry(0.34, 0.42, 11.5, 14),
           new THREE.MeshStandardMaterial({
             color: 0xd1dde7,
             roughness: 0.58,
             metalness: 0.42,
           }),
         );
-        mast.position.set(signalX, 4.1, signalZ);
+        mast.position.set(signalX, 5.75, signalZ);
         mast.castShadow = true;
         mast.receiveShadow = true;
 
         const housing = new THREE.Mesh(
-          new THREE.BoxGeometry(1.4, 2.2, 1.2),
+          new THREE.BoxGeometry(2, 3.1, 1.7),
           new THREE.MeshStandardMaterial({
             color: 0x111921,
             roughness: 0.76,
             metalness: 0.18,
           }),
         );
-        housing.position.set(signalX, 8.4, signalZ);
+        housing.position.set(signalX, 11.1, signalZ);
         housing.castShadow = true;
 
         const light = new THREE.Mesh(
-          new THREE.SphereGeometry(0.42, 16, 16),
+          new THREE.SphereGeometry(0.68, 18, 18),
           new THREE.MeshStandardMaterial({
             color: 0x7dff8e,
             emissive: 0x2aff55,
@@ -504,10 +511,22 @@
             metalness: 0.08,
           }),
         );
-        light.position.set(signalX, 8.45, signalZ + signal.side * 0.12);
+        light.position.set(signalX, 11.2, signalZ + signal.side * 0.18);
         light.castShadow = true;
 
-        this.signalGroup.add(mast, housing, light);
+        const base = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.95, 1.15, 0.7, 16),
+          new THREE.MeshStandardMaterial({
+            color: 0x5e6872,
+            roughness: 0.82,
+            metalness: 0.18,
+          }),
+        );
+        base.position.set(signalX, 0.35, signalZ);
+        base.castShadow = true;
+        base.receiveShadow = true;
+
+        this.signalGroup.add(base, mast, housing, light);
         this.signalRefs.push({ signal, light });
       });
     }
@@ -735,16 +754,18 @@
       const base = mixColorChannels(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
       const alt = mixColorChannels(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
       const detail = mixColorChannels(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
+      const shadow = mixColorChannels(base, [36, 42, 38], 0.2);
+      const highlight = mixColorChannels(detail, [255, 255, 255], 0.18);
 
       context.clearRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
       const gradient = context.createLinearGradient(0, 0, 0, this.groundTextureCanvas.height);
-      gradient.addColorStop(0, colorChannelsToCss(mixColorChannels(base, detail, 0.12)));
+      gradient.addColorStop(0, colorChannelsToCss(mixColorChannels(base, highlight, 0.18)));
       gradient.addColorStop(0.52, colorChannelsToCss(base));
-      gradient.addColorStop(1, colorChannelsToCss(mixColorChannels(base, alt, 0.28)));
+      gradient.addColorStop(1, colorChannelsToCss(mixColorChannels(base, shadow, 0.32)));
       context.fillStyle = gradient;
       context.fillRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
 
-      const cellSize = 32;
+      const cellSize = 48;
       for (let gridY = 0; gridY < this.groundTextureCanvas.height / cellSize; gridY += 1) {
         for (let gridX = 0; gridX < this.groundTextureCanvas.width / cellSize; gridX += 1) {
           const seed = hashNoise(gridX * 0.7, gridY * 0.7);
@@ -758,22 +779,30 @@
             fill = mixColorChannels(base, detail, 0.25);
           }
 
-          context.fillStyle = colorChannelsToCss(fill, 0.88);
+          context.fillStyle = colorChannelsToCss(fill, 0.96);
           context.fillRect(gridX * cellSize, gridY * cellSize, cellSize + 1, cellSize + 1);
 
-          const tuftSize = 4 + hashNoise(gridX + 2, gridY + 5) * 10;
-          context.fillStyle = colorChannelsToCss(mixColorChannels(detail, alt, 0.35), 0.34);
+          const patchWidth = 10 + hashNoise(gridX + 2, gridY + 5) * 22;
+          const patchHeight = 8 + hashNoise(gridX + 8, gridY + 11) * 16;
+          context.fillStyle = colorChannelsToCss(mixColorChannels(detail, alt, 0.35), 0.46);
           context.beginPath();
           context.ellipse(
             gridX * cellSize + hashNoise(gridX + 8, gridY + 11) * cellSize,
             gridY * cellSize + hashNoise(gridX + 12, gridY + 15) * cellSize,
-            tuftSize,
-            tuftSize * 0.66,
+            patchWidth,
+            patchHeight,
             hashNoise(gridX + 14, gridY + 3) * Math.PI,
             0,
             Math.PI * 2,
           );
           context.fill();
+
+          context.strokeStyle = colorChannelsToCss(mixColorChannels(shadow, alt, 0.4), 0.18);
+          context.lineWidth = 2;
+          context.beginPath();
+          context.moveTo(gridX * cellSize + 4, gridY * cellSize + hashNoise(gridX + 17, gridY + 21) * cellSize);
+          context.lineTo((gridX + 1) * cellSize - 4, gridY * cellSize + hashNoise(gridX + 22, gridY + 27) * cellSize);
+          context.stroke();
         }
       }
 
@@ -784,7 +813,7 @@
           : 0;
       if (riverMix > 0) {
         context.strokeStyle = colorChannelsToCss([84, 154, 194], 0.22 + riverMix * 0.18);
-        context.lineWidth = 22;
+        context.lineWidth = 28;
         context.beginPath();
         context.moveTo(-32, 90);
         for (let x = -32; x <= this.groundTextureCanvas.width + 32; x += 32) {
@@ -794,17 +823,33 @@
         context.stroke();
       }
 
-      for (let index = 0; index < 44; index += 1) {
+      for (let index = 0; index < 80; index += 1) {
         const x = hashNoise(index * 2.1, 7.3) * this.groundTextureCanvas.width;
         const y = hashNoise(index * 1.7, 12.4) * this.groundTextureCanvas.height;
-        const radius = 5 + hashNoise(index * 0.9, 2.8) * 16;
-        context.fillStyle = colorChannelsToCss(mixColorChannels(base, detail, 0.5), 0.08);
+        const radius = 8 + hashNoise(index * 0.9, 2.8) * 24;
+        context.fillStyle = colorChannelsToCss(mixColorChannels(base, shadow, 0.38), 0.12);
         context.beginPath();
         context.arc(x, y, radius, 0, Math.PI * 2);
         context.fill();
       }
 
+      for (let index = 0; index < 120; index += 1) {
+        const x = hashNoise(index * 1.3, 31.7) * this.groundTextureCanvas.width;
+        const y = hashNoise(index * 1.1, 17.4) * this.groundTextureCanvas.height;
+        const length = 6 + hashNoise(index * 2.7, 9.2) * 14;
+        context.strokeStyle = colorChannelsToCss(mixColorChannels(highlight, detail, 0.4), 0.18);
+        context.lineWidth = 1.2;
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x + length, y - length * 0.22);
+        context.stroke();
+      }
+
       this.groundTexture.needsUpdate = true;
+      if (this.ground && this.ground.material) {
+        this.ground.material.map = this.groundTexture;
+        this.ground.material.needsUpdate = true;
+      }
     }
 
     updateGroundAppearance(biomeBlend) {
@@ -867,26 +912,57 @@
       });
     }
 
-    updateCamera(trainPose, speedRatio) {
+    updateGroundMotion(trainPose) {
       if (!trainPose) {
         return;
       }
 
-      const lookAhead = 36 + speedRatio * 58;
-      const followBack = 64 + speedRatio * 42;
-      const height = 92 + speedRatio * 34;
-      const sideBias = 10;
+      const repeatX = this.groundTexture.repeat.x;
+      const repeatY = this.groundTexture.repeat.y;
+      const offsetScaleX = repeatX / this.groundWorldSize;
+      const offsetScaleY = repeatY / this.groundWorldSize;
+      const offsetX = ((trainPose.x * offsetScaleX) % 1 + 1) % 1;
+      const offsetY = ((-trainPose.y * offsetScaleY) % 1 + 1) % 1;
+      this.groundTexture.offset.set(offsetX, offsetY);
+    }
+
+    updateCamera(trainPose, renderedUnits, trainLength, speedRatio) {
+      if (!trainPose) {
+        return;
+      }
+
+      const leadUnit = renderedUnits && renderedUnits.length ? renderedUnits[0] : null;
+      const tailUnit = renderedUnits && renderedUnits.length ? renderedUnits[renderedUnits.length - 1] : null;
+      const frontX = leadUnit && leadUnit.frontX != null
+        ? leadUnit.frontX
+        : trainPose.x + Math.cos(trainPose.heading) * trainLength * 0.5;
+      const frontZ = leadUnit && leadUnit.frontY != null
+        ? leadUnit.frontY
+        : trainPose.y + Math.sin(trainPose.heading) * trainLength * 0.5;
+      const rearX = tailUnit && tailUnit.rearX != null
+        ? tailUnit.rearX
+        : trainPose.x - Math.cos(trainPose.heading) * trainLength * 0.5;
+      const rearZ = tailUnit && tailUnit.rearY != null
+        ? tailUnit.rearY
+        : trainPose.y - Math.sin(trainPose.heading) * trainLength * 0.5;
+      const consistCenterX = (frontX + rearX) * 0.5;
+      const consistCenterZ = (frontZ + rearZ) * 0.5;
+      const dynamicZoom = 1 + speedRatio * 0.72;
+      const lookAhead = 10 + trainLength * 0.11 + speedRatio * 70;
+      const centerBack = 42 + trainLength * 0.34 + speedRatio * 42;
+      const height = (44 + trainLength * 0.24) * dynamicZoom;
+      const sideBias = 7 + speedRatio * 5;
       const normalX = -Math.sin(trainPose.heading);
       const normalZ = Math.cos(trainPose.heading);
       const desiredTarget = new THREE.Vector3(
-        trainPose.x + Math.cos(trainPose.heading) * lookAhead,
-        5,
-        trainPose.y + Math.sin(trainPose.heading) * lookAhead,
+        consistCenterX + Math.cos(trainPose.heading) * lookAhead,
+        4,
+        consistCenterZ + Math.sin(trainPose.heading) * lookAhead,
       );
       const desiredPosition = new THREE.Vector3(
-        trainPose.x - Math.cos(trainPose.heading) * followBack + normalX * sideBias,
+        consistCenterX - Math.cos(trainPose.heading) * centerBack + normalX * sideBias,
         height,
-        trainPose.y - Math.sin(trainPose.heading) * followBack + normalZ * sideBias,
+        consistCenterZ - Math.sin(trainPose.heading) * centerBack + normalZ * sideBias,
       );
 
       if (!this.cameraReady) {
@@ -903,9 +979,10 @@
       this.sunLight.target.position.set(trainPose.x, 0, trainPose.y);
       this.root.add(this.sunLight.target);
       this.ground.position.set(trainPose.x, 0, trainPose.y);
+      this.updateGroundMotion(trainPose);
     }
 
-    renderFrame({ trainPose, renderedUnits, activeStationIndex, overspeedTimer, derailment, maxLineSpeed, speed, biomeBlend }) {
+    renderFrame({ trainPose, renderedUnits, trainLength, activeStationIndex, overspeedTimer, derailment, maxLineSpeed, speed, biomeBlend }) {
       if (!this.available || !this.routeState) {
         return;
       }
@@ -915,7 +992,12 @@
       this.updateSignals();
       this.updateStations(activeStationIndex);
       this.updateTrain(renderedUnits, overspeedTimer, derailment);
-      this.updateCamera(trainPose, Math.max(0, Math.min(1.2, speed / Math.max(maxLineSpeed, 1e-6))));
+      this.updateCamera(
+        trainPose,
+        renderedUnits,
+        trainLength,
+        Math.max(0, Math.min(1.2, speed / Math.max(maxLineSpeed, 1e-6))),
+      );
       this.renderer.render(this.scene, this.camera);
     }
   }
