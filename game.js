@@ -1,7 +1,8 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-const introCard = document.getElementById("introCard");
+const appShell = document.getElementById("appShell");
+const introCard = document.getElementById("coverScreen");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -2564,10 +2565,13 @@ function startRun() {
     return;
   }
 
+  appShell.classList.remove("hidden");
   state = createInitialState();
   state.started = true;
   introCard.classList.add("hidden");
   finishCard.classList.add("hidden");
+  document.body.classList.remove("cover-active");
+  resizeCanvas();
   state.message = "Departing Origin";
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
   updateUi();
@@ -2577,6 +2581,7 @@ startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
 
 async function initializeGame() {
+  document.body.classList.add("cover-active");
   statusText.textContent = "Loading settings";
   subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
 
