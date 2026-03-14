@@ -36,6 +36,22 @@
     return a + (b - a) * t;
   }
 
+  function normalizeAngle(angle) {
+    let normalized = angle;
+    while (normalized > Math.PI) {
+      normalized -= Math.PI * 2;
+    }
+    while (normalized < -Math.PI) {
+      normalized += Math.PI * 2;
+    }
+    return normalized;
+  }
+
+  function lerpAngle(current, target, t) {
+    const delta = normalizeAngle(target - current);
+    return current + delta * t;
+  }
+
   function hashNoise(x, y) {
     const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
     return value - Math.floor(value);
@@ -130,6 +146,8 @@
       this.cameraReady = false;
       this.cameraPosition = null;
       this.cameraTarget = null;
+      this.cameraHeading = 0;
+      this.lastCameraUpdateTime = 0;
       this.lastViewportWidth = 0;
       this.lastViewportHeight = 0;
       this.groundTextureKey = "";
@@ -282,6 +300,7 @@
       this.stationRefs = [];
       this.trainMeshes = [];
       this.cameraReady = false;
+      this.lastCameraUpdateTime = 0;
 
       this.buildTrack();
       this.buildStations();
@@ -296,6 +315,9 @@
 
     buildTrack() {
       const { route, trackWidth, sampleRoute } = this.routeState;
+      const visualGauge = trackWidth * 0.84;
+      const bedWidth = visualGauge * 2.45;
+      const sleeperWidth = visualGauge * 1.95;
       const sampleStep = 12;
       const samples = [];
       for (let distance = 0; distance <= route.totalLength; distance += sampleStep) {
@@ -321,7 +343,7 @@
         side: THREE.DoubleSide,
       });
 
-      const bedMesh = this.createRibbonMesh(samples, trackWidth * 2.6, 0.1, bedMaterial);
+      const bedMesh = this.createRibbonMesh(samples, bedWidth, 0.1, bedMaterial);
       bedMesh.receiveShadow = true;
       this.trackGroup.add(bedMesh);
 
@@ -329,8 +351,8 @@
         const normalX = -Math.sin(sample.heading);
         const normalZ = Math.cos(sample.heading);
         return {
-          x: sample.x + normalX * trackWidth * 0.5,
-          z: sample.z + normalZ * trackWidth * 0.5,
+          x: sample.x + normalX * visualGauge * 0.5,
+          z: sample.z + normalZ * visualGauge * 0.5,
           heading: sample.heading,
         };
       });
@@ -338,8 +360,8 @@
         const normalX = -Math.sin(sample.heading);
         const normalZ = Math.cos(sample.heading);
         return {
-          x: sample.x - normalX * trackWidth * 0.5,
-          z: sample.z - normalZ * trackWidth * 0.5,
+          x: sample.x - normalX * visualGauge * 0.5,
+          z: sample.z - normalZ * visualGauge * 0.5,
           heading: sample.heading,
         };
       });
@@ -352,7 +374,7 @@
       rightRail.receiveShadow = true;
       this.trackGroup.add(leftRail, rightRail);
 
-      const sleeperGeometry = new THREE.BoxGeometry(trackWidth * 1.65, 0.16, 1.7);
+      const sleeperGeometry = new THREE.BoxGeometry(sleeperWidth, 0.16, 1.7);
       const sleeperMaterial = new THREE.MeshStandardMaterial({
         color: 0x8d6c4e,
         roughness: 0.98,
@@ -751,9 +773,15 @@
 
       const primaryPalette = getBiomePalette(biomeBlend.primary);
       const secondaryPalette = getBiomePalette(biomeBlend.secondary);
-      const base = mixColorChannels(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
-      const alt = mixColorChannels(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
-      const detail = mixColorChannels(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
+      const biomeBase = mixColorChannels(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
+      const biomeAlt = mixColorChannels(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
+      const biomeDetail = mixColorChannels(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
+      const neutralBase = [136, 165, 104];
+      const neutralAlt = [118, 146, 92];
+      const neutralDetail = [183, 173, 118];
+      const base = mixColorChannels(neutralBase, biomeBase, 0.35);
+      const alt = mixColorChannels(neutralAlt, biomeAlt, 0.35);
+      const detail = mixColorChannels(neutralDetail, biomeDetail, 0.3);
       const shadow = mixColorChannels(base, [36, 42, 38], 0.2);
       const highlight = mixColorChannels(detail, [255, 255, 255], 0.18);
 
@@ -858,21 +886,21 @@
       }
 
       const colors = {
-        green: "#7ea666",
-        desert: "#cba86a",
-        snow: "#cdd9e0",
-        mountain: "#7d857f",
-        river: "#6a958b",
-        farmland: "#a8945e",
-        autumn: "#9c6a43",
-        marsh: "#69846b",
-        canyon: "#b06e50",
+        green: "#88aa68",
+        desert: "#96a86f",
+        snow: "#9db08f",
+        mountain: "#87a06f",
+        river: "#7da27c",
+        farmland: "#97a167",
+        autumn: "#928d5f",
+        marsh: "#75906d",
+        canyon: "#9d9066",
       };
       const primary = new THREE.Color(colors[biomeBlend.primary] || colors.green);
       const secondary = new THREE.Color(colors[biomeBlend.secondary] || colors.green);
       primary.lerp(secondary, biomeBlend.mix || 0);
       this.ground.material.color.copy(primary);
-      this.scene.fog.color.copy(primary).lerp(new THREE.Color("#91b6d1"), 0.36);
+      this.scene.fog.color.copy(primary).lerp(new THREE.Color("#9db58a"), 0.28);
       this.rebuildGroundTexture(biomeBlend);
     }
 
@@ -931,6 +959,14 @@
         return;
       }
 
+      const now = global.performance && typeof global.performance.now === "function"
+        ? global.performance.now()
+        : Date.now();
+      const deltaSeconds = this.lastCameraUpdateTime > 0
+        ? Math.max(1 / 240, Math.min(0.08, (now - this.lastCameraUpdateTime) / 1000))
+        : 1 / 60;
+      this.lastCameraUpdateTime = now;
+
       const leadUnit = renderedUnits && renderedUnits.length ? renderedUnits[0] : null;
       const tailUnit = renderedUnits && renderedUnits.length ? renderedUnits[renderedUnits.length - 1] : null;
       const frontX = leadUnit && leadUnit.frontX != null
@@ -951,18 +987,31 @@
       const lookAhead = 10 + trainLength * 0.11 + speedRatio * 70;
       const centerBack = 42 + trainLength * 0.34 + speedRatio * 42;
       const height = (44 + trainLength * 0.24) * dynamicZoom;
-      const sideBias = 7 + speedRatio * 5;
-      const normalX = -Math.sin(trainPose.heading);
-      const normalZ = Math.cos(trainPose.heading);
+      const headingDelta = Math.abs(normalizeAngle(trainPose.heading - this.cameraHeading));
+
+      if (!this.cameraReady) {
+        this.cameraHeading = trainPose.heading;
+      } else {
+        const headingFollowRate = lerp(1.9, 0.85, Math.min(1, headingDelta / 0.7));
+        const headingBlend = 1 - Math.exp(-headingFollowRate * deltaSeconds);
+        this.cameraHeading = lerpAngle(this.cameraHeading, trainPose.heading, headingBlend);
+      }
+
+      const sideExposure = Math.min(1, headingDelta / 0.55);
+      const sideBias = 7 + speedRatio * 5 + sideExposure * (8 + speedRatio * 4);
+      const normalX = -Math.sin(this.cameraHeading);
+      const normalZ = Math.cos(this.cameraHeading);
+      const forwardX = Math.cos(this.cameraHeading);
+      const forwardZ = Math.sin(this.cameraHeading);
       const desiredTarget = new THREE.Vector3(
-        consistCenterX + Math.cos(trainPose.heading) * lookAhead,
-        4,
-        consistCenterZ + Math.sin(trainPose.heading) * lookAhead,
+        consistCenterX + forwardX * (lookAhead * (1 - sideExposure * 0.35)) + normalX * sideExposure * 3.5,
+        4 + sideExposure * 1.2,
+        consistCenterZ + forwardZ * (lookAhead * (1 - sideExposure * 0.35)) + normalZ * sideExposure * 3.5,
       );
       const desiredPosition = new THREE.Vector3(
-        consistCenterX - Math.cos(trainPose.heading) * centerBack + normalX * sideBias,
-        height,
-        consistCenterZ - Math.sin(trainPose.heading) * centerBack + normalZ * sideBias,
+        consistCenterX - forwardX * (centerBack * (1 - sideExposure * 0.18)) + normalX * sideBias,
+        height + sideExposure * 6,
+        consistCenterZ - forwardZ * (centerBack * (1 - sideExposure * 0.18)) + normalZ * sideBias,
       );
 
       if (!this.cameraReady) {
