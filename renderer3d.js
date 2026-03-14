@@ -28,6 +28,95 @@
     }
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function hashNoise(x, y) {
+    const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453123;
+    return value - Math.floor(value);
+  }
+
+  function getBiomePalette(theme) {
+    if (theme === "desert") {
+      return {
+        base: [197, 168, 103],
+        alt: [173, 145, 84],
+        detail: [151, 123, 66],
+      };
+    }
+    if (theme === "snow") {
+      return {
+        base: [214, 225, 232],
+        alt: [173, 193, 207],
+        detail: [244, 248, 252],
+      };
+    }
+    if (theme === "mountain") {
+      return {
+        base: [120, 130, 126],
+        alt: [90, 98, 94],
+        detail: [68, 76, 74],
+      };
+    }
+    if (theme === "river") {
+      return {
+        base: [98, 143, 104],
+        alt: [72, 125, 128],
+        detail: [80, 160, 194],
+      };
+    }
+    if (theme === "farmland") {
+      return {
+        base: [167, 152, 92],
+        alt: [142, 126, 74],
+        detail: [204, 186, 111],
+      };
+    }
+    if (theme === "autumn") {
+      return {
+        base: [149, 103, 58],
+        alt: [118, 74, 42],
+        detail: [191, 137, 72],
+      };
+    }
+    if (theme === "marsh") {
+      return {
+        base: [91, 121, 90],
+        alt: [73, 97, 76],
+        detail: [110, 146, 124],
+      };
+    }
+    if (theme === "canyon") {
+      return {
+        base: [170, 103, 73],
+        alt: [132, 78, 56],
+        detail: [209, 147, 109],
+      };
+    }
+    return {
+      base: [123, 156, 86],
+      alt: [84, 129, 69],
+      detail: [90, 128, 58],
+    };
+  }
+
+  function mixColorChannels(colorA, colorB, t) {
+    return [
+      lerp(colorA[0], colorB[0], t),
+      lerp(colorA[1], colorB[1], t),
+      lerp(colorA[2], colorB[2], t),
+    ];
+  }
+
+  function colorChannelsToCss(color, alpha = 1) {
+    return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${alpha})`;
+  }
+
   class TrainDriver3DInsetRenderer {
     constructor({ container, statusElement }) {
       this.container = container;
@@ -41,6 +130,9 @@
       this.cameraReady = false;
       this.cameraPosition = null;
       this.cameraTarget = null;
+      this.lastViewportWidth = 0;
+      this.lastViewportHeight = 0;
+      this.groundTextureKey = "";
 
       if (!this.available) {
         if (this.statusElement) {
@@ -57,7 +149,11 @@
       this.renderer.setPixelRatio(Math.min(global.devicePixelRatio || 1, 2));
       this.renderer.shadowMap.enabled = true;
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      if ("outputColorSpace" in this.renderer && THREE.SRGBColorSpace) {
+        this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      } else if ("outputEncoding" in this.renderer && THREE.sRGBEncoding) {
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+      }
       this.renderer.domElement.setAttribute("aria-hidden", "true");
       this.container.appendChild(this.renderer.domElement);
 
@@ -70,10 +166,29 @@
       this.root = new THREE.Group();
       this.scene.add(this.root);
 
+      this.groundTextureCanvas = global.document.createElement("canvas");
+      this.groundTextureCanvas.width = 512;
+      this.groundTextureCanvas.height = 512;
+      this.groundTextureContext = this.groundTextureCanvas.getContext("2d");
+      this.groundTexture = new THREE.CanvasTexture(this.groundTextureCanvas);
+      this.groundTexture.wrapS = THREE.RepeatWrapping;
+      this.groundTexture.wrapT = THREE.RepeatWrapping;
+      this.groundTexture.repeat.set(34, 34);
+      if (this.renderer.capabilities?.getMaxAnisotropy) {
+        this.groundTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+      }
+      if ("colorSpace" in this.groundTexture && THREE.SRGBColorSpace) {
+        this.groundTexture.colorSpace = THREE.SRGBColorSpace;
+      } else if ("encoding" in this.groundTexture && THREE.sRGBEncoding) {
+        this.groundTexture.encoding = THREE.sRGBEncoding;
+      }
+      this.groundTexture.needsUpdate = true;
+
       this.ground = new THREE.Mesh(
         new THREE.PlaneGeometry(40000, 40000),
         new THREE.MeshStandardMaterial({
           color: 0x6c8d55,
+          map: this.groundTexture,
           roughness: 0.98,
           metalness: 0.02,
         }),
@@ -109,6 +224,11 @@
       this.fillLight.position.set(-120, 140, -140);
       this.scene.add(this.fillLight);
 
+      this.resizeObserver = typeof ResizeObserver === "function"
+        ? new ResizeObserver(() => this.resize())
+        : null;
+      this.resizeObserver?.observe(this.container);
+
       this.resize();
     }
 
@@ -120,6 +240,12 @@
       const rect = this.container.getBoundingClientRect();
       const width = Math.max(1, Math.round(rect.width));
       const height = Math.max(1, Math.round(rect.height));
+      if (width === this.lastViewportWidth && height === this.lastViewportHeight) {
+        return;
+      }
+
+      this.lastViewportWidth = width;
+      this.lastViewportHeight = height;
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
@@ -591,7 +717,97 @@
       });
     }
 
-    updateGroundColor(biomeBlend) {
+    rebuildGroundTexture(biomeBlend) {
+      const context = this.groundTextureContext;
+      if (!context || !biomeBlend) {
+        return;
+      }
+
+      const quantizedMix = Math.round(clamp(biomeBlend.mix || 0, 0, 1) * 8);
+      const textureKey = `${biomeBlend.primary}:${biomeBlend.secondary}:${quantizedMix}`;
+      if (textureKey === this.groundTextureKey) {
+        return;
+      }
+      this.groundTextureKey = textureKey;
+
+      const primaryPalette = getBiomePalette(biomeBlend.primary);
+      const secondaryPalette = getBiomePalette(biomeBlend.secondary);
+      const base = mixColorChannels(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
+      const alt = mixColorChannels(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
+      const detail = mixColorChannels(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
+
+      context.clearRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
+      const gradient = context.createLinearGradient(0, 0, 0, this.groundTextureCanvas.height);
+      gradient.addColorStop(0, colorChannelsToCss(mixColorChannels(base, detail, 0.12)));
+      gradient.addColorStop(0.52, colorChannelsToCss(base));
+      gradient.addColorStop(1, colorChannelsToCss(mixColorChannels(base, alt, 0.28)));
+      context.fillStyle = gradient;
+      context.fillRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
+
+      const cellSize = 32;
+      for (let gridY = 0; gridY < this.groundTextureCanvas.height / cellSize; gridY += 1) {
+        for (let gridX = 0; gridX < this.groundTextureCanvas.width / cellSize; gridX += 1) {
+          const seed = hashNoise(gridX * 0.7, gridY * 0.7);
+          const tone = hashNoise(gridX * 1.9 + 4, gridY * 1.7 + 9);
+          let fill = base;
+          if (seed > 0.72) {
+            fill = tone > 0.5 ? mixColorChannels(base, alt, 0.55) : alt;
+          } else if (seed > 0.44) {
+            fill = tone > 0.5 ? mixColorChannels(alt, detail, 0.35) : alt;
+          } else if (tone > 0.45) {
+            fill = mixColorChannels(base, detail, 0.25);
+          }
+
+          context.fillStyle = colorChannelsToCss(fill, 0.88);
+          context.fillRect(gridX * cellSize, gridY * cellSize, cellSize + 1, cellSize + 1);
+
+          const tuftSize = 4 + hashNoise(gridX + 2, gridY + 5) * 10;
+          context.fillStyle = colorChannelsToCss(mixColorChannels(detail, alt, 0.35), 0.34);
+          context.beginPath();
+          context.ellipse(
+            gridX * cellSize + hashNoise(gridX + 8, gridY + 11) * cellSize,
+            gridY * cellSize + hashNoise(gridX + 12, gridY + 15) * cellSize,
+            tuftSize,
+            tuftSize * 0.66,
+            hashNoise(gridX + 14, gridY + 3) * Math.PI,
+            0,
+            Math.PI * 2,
+          );
+          context.fill();
+        }
+      }
+
+      const riverMix = biomeBlend.primary === "river"
+        ? Math.max(0.45, 1 - (biomeBlend.mix || 0) * 0.4)
+        : biomeBlend.secondary === "river"
+          ? biomeBlend.mix || 0
+          : 0;
+      if (riverMix > 0) {
+        context.strokeStyle = colorChannelsToCss([84, 154, 194], 0.22 + riverMix * 0.18);
+        context.lineWidth = 22;
+        context.beginPath();
+        context.moveTo(-32, 90);
+        for (let x = -32; x <= this.groundTextureCanvas.width + 32; x += 32) {
+          const y = 90 + Math.sin(x * 0.025) * 26 + Math.cos(x * 0.011) * 14;
+          context.lineTo(x, y);
+        }
+        context.stroke();
+      }
+
+      for (let index = 0; index < 44; index += 1) {
+        const x = hashNoise(index * 2.1, 7.3) * this.groundTextureCanvas.width;
+        const y = hashNoise(index * 1.7, 12.4) * this.groundTextureCanvas.height;
+        const radius = 5 + hashNoise(index * 0.9, 2.8) * 16;
+        context.fillStyle = colorChannelsToCss(mixColorChannels(base, detail, 0.5), 0.08);
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      this.groundTexture.needsUpdate = true;
+    }
+
+    updateGroundAppearance(biomeBlend) {
       if (!biomeBlend) {
         return;
       }
@@ -612,6 +828,7 @@
       primary.lerp(secondary, biomeBlend.mix || 0);
       this.ground.material.color.copy(primary);
       this.scene.fog.color.copy(primary).lerp(new THREE.Color("#91b6d1"), 0.36);
+      this.rebuildGroundTexture(biomeBlend);
     }
 
     updateSignals() {
@@ -694,7 +911,7 @@
       }
 
       this.resize();
-      this.updateGroundColor(biomeBlend);
+      this.updateGroundAppearance(biomeBlend);
       this.updateSignals();
       this.updateStations(activeStationIndex);
       this.updateTrain(renderedUnits, overspeedTimer, derailment);
