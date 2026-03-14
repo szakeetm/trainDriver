@@ -296,6 +296,24 @@ button {
   font-size: 1rem;
 }
 
+.speed-card {
+  background: rgba(8, 20, 34, 0.95);
+  border-color: rgba(145, 214, 255, 0.2);
+}
+
+.speed-card h3,
+.speed-card .secondary {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(4, 12, 22, 0.5);
+}
+
+.speed-card .secondary {
+  margin-top: 4px;
+  background: rgba(4, 12, 22, 0.42);
+}
+
 .stat-card p,
 .control-card p,
 .notes-list li {

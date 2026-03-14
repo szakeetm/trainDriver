@@ -329,7 +329,7 @@ function formatTime(totalSeconds) {
 }
 
 function roundDisplayDistance(distance) {
-  return Math.round(distance / 10) * 10;
+  return Math.round(distance / 50) * 50;
 }
 
 function syncAssistLegend() {
@@ -1484,7 +1484,7 @@ function updateUi() {
   lineLimitSecondary.textContent = shownLimit == null
     ? "Line unrestricted"
     : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
-  distanceToStation.textContent = nextStation ? `${Math.max(0, Math.round(gap))} m` : "Arrived";
+  distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
   elapsedTime.textContent = formatTime(state.elapsed);
   penaltyTime.textContent = state.penalties.toFixed(1);
@@ -2250,7 +2250,7 @@ function drawHudOverlay(width, height) {
   ctx.fillText(`Next stop: ${nextStation ? nextStation.name : "Done"}`, 34, 46);
   ctx.font = "500 12px Inter, sans-serif";
   ctx.fillStyle = "rgba(223, 242, 255, 0.78)";
-  ctx.fillText(`Distance ${Math.round(gap)} m`, 34, 68);
+  ctx.fillText(`Distance ${Math.max(0, roundDisplayDistance(gap))} m`, 34, 68);
   ctx.fillText(`Consist ${TRAIN_TOTAL_LENGTH.toFixed(0)} m`, 34, 88);
   ctx.fillText(`Scenery ${getCurrentBiomeLabel()}`, 34, 108);
   ctx.restore();
