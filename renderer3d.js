@@ -121,6 +121,70 @@
     };
   }
 
+  function getBiomeOverlayPalette(theme) {
+    if (theme === "desert") {
+      return {
+        base: [197, 168, 103, 0.44],
+        alt: [173, 145, 84, 0.34],
+        detail: [151, 123, 66, 0.18],
+      };
+    }
+    if (theme === "snow") {
+      return {
+        base: [214, 225, 232, 0.48],
+        alt: [173, 193, 207, 0.32],
+        detail: [244, 248, 252, 0.22],
+      };
+    }
+    if (theme === "mountain") {
+      return {
+        base: [120, 130, 126, 0.42],
+        alt: [90, 98, 94, 0.36],
+        detail: [68, 76, 74, 0.22],
+      };
+    }
+    if (theme === "river") {
+      return {
+        base: [98, 143, 104, 0.38],
+        alt: [72, 125, 128, 0.34],
+        detail: [80, 160, 194, 0.22],
+      };
+    }
+    if (theme === "farmland") {
+      return {
+        base: [167, 152, 92, 0.42],
+        alt: [142, 126, 74, 0.34],
+        detail: [204, 186, 111, 0.18],
+      };
+    }
+    if (theme === "autumn") {
+      return {
+        base: [149, 103, 58, 0.42],
+        alt: [118, 74, 42, 0.34],
+        detail: [191, 137, 72, 0.2],
+      };
+    }
+    if (theme === "marsh") {
+      return {
+        base: [91, 121, 90, 0.42],
+        alt: [73, 97, 76, 0.35],
+        detail: [110, 146, 124, 0.2],
+      };
+    }
+    if (theme === "canyon") {
+      return {
+        base: [170, 103, 73, 0.42],
+        alt: [132, 78, 56, 0.34],
+        detail: [209, 147, 109, 0.2],
+      };
+    }
+    return {
+      base: [123, 156, 86, 0.42],
+      alt: [84, 129, 69, 0.34],
+      detail: [90, 128, 58, 0.18],
+    };
+  }
+
   function mixColorChannels(colorA, colorB, t) {
     return [
       lerp(colorA[0], colorB[0], t),
@@ -131,6 +195,19 @@
 
   function colorChannelsToCss(color, alpha = 1) {
     return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${alpha})`;
+  }
+
+  function mixColorWithAlpha(colorA, colorB, t) {
+    return [
+      lerp(colorA[0], colorB[0], t),
+      lerp(colorA[1], colorB[1], t),
+      lerp(colorA[2], colorB[2], t),
+      lerp(colorA[3], colorB[3], t),
+    ];
+  }
+
+  function rgbaColorToCss(color) {
+    return `rgba(${Math.round(color[0])}, ${Math.round(color[1])}, ${Math.round(color[2])}, ${color[3].toFixed(3)})`;
   }
 
   class TrainDriver3DInsetRenderer {
@@ -176,9 +253,9 @@
       this.container.appendChild(this.renderer.domElement);
 
       this.scene = new THREE.Scene();
-      this.scene.fog = new THREE.Fog(0x6b8ea8, 320, 2100);
+      this.scene.fog = new THREE.Fog(0x6b8ea8, 360, 2500);
 
-      this.camera = new THREE.PerspectiveCamera(38, 1, 1, 5000);
+      this.camera = new THREE.PerspectiveCamera(48, 1, 1, 5000);
       this.scene.add(this.camera);
 
       this.root = new THREE.Group();
@@ -706,7 +783,7 @@
 
     buildTrainMeshes() {
       const { trainConsist } = this.routeState;
-      trainConsist.forEach((unit) => {
+      trainConsist.slice(0, 2).forEach((unit) => {
         const group = new THREE.Group();
 
         const bodyMaterial = new THREE.MeshStandardMaterial({
@@ -771,106 +848,77 @@
       }
       this.groundTextureKey = textureKey;
 
-      const primaryPalette = getBiomePalette(biomeBlend.primary);
-      const secondaryPalette = getBiomePalette(biomeBlend.secondary);
-      const biomeBase = mixColorChannels(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
-      const biomeAlt = mixColorChannels(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
-      const biomeDetail = mixColorChannels(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
-      const neutralBase = [136, 165, 104];
-      const neutralAlt = [118, 146, 92];
-      const neutralDetail = [183, 173, 118];
-      const base = mixColorChannels(neutralBase, biomeBase, 0.35);
-      const alt = mixColorChannels(neutralAlt, biomeAlt, 0.35);
-      const detail = mixColorChannels(neutralDetail, biomeDetail, 0.3);
-      const shadow = mixColorChannels(base, [36, 42, 38], 0.2);
-      const highlight = mixColorChannels(detail, [255, 255, 255], 0.18);
+      const primaryPalette = getBiomeOverlayPalette(biomeBlend.primary);
+      const secondaryPalette = getBiomeOverlayPalette(biomeBlend.secondary);
+      const base = mixColorWithAlpha(primaryPalette.base, secondaryPalette.base, biomeBlend.mix || 0);
+      const alt = mixColorWithAlpha(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix || 0);
+      const detail = mixColorWithAlpha(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix || 0);
 
       context.clearRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
       const gradient = context.createLinearGradient(0, 0, 0, this.groundTextureCanvas.height);
-      gradient.addColorStop(0, colorChannelsToCss(mixColorChannels(base, highlight, 0.18)));
-      gradient.addColorStop(0.52, colorChannelsToCss(base));
-      gradient.addColorStop(1, colorChannelsToCss(mixColorChannels(base, shadow, 0.32)));
+      gradient.addColorStop(0, "#a6c57d");
+      gradient.addColorStop(0.36, "#88aa68");
+      gradient.addColorStop(0.68, "#ccb57e");
+      gradient.addColorStop(1, "#769760");
       context.fillStyle = gradient;
       context.fillRect(0, 0, this.groundTextureCanvas.width, this.groundTextureCanvas.height);
 
-      const cellSize = 48;
+      const cellSize = 74;
       for (let gridY = 0; gridY < this.groundTextureCanvas.height / cellSize; gridY += 1) {
         for (let gridX = 0; gridX < this.groundTextureCanvas.width / cellSize; gridX += 1) {
-          const seed = hashNoise(gridX * 0.7, gridY * 0.7);
-          const tone = hashNoise(gridX * 1.9 + 4, gridY * 1.7 + 9);
-          let fill = base;
-          if (seed > 0.72) {
-            fill = tone > 0.5 ? mixColorChannels(base, alt, 0.55) : alt;
-          } else if (seed > 0.44) {
-            fill = tone > 0.5 ? mixColorChannels(alt, detail, 0.35) : alt;
-          } else if (tone > 0.45) {
-            fill = mixColorChannels(base, detail, 0.25);
+          const biomeSeed = hashNoise(gridX * 0.7, gridY * 0.7);
+          const toneSeed = hashNoise(gridX * 1.9 + 4, gridY * 1.7 + 9);
+          let topColor = base;
+          let bottomColor = base;
+
+          if (biomeSeed > 0.72) {
+            topColor = toneSeed > 0.5 ? mixColorWithAlpha(base, alt, 0.55) : alt;
+            bottomColor = toneSeed > 0.5 ? mixColorWithAlpha(base, alt, 0.55) : alt;
+          } else if (biomeSeed > 0.44) {
+            topColor = toneSeed > 0.5 ? mixColorWithAlpha(alt, detail, 0.35) : alt;
+            bottomColor = toneSeed > 0.5 ? mixColorWithAlpha(alt, detail, 0.35) : alt;
+          } else {
+            topColor = toneSeed > 0.45 ? mixColorWithAlpha(base, detail, 0.25) : base;
+            bottomColor = toneSeed > 0.45 ? mixColorWithAlpha(base, detail, 0.25) : base;
           }
 
-          context.fillStyle = colorChannelsToCss(fill, 0.96);
-          context.fillRect(gridX * cellSize, gridY * cellSize, cellSize + 1, cellSize + 1);
+          const tileX = gridX * cellSize;
+          const tileY = gridY * cellSize;
+          const tileGradient = context.createLinearGradient(0, tileY, 0, tileY + cellSize);
+          tileGradient.addColorStop(0, rgbaColorToCss(topColor));
+          tileGradient.addColorStop(1, rgbaColorToCss(bottomColor));
+          context.fillStyle = tileGradient;
+          context.fillRect(tileX, tileY, cellSize + 1, cellSize + 1);
 
-          const patchWidth = 10 + hashNoise(gridX + 2, gridY + 5) * 22;
-          const patchHeight = 8 + hashNoise(gridX + 8, gridY + 11) * 16;
-          context.fillStyle = colorChannelsToCss(mixColorChannels(detail, alt, 0.35), 0.46);
+          const tuftSize = 6 + hashNoise(gridX + 14, gridY + 3) * 16;
+          const detailColor = mixColorWithAlpha(detail, detail, 0.5);
+          context.fillStyle = rgbaColorToCss(detailColor);
           context.beginPath();
           context.ellipse(
-            gridX * cellSize + hashNoise(gridX + 8, gridY + 11) * cellSize,
-            gridY * cellSize + hashNoise(gridX + 12, gridY + 15) * cellSize,
-            patchWidth,
-            patchHeight,
-            hashNoise(gridX + 14, gridY + 3) * Math.PI,
+            tileX + hashNoise(gridX + 2, gridY + 5) * cellSize,
+            tileY + hashNoise(gridX + 8, gridY + 11) * cellSize,
+            tuftSize,
+            tuftSize * 0.6,
+            hashNoise(gridX + 12, gridY + 15) * Math.PI,
             0,
             Math.PI * 2,
           );
           context.fill();
 
-          context.strokeStyle = colorChannelsToCss(mixColorChannels(shadow, alt, 0.4), 0.18);
-          context.lineWidth = 2;
-          context.beginPath();
-          context.moveTo(gridX * cellSize + 4, gridY * cellSize + hashNoise(gridX + 17, gridY + 21) * cellSize);
-          context.lineTo((gridX + 1) * cellSize - 4, gridY * cellSize + hashNoise(gridX + 22, gridY + 27) * cellSize);
-          context.stroke();
+          const riverMix = biomeBlend.primary === "river"
+            ? Math.max(0.45, 1 - (biomeBlend.mix || 0) * 0.4)
+            : biomeBlend.secondary === "river"
+              ? biomeBlend.mix || 0
+              : 0;
+          if (riverMix > 0) {
+            const worldX = tileX;
+            const worldY = tileY;
+            const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36;
+            const riverCenter = tileX + cellSize * 0.5 + ribbon;
+            context.fillStyle = `rgba(84, 154, 194, ${(0.08 + riverMix * 0.14).toFixed(3)})`;
+            context.fillRect(riverCenter - cellSize * 0.18, tileY - 1, cellSize * 0.36, cellSize + 2);
+          }
         }
-      }
-
-      const riverMix = biomeBlend.primary === "river"
-        ? Math.max(0.45, 1 - (biomeBlend.mix || 0) * 0.4)
-        : biomeBlend.secondary === "river"
-          ? biomeBlend.mix || 0
-          : 0;
-      if (riverMix > 0) {
-        context.strokeStyle = colorChannelsToCss([84, 154, 194], 0.22 + riverMix * 0.18);
-        context.lineWidth = 28;
-        context.beginPath();
-        context.moveTo(-32, 90);
-        for (let x = -32; x <= this.groundTextureCanvas.width + 32; x += 32) {
-          const y = 90 + Math.sin(x * 0.025) * 26 + Math.cos(x * 0.011) * 14;
-          context.lineTo(x, y);
-        }
-        context.stroke();
-      }
-
-      for (let index = 0; index < 80; index += 1) {
-        const x = hashNoise(index * 2.1, 7.3) * this.groundTextureCanvas.width;
-        const y = hashNoise(index * 1.7, 12.4) * this.groundTextureCanvas.height;
-        const radius = 8 + hashNoise(index * 0.9, 2.8) * 24;
-        context.fillStyle = colorChannelsToCss(mixColorChannels(base, shadow, 0.38), 0.12);
-        context.beginPath();
-        context.arc(x, y, radius, 0, Math.PI * 2);
-        context.fill();
-      }
-
-      for (let index = 0; index < 120; index += 1) {
-        const x = hashNoise(index * 1.3, 31.7) * this.groundTextureCanvas.width;
-        const y = hashNoise(index * 1.1, 17.4) * this.groundTextureCanvas.height;
-        const length = 6 + hashNoise(index * 2.7, 9.2) * 14;
-        context.strokeStyle = colorChannelsToCss(mixColorChannels(highlight, detail, 0.4), 0.18);
-        context.lineWidth = 1.2;
-        context.beginPath();
-        context.moveTo(x, y);
-        context.lineTo(x + length, y - length * 0.22);
-        context.stroke();
       }
 
       this.groundTexture.needsUpdate = true;
@@ -928,7 +976,7 @@
         return;
       }
 
-      renderedUnits.forEach((unit, index) => {
+      renderedUnits.slice(0, 2).forEach((unit, index) => {
         const entry = this.trainMeshes[index];
         if (!entry) {
           return;
@@ -983,10 +1031,10 @@
         : trainPose.y - Math.sin(trainPose.heading) * trainLength * 0.5;
       const consistCenterX = (frontX + rearX) * 0.5;
       const consistCenterZ = (frontZ + rearZ) * 0.5;
-      const dynamicZoom = 1 + speedRatio * 0.72;
-      const lookAhead = 10 + trainLength * 0.11 + speedRatio * 70;
-      const centerBack = 42 + trainLength * 0.34 + speedRatio * 42;
-      const height = (44 + trainLength * 0.24) * dynamicZoom;
+      const dynamicZoom = 1 + speedRatio * 0.5;
+      const lookAhead = 24 + trainLength * 0.18 + speedRatio * 120;
+      const centerBack = 58 + trainLength * 0.4 + speedRatio * 58;
+      const height = (54 + trainLength * 0.27) * dynamicZoom;
       const headingDelta = Math.abs(normalizeAngle(trainPose.heading - this.cameraHeading));
 
       if (!this.cameraReady) {
@@ -1004,14 +1052,14 @@
       const forwardX = Math.cos(this.cameraHeading);
       const forwardZ = Math.sin(this.cameraHeading);
       const desiredTarget = new THREE.Vector3(
-        consistCenterX + forwardX * (lookAhead * (1 - sideExposure * 0.35)) + normalX * sideExposure * 3.5,
-        4 + sideExposure * 1.2,
-        consistCenterZ + forwardZ * (lookAhead * (1 - sideExposure * 0.35)) + normalZ * sideExposure * 3.5,
+        consistCenterX + forwardX * (lookAhead * (1 - sideExposure * 0.24)) + normalX * sideExposure * 4.5,
+        5 + sideExposure * 1.4,
+        consistCenterZ + forwardZ * (lookAhead * (1 - sideExposure * 0.24)) + normalZ * sideExposure * 4.5,
       );
       const desiredPosition = new THREE.Vector3(
-        consistCenterX - forwardX * (centerBack * (1 - sideExposure * 0.18)) + normalX * sideBias,
-        height + sideExposure * 6,
-        consistCenterZ - forwardZ * (centerBack * (1 - sideExposure * 0.18)) + normalZ * sideBias,
+        consistCenterX - forwardX * (centerBack * (1 - sideExposure * 0.12)) + normalX * (sideBias + 1.5),
+        height + sideExposure * 8,
+        consistCenterZ - forwardZ * (centerBack * (1 - sideExposure * 0.12)) + normalZ * (sideBias + 1.5),
       );
 
       if (!this.cameraReady) {

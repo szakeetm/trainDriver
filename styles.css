@@ -134,8 +134,8 @@ button {
 }
 
 .canvas-wrap {
-  --drone-inset-width: 480px;
-  --drone-inset-height: 270px;
+  --drone-inset-width: 520px;
+  --drone-inset-height: 293px;
   flex: 1;
   position: relative;
   min-height: calc(100vh - 24px);
