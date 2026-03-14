@@ -81,6 +81,22 @@
     return new THREE.Color(normalizeCssColor(colorValue));
   }
 
+  function threeColorToChannels(color) {
+    return [color.r * 255, color.g * 255, color.b * 255];
+  }
+
+  function applyChannelsToMaterial(material, channels) {
+    if (!material || !material.color || !channels) {
+      return;
+    }
+
+    material.color.setRGB(
+      clamp(channels[0], 0, 255) / 255,
+      clamp(channels[1], 0, 255) / 255,
+      clamp(channels[2], 0, 255) / 255,
+    );
+  }
+
   function applyLitFlatColor(material, colorValue, emissiveIntensity) {
     if (!material) {
       return;
@@ -261,6 +277,7 @@
       this.routeState = null;
       this.signalRefs = [];
       this.stationRefs = [];
+      this.sceneryRefs = [];
       this.trainMeshes = [];
       this.cameraReady = false;
       this.cameraPosition = null;
@@ -417,6 +434,7 @@
       clearGroup(this.trainGroup);
       this.signalRefs = [];
       this.stationRefs = [];
+      this.sceneryRefs = [];
       this.trainMeshes = [];
       this.cameraReady = false;
       this.lastCameraUpdateTime = 0;
@@ -684,6 +702,7 @@
         object.scale.setScalar(item.size * 1.15);
         applyShadowFlags(object, true, true);
         this.sceneryGroup.add(object);
+        this.sceneryRefs.push({ biomeMaterials: object.userData.biomeMaterials || [] });
       });
     }
 
@@ -691,27 +710,44 @@
       const tintShift = item.tint / 255;
       const group = new THREE.Group();
 
-      const makeMaterial = (base) => {
+      group.userData.biomeMaterials = [];
+
+      const registerBiomeMaterial = (material, biomeRole, biomeStrength = 0.24) => {
+        if (!material || !material.color) {
+          return material;
+        }
+
+        group.userData.biomeMaterials.push({
+          material,
+          baseColor: threeColorToChannels(material.color),
+          biomeRole,
+          biomeStrength,
+        });
+        return material;
+      };
+
+      const makeMaterial = (base, biomeRole = "structure", biomeStrength = 0.24, overrides = null) => {
         const color = new THREE.Color(base);
         color.offsetHSL(0, 0, tintShift);
-        return new THREE.MeshStandardMaterial({
+        return registerBiomeMaterial(new THREE.MeshStandardMaterial({
           color,
           roughness: 0.86,
           metalness: 0.05,
-        });
+          ...(overrides || {}),
+        }), biomeRole, biomeStrength);
       };
 
       if (item.kind === "tree" || item.kind === "bush") {
         const trunk = new THREE.Mesh(
           new THREE.CylinderGeometry(0.35, 0.45, item.kind === "tree" ? 3.8 : 1.6, 10),
-          makeMaterial("#70513e"),
+          makeMaterial("#70513e", "wood", 0.14),
         );
         trunk.position.y = item.kind === "tree" ? 1.9 : 0.8;
         group.add(trunk);
 
         const canopy = new THREE.Mesh(
           new THREE.SphereGeometry(item.kind === "tree" ? 2.6 : 1.8, 14, 14),
-          makeMaterial(item.kind === "tree" ? "#3d7c49" : "#4d8a57"),
+          makeMaterial(item.kind === "tree" ? "#3d7c49" : "#4d8a57", "foliage", 0.72),
         );
         canopy.position.y = item.kind === "tree" ? 5.4 : 1.9;
         canopy.scale.set(item.kind === "tree" ? 1.2 : 1.4, 1, item.kind === "tree" ? 1.1 : 1.3);
@@ -722,7 +758,7 @@
       if (item.kind === "rock" || item.kind === "stump") {
         const rock = new THREE.Mesh(
           new THREE.DodecahedronGeometry(item.kind === "rock" ? 1.7 : 1.1, 0),
-          makeMaterial(item.kind === "rock" ? "#7b8792" : "#7e5c43"),
+          makeMaterial(item.kind === "rock" ? "#7b8792" : "#7e5c43", item.kind === "rock" ? "rock" : "wood", item.kind === "rock" ? 0.3 : 0.16),
         );
         rock.position.y = item.kind === "rock" ? 1.3 : 0.7;
         rock.scale.set(1.2, 0.8, 1);
@@ -731,15 +767,16 @@
       }
 
       if (item.kind === "pond") {
+        const pondMaterial = registerBiomeMaterial(new THREE.MeshStandardMaterial({
+          color: new THREE.Color("#4f9fd0"),
+          transparent: true,
+          opacity: 0.78,
+          roughness: 0.08,
+          metalness: 0.1,
+        }), "water", 0.78);
         const pond = new THREE.Mesh(
           new THREE.CylinderGeometry(3.4, 3.8, 0.18, 20),
-          new THREE.MeshStandardMaterial({
-            color: new THREE.Color("#4f9fd0"),
-            transparent: true,
-            opacity: 0.78,
-            roughness: 0.08,
-            metalness: 0.1,
-          }),
+          pondMaterial,
         );
         pond.position.y = 0.09;
         pond.scale.set(1.4, 1, 1);
@@ -750,13 +787,13 @@
       if (item.kind === "billboard") {
         const post = new THREE.Mesh(
           new THREE.BoxGeometry(0.35, 4.4, 0.35),
-          makeMaterial("#60483a"),
+          makeMaterial("#60483a", "wood", 0.16),
         );
         post.position.y = 2.2;
         group.add(post);
         const board = new THREE.Mesh(
           new THREE.BoxGeometry(4.8, 2.2, 0.3),
-          makeMaterial(item.tint > 0 ? "#ffe28a" : "#9ad7ff"),
+          makeMaterial(item.tint > 0 ? "#ffe28a" : "#9ad7ff", "accent", 0.2),
         );
         board.position.y = 4.6;
         group.add(board);
@@ -766,12 +803,12 @@
       if (item.kind === "cactus") {
         const stem = new THREE.Mesh(
           new THREE.BoxGeometry(1.1, 4.8, 1.1),
-          makeMaterial("#3d7e50"),
+          makeMaterial("#3d7e50", "foliage", 0.6),
         );
         stem.position.y = 2.4;
         const arm = new THREE.Mesh(
           new THREE.BoxGeometry(0.8, 2.6, 0.8),
-          makeMaterial("#3d7e50"),
+          makeMaterial("#3d7e50", "foliage", 0.6),
         );
         arm.position.set(0.9, 2.5, 0);
         group.add(stem, arm);
@@ -781,20 +818,20 @@
       if (item.kind === "windmill") {
         const mast = new THREE.Mesh(
           new THREE.CylinderGeometry(0.3, 0.45, 7, 10),
-          makeMaterial("#d5dce2"),
+          makeMaterial("#d5dce2", "structure", 0.14),
         );
         mast.position.y = 3.5;
         group.add(mast);
         const hub = new THREE.Mesh(
           new THREE.SphereGeometry(0.45, 10, 10),
-          makeMaterial("#e7eef3"),
+          makeMaterial("#e7eef3", "structure", 0.12),
         );
         hub.position.y = 7.2;
         group.add(hub);
         for (let bladeIndex = 0; bladeIndex < 4; bladeIndex += 1) {
           const blade = new THREE.Mesh(
             new THREE.BoxGeometry(0.18, 2.8, 0.45),
-            makeMaterial("#f1f5f8"),
+            makeMaterial("#f1f5f8", "structure", 0.08),
           );
           blade.position.y = 7.2;
           blade.rotation.z = bladeIndex * Math.PI * 0.5 + item.rotation * 3;
@@ -807,7 +844,7 @@
 
       const building = new THREE.Mesh(
         new THREE.BoxGeometry(4.5, item.kind === "silo" ? 8 : 4.2, 4.2),
-        makeMaterial(item.kind === "barn" ? "#b34f43" : item.kind === "hut" ? "#c6935f" : item.kind === "silo" ? "#aab4bc" : "#8a7a6a"),
+        makeMaterial(item.kind === "barn" ? "#b34f43" : item.kind === "hut" ? "#c6935f" : item.kind === "silo" ? "#aab4bc" : "#8a7a6a", item.kind === "barn" ? "accent" : "structure", item.kind === "barn" ? 0.24 : 0.18),
       );
       building.position.y = item.kind === "silo" ? 4 : 2.1;
       group.add(building);
@@ -815,7 +852,7 @@
       if (item.kind !== "silo") {
         const roof = new THREE.Mesh(
           new THREE.ConeGeometry(3.6, 1.8, 4),
-          makeMaterial(item.kind === "barn" ? "#7c2c24" : "#71492f"),
+          makeMaterial(item.kind === "barn" ? "#7c2c24" : "#71492f", "wood", 0.18),
         );
         roof.position.y = item.kind === "barn" ? 5.2 : 4.8;
         roof.rotation.y = Math.PI * 0.25;
@@ -823,6 +860,45 @@
       }
 
       return group;
+    }
+
+    updateSceneryAppearance(biomeBlend) {
+      if (!biomeBlend) {
+        return;
+      }
+
+      const primaryPalette = getBiomePalette(biomeBlend.primary);
+      const secondaryPalette = getBiomePalette(biomeBlend.secondary);
+      const pickRoleColor = (palette, role) => {
+        if (role === "foliage") {
+          return mixColorChannels(palette.base, palette.alt, 0.35);
+        }
+        if (role === "wood") {
+          return mixColorChannels(palette.alt, palette.detail, 0.2);
+        }
+        if (role === "rock") {
+          return mixColorChannels(palette.alt, palette.detail, 0.55);
+        }
+        if (role === "water") {
+          return mixColorChannels(palette.detail, palette.alt, 0.7);
+        }
+        if (role === "accent") {
+          return mixColorChannels(palette.detail, palette.base, 0.3);
+        }
+        return mixColorChannels(palette.base, palette.alt, 0.55);
+      };
+
+      this.sceneryRefs.forEach(({ biomeMaterials }) => {
+        biomeMaterials.forEach(({ material, baseColor, biomeRole, biomeStrength }) => {
+          const biomeTarget = mixColorChannels(
+            pickRoleColor(primaryPalette, biomeRole),
+            pickRoleColor(secondaryPalette, biomeRole),
+            biomeBlend.mix || 0,
+          );
+          const finalColor = mixColorChannels(baseColor, biomeTarget, biomeStrength);
+          applyChannelsToMaterial(material, finalColor);
+        });
+      });
     }
 
     buildTrainMeshes() {
@@ -1133,6 +1209,7 @@
 
       this.resize();
       this.updateGroundAppearance(biomeBlend);
+      this.updateSceneryAppearance(biomeBlend);
       this.updateSignals();
       this.updateStations(activeStationIndex);
       this.updateTrain(renderedUnits, overspeedTimer, derailment);
