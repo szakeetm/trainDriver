@@ -314,7 +314,7 @@
       this.scene = new THREE.Scene();
       this.scene.fog = new THREE.Fog(0x6b8ea8, 360, 2500);
 
-      this.camera = new THREE.PerspectiveCamera(48, 1, 1, 5000);
+      this.camera = new THREE.PerspectiveCamera(48, 1, 4, 3200);
       this.scene.add(this.camera);
 
       this.root = new THREE.Group();
@@ -350,9 +350,13 @@
           map: this.groundTexture,
           roughness: 0.98,
           metalness: 0.02,
+          polygonOffset: true,
+          polygonOffsetFactor: 2,
+          polygonOffsetUnits: 2,
         }),
       );
       this.ground.rotation.x = -Math.PI * 0.5;
+      this.ground.position.y = -0.08;
       this.ground.receiveShadow = true;
       this.root.add(this.ground);
 
@@ -469,8 +473,6 @@
 
       const bedMaterial = new THREE.MeshStandardMaterial({
         color: 0x3b3a36,
-        transparent: true,
-        opacity: 0.7,
         roughness: 0.96,
         metalness: 0.04,
         side: THREE.DoubleSide,
@@ -482,7 +484,8 @@
         side: THREE.DoubleSide,
       });
 
-      const bedMesh = this.createRibbonMesh(samples, bedWidth * 1.08, 0.1, bedMaterial);
+      const bedMesh = this.createRibbonMesh(samples, bedWidth * 1.08, 0.04, bedMaterial);
+      bedMesh.frustumCulled = false;
       bedMesh.receiveShadow = true;
       this.trackGroup.add(bedMesh);
 
@@ -507,6 +510,8 @@
 
       const leftRail = this.createRibbonMesh(leftRailSamples, 0.24, 0.22, railMaterial.clone());
       const rightRail = this.createRibbonMesh(rightRailSamples, 0.24, 0.22, railMaterial.clone());
+      leftRail.frustumCulled = false;
+      rightRail.frustumCulled = false;
       leftRail.castShadow = true;
       leftRail.receiveShadow = true;
       rightRail.castShadow = true;
@@ -523,7 +528,7 @@
       for (let distance = 0; distance <= route.totalLength; distance += sleeperStep) {
         const point = sampleRoute(distance);
         const sleeper = new THREE.Mesh(sleeperGeometry, sleeperMaterial);
-        sleeper.position.set(point.x, 0.08, point.y);
+        sleeper.position.set(point.x, 0.1, point.y);
         sleeper.rotation.y = Math.PI * 0.5 - point.heading;
         sleeper.castShadow = true;
         sleeper.receiveShadow = true;
@@ -1198,7 +1203,7 @@
       this.camera.lookAt(this.cameraTarget);
       this.sunLight.target.position.set(trainPose.x, 0, trainPose.y);
       this.root.add(this.sunLight.target);
-      this.ground.position.set(trainPose.x, 0, trainPose.y);
+      this.ground.position.set(trainPose.x, -0.08, trainPose.y);
       this.updateGroundMotion(trainPose);
     }
 
