@@ -216,6 +216,7 @@ const TUNING = {
     brakingForce: 2.5, // Base deceleration force at full applied braking.
     baseDrag: 0.008, // Constant rolling/aero drag term applied at all speeds.
     quadraticDrag: 0.0002, // Speed-squared drag term that grows strongly at high speed.
+    visibleSpeedMultiplier: 1.5, // Multiplier applied to route travel so the train visibly covers ground faster.
     speedCap: 92, // Hard upper speed cap in m/s.
   },
   penalties: {
@@ -1100,6 +1101,18 @@ function findUpcomingLimit() {
   };
 }
 
+function getRedStopZone(signal) {
+  return {
+    centerDistance: Math.max(0, signal.distance - TUNING.signals.redStopWindow * 0.5),
+    radius: TUNING.signals.redStopWindow * TUNING.signals.redStopCircleScale,
+  };
+}
+
+function isInsideRedStopZone(signal, distance = state.distance) {
+  const stopZone = getRedStopZone(signal);
+  return Math.abs(distance - stopZone.centerDistance) <= stopZone.radius;
+}
+
 function processSignals(dt) {
   state.signalStatus = null;
   const nextRed = route.signals.find(
@@ -1111,7 +1124,9 @@ function processSignals(dt) {
   }
 
   const gap = nextRed.distance - state.distance;
-  if (gap < -TUNING.signals.redPassMargin) {
+  const stopZone = getRedStopZone(nextRed);
+  const inStopZone = isInsideRedStopZone(nextRed);
+  if (state.distance > stopZone.centerDistance + stopZone.radius) {
     state.failed = true;
     state.finished = true;
     state.failReason = "Passed a red signal at stop.";
@@ -1122,7 +1137,7 @@ function processSignals(dt) {
   }
 
   if (gap <= TUNING.signals.redApproachDistance) {
-    if (gap >= 0 && gap <= TUNING.signals.redStopWindow && state.speed <= TUNING.signals.redStopSpeed) {
+    if (inStopZone && state.speed <= TUNING.signals.redStopSpeed) {
       nextRed.waitTimer += dt;
       const remaining = Math.max(0, nextRed.clearAfter - nextRed.waitTimer);
       state.signalStatus = {
@@ -1137,10 +1152,11 @@ function processSignals(dt) {
           detail: "Proceed when ready.",
         };
       }
-    } else if (gap >= 0) {
+    } else if (state.distance <= stopZone.centerDistance + stopZone.radius) {
+      const zoneGap = stopZone.centerDistance - state.distance;
       state.signalStatus = {
         message: "Red signal ahead",
-        detail: `Stop before the mast in ${Math.round(gap)} m.`,
+        detail: zoneGap > 0 ? `Stop in the red circle in ${Math.round(zoneGap)} m.` : "Hold the locomotive front inside the red circle.",
       };
     }
   }
@@ -1158,13 +1174,7 @@ function processSignalPasses() {
     const aspect = getSignalAspect(signal);
 
     if (aspect === "red") {
-      state.failed = true;
-      state.finished = true;
-      state.failReason = "Passed a red signal at stop.";
-      state.message = "Run failed";
-      state.detail = state.failReason;
-      finishRun();
-      return true;
+      continue;
     }
 
     if (signal.kind === "yellow" && state.speed > signal.speedLimit + OVERSPEED_FAIL_MARGIN) {
@@ -1263,7 +1273,11 @@ function updatePhysics(dt) {
   }
 
   state.speed = clamp(state.speed + acceleration * dt, 0, TUNING.physics.speedCap);
-  state.distance = clamp(state.distance + state.speed * dt, 0, route.totalLength);
+  state.distance = clamp(
+    state.distance + state.speed * dt * TUNING.physics.visibleSpeedMultiplier,
+    0,
+    route.totalLength,
+  );
 }
 
 function beginDerailment(cause) {
@@ -2072,13 +2086,14 @@ function drawRouteMarkers(view, width, height) {
     }
 
     if (signal.kind === "red" && signal.aspect === "red") {
-      const stopCircleDistance = Math.max(0, signal.distance - TUNING.signals.redStopWindow * 0.5);
+      const stopZone = getRedStopZone(signal);
+      const stopCircleDistance = stopZone.centerDistance;
       const stopCirclePoint = evaluateRoute(stopCircleDistance);
       const stopCircleScreen = {
         x: width * 0.5 + (stopCirclePoint.x - camera.x) * scale,
         y: view.anchorY + (stopCirclePoint.y - camera.y) * scale,
       };
-      const stopCircleRadius = Math.max(9, TUNING.signals.redStopWindow * TUNING.signals.redStopCircleScale * scale);
+      const stopCircleRadius = Math.max(9, stopZone.radius * scale);
       ctx.fillStyle = "rgba(255, 106, 98, 0.1)";
       ctx.strokeStyle = "rgba(255, 146, 136, 0.7)";
       ctx.lineWidth = 2;
