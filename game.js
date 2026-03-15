@@ -60,7 +60,7 @@ const DEFAULT_TUNING = {
       "West Junction",
       "Maple Quay",
     ],
-    stopWindow: 33, // Front-of-train tolerance in meters for a successful station stop.
+    stopWindow: 42.9, // Front-of-train tolerance in meters for a successful station stop.
     passMargin: 120, // How far past a station the train can roll before it counts as missed.
     stopSpeed: 0.35, // Maximum speed in m/s that still counts as stopped at a station.
     assistRange: 120, // Distance in meters from a station where the stop-assist overlay appears.
@@ -298,7 +298,7 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
-let isDroneInsetMinimized = false;
+let isDroneInsetMinimized = true;
 let droneInsetRenderer = null;
 
 function cloneConfigValue(value) {
@@ -436,9 +436,10 @@ function chooseDifferent(list, previous) {
 }
 
 function formatTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${seconds.toFixed(1).padStart(4, "0")}`;
+  const wholeSeconds = Math.floor(Math.max(0, totalSeconds));
+  const minutes = Math.floor(wholeSeconds / 60);
+  const seconds = wholeSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function roundDisplayDistance(distance) {
@@ -633,7 +634,7 @@ function setDroneInsetMinimized(minimized) {
     return;
   }
 
-   if (minimized) {
+  if (minimized) {
     droneInset.dataset.restoreWidth = droneInset.style.width || "";
     droneInset.dataset.restoreHeight = droneInset.style.height || "";
     droneInset.style.width = "272px";
@@ -657,6 +658,8 @@ function initializeDroneInsetToggle() {
   if (!droneInsetToggle) {
     return;
   }
+
+  setDroneInsetMinimized(true);
 
   droneInsetToggle.addEventListener("click", () => {
     setDroneInsetMinimized(!isDroneInsetMinimized);
@@ -1568,7 +1571,7 @@ function processSignals(dt) {
       const remaining = Math.max(0, nextRed.clearAfter - nextRed.waitTimer);
       state.signalStatus = {
         message: "Stopped at red signal",
-        detail: remaining > 0.05 ? `Waiting ${remaining.toFixed(1)} s for green.` : "Signal clearing.",
+        detail: remaining > 0.05 ? `Waiting ${Math.ceil(remaining)} s for green.` : "Signal clearing.",
       };
       state.requestedControl = Math.min(state.requestedControl, 0);
       if (nextRed.waitTimer >= nextRed.clearAfter) {
@@ -1600,7 +1603,8 @@ function processSignalPasses() {
     const aspect = getSignalAspect(signal);
 
     if (aspect === "red") {
-      continue;
+      beginDerailment("Passed a red signal at stop.");
+      return true;
     }
 
     if (signal.kind === "yellow" && state.speed > signal.speedLimit + OVERSPEED_FAIL_MARGIN) {
@@ -1873,7 +1877,7 @@ function finishRun() {
   finishStats.innerHTML = "";
   const rows = [
     ["Driving time", formatTime(state.elapsed)],
-    ["Penalty time", `${state.penalties.toFixed(1)} s`],
+    ["Penalty time", `${Math.floor(Math.max(0, state.penalties))} s`],
     ["Final total", formatTime(totalTime)],
     ["Average stop error", meanError == null ? "—" : `${meanError.toFixed(1)} m`],
   ];
@@ -1913,7 +1917,7 @@ function updateUi() {
   gameProgress.textContent = Math.round(progressPercent);
   gameProgressFill.style.width = `${progressPercent}%`;
   elapsedTime.textContent = formatTime(state.elapsed);
-  penaltyTime.textContent = state.penalties.toFixed(1);
+  penaltyTime.textContent = String(Math.floor(Math.max(0, state.penalties)));
   stopError.textContent = state.lastStopError == null ? "—" : `${state.lastStopError.toFixed(1)} m`;
   renderRemainingStations();
 
@@ -2543,7 +2547,7 @@ function drawRouteMarkers(view, width, height) {
         ctx.fillStyle = "#ffd7d1";
         ctx.font = "700 10px Inter, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(`${remaining.toFixed(1)}s`, screen.x, screen.y - mastHeight - 28);
+        ctx.fillText(`${Math.ceil(remaining)}s`, screen.x, screen.y - mastHeight - 28);
 
         ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
         ctx.font = "600 10px Inter, sans-serif";
