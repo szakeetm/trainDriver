@@ -35,6 +35,8 @@ const actualLabel = document.getElementById("actualLabel");
 const controlDelta = document.getElementById("controlDelta");
 const lineLimitSecondary = lineLimitKph.parentElement;
 const stationAssist = document.getElementById("stationAssist");
+const assistScale = document.getElementById("assistScale");
+const assistWindow = document.getElementById("assistWindow");
 const assistStationTitle = document.getElementById("assistStationTitle");
 const assistDistanceText = document.getElementById("assistDistanceText");
 const assistFrontMarker = document.getElementById("assistFrontMarker");
@@ -343,6 +345,15 @@ function formatHslColor(hue, saturation, lightness) {
   return `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
 }
 
+function createStationVisual() {
+  const hue = Math.random() * 360;
+  return {
+    buildingColor: formatHslColor(hue, 52 + Math.random() * 14, 56 + Math.random() * 10),
+    roofColor: formatHslColor(hue, 28 + Math.random() * 10, 28 + Math.random() * 8),
+    buildingSide: Math.random() < 0.5 ? -1 : 1,
+  };
+}
+
 function buildRandomizedConsist(consist) {
   const sharedHue = Math.random() * 360;
 
@@ -484,6 +495,15 @@ function renderRemainingStations() {
 function syncAssistLegend() {
   assistLegendMin.textContent = `-${STATION_ASSIST_ZOOM} m`;
   assistLegendMax.textContent = `+${STATION_ASSIST_ZOOM} m`;
+
+  if (!assistScale || !assistWindow || STATION_ASSIST_ZOOM <= 0) {
+    return;
+  }
+
+  const acceptancePercent = clamp((STATION_WINDOW / STATION_ASSIST_ZOOM) * 100, 0, 100);
+  const leftPercent = (100 - acceptancePercent) * 0.5;
+  assistScale.style.setProperty("--assist-window-left", `${leftPercent}%`);
+  assistScale.style.setProperty("--assist-window-width", `${acceptancePercent}%`);
 }
 
 function setButtonHold(button, key) {
@@ -987,6 +1007,7 @@ function generateRoute() {
     stations.push({
       name: choose(stationNames.filter((name) => !stations.some((station) => station.name === name))),
       distance: stationDistance,
+      visual: createStationVisual(),
     });
   }
 
@@ -1571,7 +1592,7 @@ function processSignals(dt) {
       const remaining = Math.max(0, nextRed.clearAfter - nextRed.waitTimer);
       state.signalStatus = {
         message: "Stopped at red signal",
-        detail: remaining > 0.05 ? `Waiting ${Math.ceil(remaining)} s for green.` : "Signal clearing.",
+        detail: remaining > 0.05 ? `Waiting ${remaining.toFixed(1)} s for green.` : "Signal clearing.",
       };
       state.requestedControl = Math.min(state.requestedControl, 0);
       if (nextRed.waitTimer >= nextRed.clearAfter) {
@@ -2420,15 +2441,72 @@ function drawRouteMarkers(view, width, height) {
       return;
     }
 
-    ctx.strokeStyle = index + 1 === state.stationIndex ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
-    ctx.fillStyle = "rgba(133, 255, 182, 0.14)";
-    ctx.lineWidth = 2;
+    const isActive = index + 1 === state.stationIndex;
+    const markerWidth = clamp(STATION_WINDOW * scale * 2, 34, 132);
+    const markerHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
+    const markerRadius = Math.min(markerHeight * 0.5, 10);
+    const centerMarkerHeight = markerHeight + clamp(TRACK_WIDTH * scale * 3.8, 16, 30);
+    const platformLength = markerWidth + clamp(26 * scale, 12, 36);
+    const platformWidth = clamp(TRACK_WIDTH * scale * 1.7, 8, 14);
+    const platformOffset = clamp(TRACK_WIDTH * scale * 1.85, 11, 20);
+    const buildingWidth = clamp(28 * scale, 18, 38);
+    const buildingDepth = clamp(18 * scale, 12, 24);
+    const buildingOffset = platformOffset + platformWidth * 0.5 + buildingDepth * 0.8;
+    const buildingTrackOffset = -platformLength * 0.18;
+    const stationVisual = station.visual || createStationVisual();
+
+    ctx.save();
+    ctx.translate(screen.x, screen.y);
+    ctx.rotate(point.heading);
+
+    ctx.fillStyle = isActive ? "rgba(224, 232, 238, 0.92)" : "rgba(205, 214, 220, 0.84)";
+    ctx.strokeStyle = isActive ? "rgba(248, 252, 255, 0.9)" : "rgba(228, 236, 242, 0.68)";
+    ctx.lineWidth = 1.5;
+    [-1, 1].forEach((side) => {
+      const platformY = side * platformOffset - platformWidth * 0.5;
+      ctx.beginPath();
+      ctx.roundRect(-platformLength * 0.5, platformY, platformLength, platformWidth, Math.min(platformWidth * 0.45, 6));
+      ctx.fill();
+      ctx.stroke();
+    });
+
+    const buildingY = stationVisual.buildingSide * buildingOffset - buildingDepth * 0.5;
+    ctx.fillStyle = stationVisual.buildingColor;
+    ctx.strokeStyle = isActive ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.58)";
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(screen.x, screen.y, 18, 0, Math.PI * 2);
+    ctx.roundRect(buildingTrackOffset - buildingWidth * 0.5, buildingY, buildingWidth, buildingDepth, 5);
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = "#d9ffe7";
+    ctx.fillStyle = stationVisual.roofColor;
+    ctx.beginPath();
+    ctx.roundRect(
+      buildingTrackOffset - buildingWidth * 0.58,
+      buildingY - buildingDepth * 0.22,
+      buildingWidth * 1.16,
+      Math.max(4, buildingDepth * 0.3),
+      4,
+    );
+    ctx.fill();
+
+    ctx.fillStyle = isActive ? "rgba(133, 255, 182, 0.18)" : "rgba(133, 255, 182, 0.1)";
+    ctx.strokeStyle = isActive ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.strokeStyle = isActive ? "rgba(217, 255, 231, 0.98)" : "rgba(217, 255, 231, 0.72)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, -centerMarkerHeight * 0.5);
+    ctx.lineTo(0, centerMarkerHeight * 0.5);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = "#101010";
     ctx.font = "600 12px Inter, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(station.name, screen.x, screen.y - 26);
@@ -2547,7 +2625,7 @@ function drawRouteMarkers(view, width, height) {
         ctx.fillStyle = "#ffd7d1";
         ctx.font = "700 10px Inter, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(`${Math.ceil(remaining)}s`, screen.x, screen.y - mastHeight - 28);
+        ctx.fillText(`${remaining.toFixed(1)}s`, screen.x, screen.y - mastHeight - 28);
 
         ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
         ctx.font = "600 10px Inter, sans-serif";
