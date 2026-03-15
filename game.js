@@ -2452,8 +2452,11 @@ function drawRouteMarkers(view, width, height) {
     const buildingWidth = clamp(28 * scale, 18, 38);
     const buildingDepth = clamp(18 * scale, 12, 24);
     const buildingOffset = platformOffset + platformWidth * 0.5 + buildingDepth * 0.8;
-    const buildingTrackOffset = -platformLength * 0.18;
+    const platformStartX = -platformLength;
+    const buildingTrackOffset = platformStartX + platformLength * 0.3;
     const stationVisual = station.visual || createStationVisual();
+    const labelTrackOffset = buildingTrackOffset;
+    const labelSideOffset = stationVisual.buildingSide === -1 ? -(buildingOffset + buildingDepth + 12) : buildingOffset + buildingDepth + 12;
 
     ctx.save();
     ctx.translate(screen.x, screen.y);
@@ -2465,7 +2468,7 @@ function drawRouteMarkers(view, width, height) {
     [-1, 1].forEach((side) => {
       const platformY = side * platformOffset - platformWidth * 0.5;
       ctx.beginPath();
-      ctx.roundRect(-platformLength * 0.5, platformY, platformLength, platformWidth, Math.min(platformWidth * 0.45, 6));
+      ctx.roundRect(platformStartX, platformY, platformLength, platformWidth, Math.min(platformWidth * 0.45, 6));
       ctx.fill();
       ctx.stroke();
     });
@@ -2494,7 +2497,7 @@ function drawRouteMarkers(view, width, height) {
     ctx.strokeStyle = isActive ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
+    ctx.roundRect(-markerWidth, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
     ctx.fill();
     ctx.stroke();
 
@@ -2506,10 +2509,14 @@ function drawRouteMarkers(view, width, height) {
     ctx.stroke();
     ctx.restore();
 
+    const labelX = screen.x + Math.cos(point.heading) * labelTrackOffset - Math.sin(point.heading) * labelSideOffset;
+    const labelY = screen.y + Math.sin(point.heading) * labelTrackOffset + Math.cos(point.heading) * labelSideOffset;
     ctx.fillStyle = "#101010";
     ctx.font = "600 12px Inter, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(station.name, screen.x, screen.y - 26);
+    ctx.textAlign = stationVisual.buildingSide > 0 ? "left" : "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(station.name, labelX, labelY);
+    ctx.textBaseline = "alphabetic";
   });
 
   route.segments.forEach((segment) => {
