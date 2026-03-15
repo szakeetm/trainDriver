@@ -1159,12 +1159,6 @@ function createTerrainTileStyle(cellGridX, cellGridY) {
 }
 
 function getTerrainCornerStyle(cornerGridX, cornerGridY) {
-  const cornerKey = `${cornerGridX},${cornerGridY}`;
-  let cornerStyle = route.terrainCornerCache.get(cornerKey);
-  if (cornerStyle) {
-    return cornerStyle;
-  }
-
   const biomeBlend = getBiomeBlendAtDistance(state.distance);
   const primaryPalette = getBiomePalette(biomeBlend.primary);
   const secondaryPalette = getBiomePalette(biomeBlend.secondary);
@@ -1172,7 +1166,7 @@ function getTerrainCornerStyle(cornerGridX, cornerGridY) {
   const altColor = mixPaletteColor(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix);
   const detailColor = mixPaletteColor(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix);
 
-  cornerStyle = {
+  return {
     baseColor,
     altColor,
     detailColor,
@@ -1182,8 +1176,6 @@ function getTerrainCornerStyle(cornerGridX, cornerGridY) {
         ? biomeBlend.mix
         : 0,
   };
-  route.terrainCornerCache.set(cornerKey, cornerStyle);
-  return cornerStyle;
 }
 
 function generateSignals(segments, stations, totalLength) {
