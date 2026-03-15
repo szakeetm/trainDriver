@@ -60,7 +60,7 @@ const DEFAULT_TUNING = {
       "West Junction",
       "Maple Quay",
     ],
-    stopWindow: 22, // Front-of-train tolerance in meters for a successful station stop.
+    stopWindow: 33, // Front-of-train tolerance in meters for a successful station stop.
     passMargin: 120, // How far past a station the train can roll before it counts as missed.
     stopSpeed: 0.35, // Maximum speed in m/s that still counts as stopped at a station.
     assistRange: 120, // Distance in meters from a station where the stop-assist overlay appears.
@@ -633,6 +633,16 @@ function setDroneInsetMinimized(minimized) {
     return;
   }
 
+   if (minimized) {
+    droneInset.dataset.restoreWidth = droneInset.style.width || "";
+    droneInset.dataset.restoreHeight = droneInset.style.height || "";
+    droneInset.style.width = "272px";
+    droneInset.style.height = "auto";
+  } else {
+    droneInset.style.width = droneInset.dataset.restoreWidth || "";
+    droneInset.style.height = droneInset.dataset.restoreHeight || "";
+  }
+
   isDroneInsetMinimized = minimized;
   droneInset.classList.toggle("is-minimized", minimized);
   droneInsetToggle.textContent = minimized ? "Expand" : "Minimize";
@@ -757,6 +767,8 @@ function renderDroneInset() {
     overspeedTimer: state.overspeedTimer,
     derailment: state.derailment,
     maxLineSpeed: MAX_LINE_SPEED,
+    powerOutput: Math.max(0, state.actualControl),
+    acceleration: Math.max(0, state.acceleration || 0),
     speed: state.speed,
     biomeBlend: getBiomeBlendAtDistance(),
   });
@@ -1334,6 +1346,7 @@ function createInitialState() {
     failed: false,
     distance: 0,
     speed: 0,
+    acceleration: 0,
     requestedControl: 0,
     actualControl: 0,
     elapsed: 0,
@@ -1347,6 +1360,8 @@ function createInitialState() {
     derailment: null,
     lastStopError: null,
     failReason: null,
+    exhaustPuffs: [],
+    exhaustSpawnCarry: 0,
   };
 }
 
@@ -1358,6 +1373,72 @@ function controlLabel(value) {
     return `Brake ${(Math.abs(value) * MAX_BRAKE_PRESSURE_BAR).toFixed(1)} bar`;
   }
   return "Coast";
+}
+
+function getDieselExhaustIntensity(powerOutput = Math.max(0, state.actualControl), acceleration = Math.max(0, state.acceleration || 0)) {
+  const accelFactor = clamp(acceleration / Math.max(TUNING.physics.tractionForce, 1e-6), 0, 1);
+  if (powerOutput <= 0.04 || accelFactor <= 0.03) {
+    return 0;
+  }
+
+  return clamp(powerOutput * 0.5 + accelFactor * 0.65, 0, 1);
+}
+
+function spawnDieselExhaustPuff(unit, intensity) {
+  const heading = unit.renderHeading;
+  const forwardX = Math.cos(heading);
+  const forwardY = Math.sin(heading);
+  const normalX = -Math.sin(heading);
+  const normalY = Math.cos(heading);
+  const sourceX = unit.renderX + normalX * unit.width * 0.08 - forwardX * unit.length * 0.08;
+  const sourceY = unit.renderY + normalY * unit.width * 0.08 - forwardY * unit.length * 0.08;
+  const sidewaysJitter = Math.random() * 0.18 - 0.09;
+
+  state.exhaustPuffs.push({
+    x: sourceX,
+    y: sourceY,
+    driftX: 0.18 - forwardX * (0.12 + intensity * 0.14) + normalX * sidewaysJitter,
+    driftY: -0.08 - forwardY * (0.12 + intensity * 0.14) + normalY * sidewaysJitter,
+    age: 0,
+    life: 1.5 + Math.random() * 0.6,
+    radius: 1.15 + Math.random() * 0.5 + intensity * 0.42,
+    growth: 2.5 + Math.random() * 0.8 + intensity * 1.3,
+    opacity: 0.2 + intensity * 0.2,
+    shade: 42 + Math.random() * 18,
+  });
+
+  if (state.exhaustPuffs.length > 20) {
+    state.exhaustPuffs.splice(0, state.exhaustPuffs.length - 20);
+  }
+}
+
+function updateDieselExhaust(dt) {
+  if (!state.exhaustPuffs) {
+    state.exhaustPuffs = [];
+  }
+
+  const locomotive = getRenderedTrainUnits()[0];
+  const intensity = state.derailment ? 0 : getDieselExhaustIntensity();
+  if (locomotive && locomotive.type === "locomotive" && intensity > 0) {
+    state.exhaustSpawnCarry += (2 + intensity * 6) * dt;
+    while (state.exhaustSpawnCarry >= 1) {
+      state.exhaustSpawnCarry -= 1;
+      spawnDieselExhaustPuff(locomotive, intensity);
+    }
+  } else {
+    state.exhaustSpawnCarry = 0;
+  }
+
+  state.exhaustPuffs = state.exhaustPuffs.filter((puff) => {
+    puff.age += dt;
+    if (puff.age >= puff.life) {
+      return false;
+    }
+
+    puff.x += puff.driftX * dt;
+    puff.y += puff.driftY * dt;
+    return true;
+  });
 }
 
 function getSignalAspect(signal) {
@@ -1477,12 +1558,7 @@ function processSignals(dt) {
   const stopZone = getRedStopZone(nextRed);
   const inStopZone = isInsideRedStopZone(nextRed);
   if (state.distance > stopZone.centerDistance + stopZone.radius) {
-    state.failed = true;
-    state.finished = true;
-    state.failReason = "Passed a red signal at stop.";
-    state.message = "Run failed";
-    state.detail = state.failReason;
-    finishRun();
+    beginDerailment("Passed a red signal at stop.");
     return true;
   }
 
@@ -1622,6 +1698,7 @@ function updatePhysics(dt) {
     acceleration = 0;
   }
 
+  state.acceleration = acceleration;
   state.speed = clamp(state.speed + acceleration * dt, 0, TUNING.physics.speedCap);
   state.distance = clamp(
     state.distance + state.speed * dt * TUNING.physics.visibleSpeedMultiplier,
@@ -2546,6 +2623,30 @@ function drawTrain(width, height) {
 
     ctx.restore();
   });
+
+  ctx.save();
+  ctx.globalCompositeOperation = "multiply";
+  state.exhaustPuffs.forEach((puff) => {
+    const progress = puff.age / puff.life;
+    const radius = Math.max(2.2, (puff.radius + puff.growth * progress) * scale);
+    const opacity = Math.max(0, (1 - progress) * puff.opacity);
+    if (opacity <= 0.002) {
+      return;
+    }
+
+    const screenX = width * 0.5 + (puff.x - camera.x) * scale;
+    const screenY = view.anchorY + (puff.y - camera.y) * scale;
+    if (screenX < -radius || screenX > width + radius || screenY < -radius || screenY > height + radius) {
+      return;
+    }
+
+    const shade = Math.round(puff.shade + progress * 20);
+    ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade + 5}, ${opacity.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
 }
 
 function drawHudOverlay(width, height) {
@@ -2704,6 +2805,7 @@ function update(dt) {
   state.elapsed += dt;
   updateControls(dt);
   updatePhysics(dt);
+  updateDieselExhaust(dt);
   if (processSignalPasses()) {
     updateUi();
     return;

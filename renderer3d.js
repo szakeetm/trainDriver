@@ -284,6 +284,7 @@
       this.cameraTarget = null;
       this.cameraHeading = 0;
       this.lastCameraUpdateTime = 0;
+      this.lastRenderTime = 0;
       this.lastViewportWidth = 0;
       this.lastViewportHeight = 0;
       this.groundTextureKey = "";
@@ -364,8 +365,9 @@
       this.stationGroup = new THREE.Group();
       this.signalGroup = new THREE.Group();
       this.sceneryGroup = new THREE.Group();
+      this.exhaustGroup = new THREE.Group();
       this.trainGroup = new THREE.Group();
-      this.root.add(this.trackGroup, this.stationGroup, this.signalGroup, this.sceneryGroup, this.trainGroup);
+      this.root.add(this.trackGroup, this.stationGroup, this.signalGroup, this.sceneryGroup, this.exhaustGroup, this.trainGroup);
 
       this.hemiLight = new THREE.HemisphereLight(0xd9f1ff, 0x334024, 1.2);
       this.scene.add(this.hemiLight);
@@ -442,6 +444,7 @@
       this.trainMeshes = [];
       this.cameraReady = false;
       this.lastCameraUpdateTime = 0;
+      this.lastRenderTime = 0;
 
       this.buildTrack();
       this.buildStations();
@@ -951,10 +954,140 @@
           );
           lightBar.position.set(0, 2.7, unit.length * 0.43);
           group.add(lightBar);
+
+          const exhaustStack = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.22, 0.26, 0.9, 10),
+            new THREE.MeshStandardMaterial({
+              color: 0x2d3137,
+              roughness: 0.82,
+              metalness: 0.28,
+            }),
+          );
+          exhaustStack.position.set(unit.width * 0.1, 4.75, -unit.length * 0.08);
+          exhaustStack.castShadow = true;
+          exhaustStack.receiveShadow = true;
+          group.add(exhaustStack);
         }
 
+        const exhaust = unit.type === "locomotive"
+          ? this.createExhaustEmitter(unit)
+          : null;
+
         this.trainGroup.add(group);
-        this.trainMeshes.push({ group, bodyMaterial, roofMaterial });
+        this.trainMeshes.push({ group, bodyMaterial, roofMaterial, exhaust });
+      });
+    }
+
+    createExhaustEmitter(unit) {
+      const puffs = [];
+      for (let index = 0; index < 10; index += 1) {
+        const material = new THREE.MeshBasicMaterial({
+          color: 0x45474a,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          depthTest: false,
+          toneMapped: false,
+        });
+        const puff = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), material);
+        puff.visible = false;
+        puff.renderOrder = 40;
+        puff.frustumCulled = false;
+        this.exhaustGroup.add(puff);
+        puffs.push({
+          mesh: puff,
+          age: 1,
+          life: 1,
+          x: 0,
+          y: 0,
+          z: 0,
+          driftX: 0,
+          driftY: 0,
+          driftZ: 0,
+          baseScale: 1,
+          baseOpacity: 0,
+        });
+      }
+
+      return {
+        puffs,
+        nextIndex: 0,
+        spawnCarry: 0,
+        intensity: 0,
+        offsetX: unit.width * 0.1,
+        offsetZ: -unit.length * 0.08,
+        height: 6,
+      };
+    }
+
+    resetExhaustPuff(exhaust, unit, intensity) {
+      const puff = exhaust.puffs[exhaust.nextIndex];
+      exhaust.nextIndex = (exhaust.nextIndex + 1) % exhaust.puffs.length;
+      const heading = unit.renderHeading;
+      const forwardX = Math.cos(heading);
+      const forwardZ = Math.sin(heading);
+      const normalX = -Math.sin(heading);
+      const normalZ = Math.cos(heading);
+      const sourceX = unit.renderX + normalX * exhaust.offsetX + forwardX * exhaust.offsetZ;
+      const sourceZ = unit.renderY + normalZ * exhaust.offsetX + forwardZ * exhaust.offsetZ;
+      const sidewaysJitter = Math.random() * 0.18 - 0.09;
+
+      puff.age = 0;
+      puff.life = 1.9 + Math.random() * 0.6;
+      puff.x = sourceX;
+      puff.y = exhaust.height;
+      puff.z = sourceZ;
+      puff.driftX = 0.16 - forwardX * (0.1 + intensity * 0.1) + normalX * sidewaysJitter;
+      puff.driftY = 0.34 + intensity * 0.16 + Math.random() * 0.04;
+      puff.driftZ = -0.08 - forwardZ * (0.1 + intensity * 0.1) + normalZ * sidewaysJitter;
+      puff.baseScale = 1.15 + Math.random() * 0.5 + intensity * 0.55;
+      puff.baseOpacity = 0.18 + intensity * 0.21;
+      puff.mesh.visible = true;
+      puff.mesh.position.set(puff.x, puff.y, puff.z);
+      puff.mesh.scale.setScalar(puff.baseScale);
+      puff.mesh.material.opacity = puff.baseOpacity;
+    }
+
+    updateExhaust(entry, unit, powerOutput, acceleration, deltaSeconds) {
+      if (!entry || !entry.exhaust) {
+        return;
+      }
+
+      const exhaust = entry.exhaust;
+      const tractionForce = this.routeState && this.routeState.tuning && this.routeState.tuning.physics
+        ? this.routeState.tuning.physics.tractionForce
+        : 1;
+      const accelFactor = clamp(acceleration / Math.max(tractionForce, 1e-6), 0, 1);
+      const targetIntensity = powerOutput > 0.04 && accelFactor > 0.03
+        ? clamp(powerOutput * 0.5 + accelFactor * 0.65, 0, 1)
+        : 0;
+      const blend = 1 - Math.exp(-3 * deltaSeconds);
+      exhaust.intensity = lerp(exhaust.intensity, targetIntensity, blend);
+
+      exhaust.spawnCarry += (1.8 + exhaust.intensity * 5.5) * deltaSeconds;
+      while (exhaust.spawnCarry >= 1) {
+        exhaust.spawnCarry -= 1;
+        if (exhaust.intensity > 0.04) {
+          this.resetExhaustPuff(exhaust, unit, exhaust.intensity);
+        }
+      }
+
+      exhaust.puffs.forEach((puff) => {
+        if (puff.age >= puff.life) {
+          puff.mesh.visible = false;
+          puff.mesh.material.opacity = 0;
+          return;
+        }
+
+        puff.age += deltaSeconds;
+        const progress = puff.age / puff.life;
+        puff.x += puff.driftX * deltaSeconds;
+        puff.y += puff.driftY * deltaSeconds;
+        puff.z += puff.driftZ * deltaSeconds;
+        puff.mesh.visible = true;
+        puff.mesh.position.set(puff.x, puff.y, puff.z);
+        puff.mesh.scale.setScalar(puff.baseScale + progress * (2.2 + exhaust.intensity));
+        puff.mesh.material.opacity = Math.max(0, (1 - progress) * puff.baseOpacity);
       });
     }
 
@@ -1094,7 +1227,7 @@
       });
     }
 
-    updateTrain(renderedUnits, overspeedTimer, derailment) {
+    updateTrain(renderedUnits, overspeedTimer, derailment, powerOutput, acceleration, deltaSeconds) {
       if (!renderedUnits) {
         return;
       }
@@ -1113,6 +1246,10 @@
         entry.group.rotation.y = Math.PI * 0.5 - unit.renderHeading;
         applyLitFlatColor(entry.bodyMaterial, bodyColor, 0.18);
         applyLitFlatColor(entry.roofMaterial, unit.roofColor, 0.12);
+
+        if (unit.type === "locomotive") {
+          this.updateExhaust(entry, unit, powerOutput, acceleration, deltaSeconds);
+        }
       });
     }
 
@@ -1207,17 +1344,37 @@
       this.updateGroundMotion(trainPose);
     }
 
-    renderFrame({ trainPose, renderedUnits, trainLength, activeStationIndex, overspeedTimer, derailment, maxLineSpeed, speed, biomeBlend }) {
+    renderFrame({
+      trainPose,
+      renderedUnits,
+      trainLength,
+      activeStationIndex,
+      overspeedTimer,
+      derailment,
+      maxLineSpeed,
+      powerOutput,
+      acceleration,
+      speed,
+      biomeBlend,
+    }) {
       if (!this.available || !this.routeState) {
         return;
       }
+
+      const now = global.performance && typeof global.performance.now === "function"
+        ? global.performance.now()
+        : Date.now();
+      const deltaSeconds = this.lastRenderTime > 0
+        ? Math.max(1 / 240, Math.min(0.08, (now - this.lastRenderTime) / 1000))
+        : 1 / 60;
+      this.lastRenderTime = now;
 
       this.resize();
       this.updateGroundAppearance(biomeBlend);
       this.updateSceneryAppearance(biomeBlend);
       this.updateSignals();
       this.updateStations(activeStationIndex);
-      this.updateTrain(renderedUnits, overspeedTimer, derailment);
+      this.updateTrain(renderedUnits, overspeedTimer, derailment, powerOutput, acceleration, deltaSeconds);
       this.updateCamera(
         trainPose,
         renderedUnits,
