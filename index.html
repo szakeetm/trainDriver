@@ -37,8 +37,11 @@
           <canvas id="gameCanvas" aria-label="Top down train driving game"></canvas>
           <section class="drone-inset" id="droneInset" aria-label="3D drone view">
             <div class="drone-inset__header">
-              <p class="eyebrow">3D view</p>
-              <span class="drone-inset__status" id="droneInsetStatus">Drone follow</span>
+              <div class="drone-inset__title-group">
+                <p class="eyebrow">3D view</p>
+                <span class="drone-inset__status" id="droneInsetStatus">Drone follow</span>
+              </div>
+              <button type="button" class="drone-inset__toggle" id="droneInsetToggle" aria-expanded="true" aria-controls="droneInsetMount">Minimize</button>
             </div>
             <div class="drone-inset__mount" id="droneInsetMount"></div>
             <div class="drone-inset__resize-handle" id="droneInsetResizeHandle" aria-hidden="true"></div>

@@ -6,6 +6,7 @@ const introCard = document.getElementById("coverScreen");
 const droneInset = document.getElementById("droneInset");
 const droneInsetMount = document.getElementById("droneInsetMount");
 const droneInsetStatus = document.getElementById("droneInsetStatus");
+const droneInsetToggle = document.getElementById("droneInsetToggle");
 const droneInsetResizeHandle = document.getElementById("droneInsetResizeHandle");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
@@ -297,6 +298,7 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
+let isDroneInsetMinimized = false;
 let droneInsetRenderer = null;
 
 function cloneConfigValue(value) {
@@ -626,6 +628,31 @@ function initializeDroneInsetRenderer() {
   }
 }
 
+function setDroneInsetMinimized(minimized) {
+  if (!droneInset || !droneInsetToggle) {
+    return;
+  }
+
+  isDroneInsetMinimized = minimized;
+  droneInset.classList.toggle("is-minimized", minimized);
+  droneInsetToggle.textContent = minimized ? "Expand" : "Minimize";
+  droneInsetToggle.setAttribute("aria-expanded", minimized ? "false" : "true");
+
+  if (!minimized && droneInsetRenderer) {
+    droneInsetRenderer.resize();
+  }
+}
+
+function initializeDroneInsetToggle() {
+  if (!droneInsetToggle) {
+    return;
+  }
+
+  droneInsetToggle.addEventListener("click", () => {
+    setDroneInsetMinimized(!isDroneInsetMinimized);
+  });
+}
+
 function initializeDroneInsetResizeHandle() {
   if (!droneInset || !droneInsetResizeHandle) {
     return;
@@ -718,7 +745,7 @@ function syncDroneInsetRoute() {
 }
 
 function renderDroneInset() {
-  if (!droneInsetRenderer || !route || !state || appShell.classList.contains("hidden")) {
+  if (!droneInsetRenderer || !route || !state || appShell.classList.contains("hidden") || isDroneInsetMinimized) {
     return;
   }
 
@@ -2738,6 +2765,7 @@ async function initializeGame() {
 
   initializeDroneInsetResizeHandle();
   initializeDroneInsetRenderer();
+  initializeDroneInsetToggle();
 
   await loadTuningConfig();
 
