@@ -704,7 +704,7 @@
         const object = this.createSceneryObject(item);
         object.position.set(point.x, 0, point.y);
         object.rotation.y = item.rotation;
-        object.scale.setScalar(item.size * 1.45);
+        object.scale.setScalar(item.size * 2.5);
         applyShadowFlags(object, true, true);
         this.sceneryGroup.add(object);
         this.sceneryRefs.push({ biomeMaterials: object.userData.biomeMaterials || [] });
