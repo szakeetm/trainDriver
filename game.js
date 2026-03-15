@@ -2497,7 +2497,7 @@ function drawRouteMarkers(view, width, height) {
     ctx.strokeStyle = isActive ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-markerWidth, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
+    ctx.roundRect(-markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
     ctx.fill();
     ctx.stroke();
 
