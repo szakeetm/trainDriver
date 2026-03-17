@@ -302,6 +302,230 @@ let state = null;
 let lastFrame = performance.now();
 let isDroneInsetMinimized = true;
 let droneInsetRenderer = null;
+let gameAudio = null;
+let audioDebugLogged = false;
+
+function logAudioDebug(message, details = null) {
+  if (details == null) {
+    console.info(`[audio] ${message}`);
+    return;
+  }
+  console.info(`[audio] ${message}`, details);
+}
+
+function setAudioParam(audioParam, value, smoothing = 0.08) {
+  if (!audioParam) {
+    return;
+  }
+
+  try {
+    const now = audioParam.context.currentTime;
+    audioParam.setTargetAtTime(value, now, smoothing);
+  } catch (error) {
+    console.warn("Audio parameter update failed.", error);
+    gameAudio = null;
+  }
+}
+
+function createNoiseBuffer(context, durationSeconds = 2) {
+  const frameCount = Math.max(1, Math.floor(context.sampleRate * durationSeconds));
+  const buffer = context.createBuffer(1, frameCount, context.sampleRate);
+  const channel = buffer.getChannelData(0);
+  for (let index = 0; index < frameCount; index += 1) {
+    channel[index] = Math.random() * 2 - 1;
+  }
+  return buffer;
+}
+
+function createGameAudio() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) {
+    logAudioDebug("Web Audio API unavailable in this browser.");
+    return null;
+  }
+
+  const context = new AudioContextClass();
+  logAudioDebug("Created audio context.", { state: context.state, sampleRate: context.sampleRate });
+  const master = context.createGain();
+  const mix = context.createGain();
+  const engineMix = context.createGain();
+  const rollingMix = context.createGain();
+  const brakeMix = context.createGain();
+  const sleeperMix = context.createGain();
+
+  master.gain.value = 0;
+  mix.gain.value = 0.34;
+  engineMix.gain.value = 0;
+  rollingMix.gain.value = 0;
+  brakeMix.gain.value = 0;
+  sleeperMix.gain.value = 0;
+
+  mix.connect(master);
+  master.connect(context.destination);
+  engineMix.connect(mix);
+  rollingMix.connect(mix);
+  brakeMix.connect(mix);
+  sleeperMix.connect(mix);
+
+  const engineLow = context.createOscillator();
+  const engineHigh = context.createOscillator();
+  const engineLowGain = context.createGain();
+  const engineHighGain = context.createGain();
+  const engineFilter = context.createBiquadFilter();
+
+  engineLow.type = "sawtooth";
+  engineHigh.type = "triangle";
+  engineLow.frequency.value = 34;
+  engineHigh.frequency.value = 52;
+  engineHigh.detune.value = 7;
+  engineLowGain.gain.value = 0.045;
+  engineHighGain.gain.value = 0.02;
+  engineFilter.type = "lowpass";
+  engineFilter.frequency.value = 260;
+  engineFilter.Q.value = 0.8;
+
+  engineLow.connect(engineLowGain);
+  engineHigh.connect(engineHighGain);
+  engineLowGain.connect(engineFilter);
+  engineHighGain.connect(engineFilter);
+  engineFilter.connect(engineMix);
+
+  const noiseBuffer = createNoiseBuffer(context);
+
+  const rollingNoise = context.createBufferSource();
+  const rollingFilter = context.createBiquadFilter();
+  rollingNoise.buffer = noiseBuffer;
+  rollingNoise.loop = true;
+  rollingFilter.type = "bandpass";
+  rollingFilter.frequency.value = 320;
+  rollingFilter.Q.value = 0.5;
+  rollingNoise.connect(rollingFilter);
+  rollingFilter.connect(rollingMix);
+
+  const brakeNoise = context.createBufferSource();
+  const brakeFilter = context.createBiquadFilter();
+  brakeNoise.buffer = noiseBuffer;
+  brakeNoise.loop = true;
+  brakeFilter.type = "bandpass";
+  brakeFilter.frequency.value = 1800;
+  brakeFilter.Q.value = 1.8;
+  brakeNoise.connect(brakeFilter);
+  brakeFilter.connect(brakeMix);
+
+  const sleeperNoise = context.createBufferSource();
+  const sleeperFilter = context.createBiquadFilter();
+  sleeperNoise.buffer = noiseBuffer;
+  sleeperNoise.loop = true;
+  sleeperFilter.type = "highpass";
+  sleeperFilter.frequency.value = 900;
+  sleeperFilter.Q.value = 0.7;
+  sleeperNoise.connect(sleeperFilter);
+  sleeperFilter.connect(sleeperMix);
+
+  engineLow.start();
+  engineHigh.start();
+  rollingNoise.start();
+  brakeNoise.start();
+  sleeperNoise.start();
+
+  return {
+    context,
+    master,
+    engineLow,
+    engineHigh,
+    engineFilter,
+    engineMix,
+    rollingFilter,
+    rollingMix,
+    brakeFilter,
+    brakeMix,
+    sleeperFilter,
+    sleeperMix,
+    sleeperPhase: 0,
+  };
+}
+
+function ensureGameAudioReady() {
+  try {
+    if (!gameAudio) {
+      logAudioDebug("Initializing game audio.");
+      gameAudio = createGameAudio();
+      if (!gameAudio) {
+        logAudioDebug("Audio initialization returned no audio graph.");
+      }
+    }
+
+    if (gameAudio && gameAudio.context.state === "suspended") {
+      logAudioDebug("Resuming suspended audio context.");
+      gameAudio.context.resume()
+        .then(() => {
+          logAudioDebug("Audio context resumed.", { state: gameAudio?.context?.state });
+        })
+        .catch((error) => {
+          console.error("[audio] Audio context resume rejected.", error);
+        });
+    }
+  } catch (error) {
+    console.error("[audio] Audio initialization failed. Continuing without sound.", error);
+    gameAudio = null;
+  }
+
+  return gameAudio;
+}
+
+function updateGameAudio(dt = 0) {
+  if (!gameAudio || !state) {
+    return;
+  }
+
+  try {
+    const activeRun = state.started && !state.finished;
+    const moving = state.speed > 0.12 || Math.abs(state.actualControl) > 0.03;
+    const masterLevel = activeRun || moving ? 1 : 0;
+    setAudioParam(gameAudio.master.gain, masterLevel, 0.2);
+
+    const speedNorm = clamp(state.speed / Math.max(TUNING.physics.speedCap, 1e-6), 0, 1);
+    const throttle = clamp(Math.max(0, state.actualControl), 0, 1);
+    const brake = clamp(Math.max(0, -state.actualControl), 0, 1);
+    const accelNorm = clamp(Math.max(0, state.acceleration || 0) / Math.max(TUNING.physics.tractionForce, 1e-6), 0, 1);
+    const brakeLoad = clamp(Math.max(0, -(state.acceleration || 0)) / Math.max(TUNING.physics.brakingForce, 1e-6), 0, 1);
+
+    const engineBase = activeRun ? 0.024 : 0;
+    const engineGain = engineBase + throttle * 0.085 + accelNorm * 0.035 + speedNorm * 0.02;
+    setAudioParam(gameAudio.engineMix.gain, engineGain, 0.12);
+    setAudioParam(gameAudio.engineLow.frequency, 30 + throttle * 28 + speedNorm * 16, 0.08);
+    setAudioParam(gameAudio.engineHigh.frequency, 52 + throttle * 44 + speedNorm * 26 + accelNorm * 10, 0.08);
+    setAudioParam(gameAudio.engineFilter.frequency, 180 + throttle * 520 + speedNorm * 280 + accelNorm * 140, 0.12);
+
+    const rollingGain = activeRun ? (speedNorm > 0.01 ? 0.012 + Math.pow(speedNorm, 1.08) * 0.118 : 0) : 0;
+    setAudioParam(gameAudio.rollingMix.gain, rollingGain, 0.14);
+    setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 2200, 0.12);
+
+    const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.2 + brakeLoad * 0.8) * 0.24 : 0;
+    setAudioParam(gameAudio.brakeMix.gain, brakeGain, 0.05);
+    setAudioParam(gameAudio.brakeFilter.frequency, 1200 + speedNorm * 2200 + brake * 800, 0.06);
+
+    const sleeperFrequency = clamp(state.speed / 0.72, 0, 90);
+    gameAudio.sleeperPhase = (gameAudio.sleeperPhase + dt * sleeperFrequency * Math.PI * 2) % (Math.PI * 2);
+    const sleeperPulse = Math.pow(Math.max(0, Math.sin(gameAudio.sleeperPhase)), 8);
+    const sleeperBase = activeRun ? clamp(state.speed / 36, 0, 1) * 0.03 : 0;
+    const sleeperGain = sleeperBase * (0.28 + sleeperPulse * 1.8);
+    setAudioParam(gameAudio.sleeperMix.gain, sleeperGain, 0.03);
+    setAudioParam(gameAudio.sleeperFilter.frequency, 950 + speedNorm * 2600, 0.08);
+    if (!audioDebugLogged && activeRun) {
+      logAudioDebug("Audio update running.", {
+        contextState: gameAudio.context.state,
+        speed: state.speed,
+        throttle,
+        brake,
+      });
+      audioDebugLogged = true;
+    }
+  } catch (error) {
+    console.error("[audio] Audio update failed. Continuing without sound.", error);
+    gameAudio = null;
+  }
+}
 
 function cloneConfigValue(value) {
   if (Array.isArray(value)) {
@@ -379,8 +603,8 @@ function buildRandomizedConsist(consist) {
   });
 }
 
-function applyTuning(configOverrides = null) {
-  TUNING = configOverrides ? mergeConfig(DEFAULT_TUNING, configOverrides) : cloneConfigValue(DEFAULT_TUNING);
+function applyTuning() {
+  TUNING = cloneConfigValue(DEFAULT_TUNING);
 
   MAX_LINE_SPEED = TUNING.limits.maxLineSpeed;
   STATION_WINDOW = TUNING.stations.stopWindow;
@@ -434,21 +658,6 @@ function getRedStopMetrics(signal) {
     targetDistance: signal.distance - getZoneSlackTolerance(zoneLength),
     tolerance: getZoneSlackTolerance(zoneLength),
   };
-}
-
-async function loadTuningConfig() {
-  try {
-    const response = await fetch("./tuning.json", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const configOverrides = await response.json();
-    applyTuning(configOverrides);
-  } catch (error) {
-    console.warn("Using built-in tuning defaults.", error);
-    applyTuning();
-  }
 }
 
 function clamp(value, min, max) {
@@ -2944,12 +3153,14 @@ function render() {
 
 function update(dt) {
   if (!state.started || state.finished) {
+    updateGameAudio(dt);
     updateUi();
     return;
   }
 
   if (state.derailment) {
     updateDerailment(dt);
+    updateGameAudio(dt);
     updateUi();
     return;
   }
@@ -2959,19 +3170,23 @@ function update(dt) {
   updatePhysics(dt);
   updateDieselExhaust(dt);
   if (processSignalPasses()) {
+    updateGameAudio(dt);
     updateUi();
     return;
   }
   if (processSignals(dt)) {
+    updateGameAudio(dt);
     updateUi();
     return;
   }
   if (checkFailureConditions()) {
+    updateGameAudio(dt);
     updateUi();
     return;
   }
   updatePenalties(dt);
   updateStations();
+  updateGameAudio(dt);
   updateUi();
 }
 
@@ -2988,6 +3203,7 @@ function startRun() {
     return;
   }
 
+  ensureGameAudioReady();
   appShell.classList.remove("hidden");
   state = createInitialState();
   syncDroneInsetRoute();
@@ -2998,26 +3214,28 @@ function startRun() {
   resizeCanvas();
   state.message = "Departing Origin";
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
+  updateGameAudio(0);
   updateUi();
 }
 
 startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
 
-async function initializeGame() {
+function initializeGame() {
   document.body.classList.add("cover-active");
   statusText.textContent = "Loading settings";
-  subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
+  subStatus.textContent = "Loading built-in gameplay settings.";
 
   initializeDroneInsetResizeHandle();
   initializeDroneInsetRenderer();
   initializeDroneInsetToggle();
 
-  await loadTuningConfig();
+  applyTuning();
 
   state = createInitialState();
   syncDroneInsetRoute();
   syncAssistLegend();
+  updateGameAudio(0);
   updateUi();
   lastFrame = performance.now();
   requestAnimationFrame(loop);
