@@ -308,6 +308,7 @@ let audioUnlockPromise = null;
 let audioEnvironmentDebugAttached = false;
 let audioSessionDebugAttached = false;
 const audioDebugHistory = [];
+const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRl4AAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YToAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 function logAudioDebug(message, details = null) {
   if (details == null) {
@@ -416,6 +417,35 @@ function attachAudioEnvironmentDebug() {
   window.addEventListener("blur", handleEvent, true);
   window.addEventListener("pageshow", handleEvent, true);
   window.addEventListener("pagehide", handleEvent, true);
+}
+
+async function primeHtmlAudioUnlock(trigger = "manual") {
+  try {
+    const audio = new Audio(SILENT_WAV_DATA_URI);
+    audio.preload = "auto";
+    audio.playsInline = true;
+    audio.muted = true;
+    audio.volume = 0;
+    const playResult = audio.play();
+    if (playResult && typeof playResult.then === "function") {
+      await playResult;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+    setAudioDebug("html audio primed", {
+      trigger,
+      userActivation: getAudioUserActivationState(),
+    });
+    return true;
+  } catch (error) {
+    console.warn("[audio] HTML audio prime failed.", error);
+    updateAudioDebugStatus("html audio prime failed", {
+      trigger,
+      reason: error?.message || "error",
+      userActivation: getAudioUserActivationState(),
+    });
+    return false;
+  }
 }
 
 function configureAudioSession() {
@@ -667,6 +697,7 @@ async function rebuildGameAudioInGesture(trigger = "manual") {
   }
 
   try {
+    await primeHtmlAudioUnlock(trigger);
     await audio.context.resume();
     setAudioDebug("rebuilt context resumed", {
       trigger,
@@ -728,6 +759,7 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
           reason: audio.context.state,
           userActivation: getAudioUserActivationState(),
         });
+        await primeHtmlAudioUnlock(trigger);
         await audio.context.resume();
         setAudioDebug("unlock resume resolved", {
           trigger,
@@ -748,6 +780,15 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
           userActivation: getAudioUserActivationState(),
         });
         await rebuildGameAudioInGesture(trigger);
+        if (gameAudio?.context?.state !== "running") {
+          await primeHtmlAudioUnlock(`${trigger}-reprime`);
+          await gameAudio?.context?.resume?.();
+          updateAudioDebugStatus("post-prime resume attempted", {
+            trigger,
+            reason: gameAudio?.context?.state || "none",
+            userActivation: getAudioUserActivationState(),
+          });
+        }
       }
 
       if (gameAudio?.context?.state === "running") {
