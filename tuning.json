@@ -129,7 +129,15 @@
     "curveSpeedLimitMax": 42,
     "straightLengthMin": 320,
     "straightLengthMax": 900,
-    "upcomingCurveLookahead": 1300
+    "upcomingCurveLookahead": 1300,
+    "elevationSegmentLengthMin": 260,
+    "elevationSegmentLengthMax": 900,
+    "maxGradient": 0.028,
+    "stationGradeLimit": 0.004,
+    "stationGradeZone": 220,
+    "gradientChangeMax": 0.011,
+    "elevationRecoveryBias": 0.016,
+    "elevationMaxAbs": 120
   },
   "signals": {
     "spacingMin": 700,
@@ -176,6 +184,7 @@
     "brakingForce": 2.5,
     "baseDrag": 0.008,
     "quadraticDrag": 0.0002,
+    "gradeResistancePerUnitGradient": 9.2,
     "visibleSpeedMultiplier": 1.5,
     "speedCap": 92
   },
@@ -185,5 +194,9 @@
     "penaltySeverityScale": 5,
     "overspeedBuildRate": 1.8,
     "overspeedDecayRate": 1.6
+  },
+  "visuals": {
+    "gradientMarkerMinGrade": 0.008,
+    "gradientMarkerSpacingMin": 220
   }
 }

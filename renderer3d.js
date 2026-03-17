@@ -277,6 +277,7 @@
       this.routeState = null;
       this.signalRefs = [];
       this.stationRefs = [];
+      this.gradientRefs = [];
       this.sceneryRefs = [];
       this.trainMeshes = [];
       this.cameraReady = false;
@@ -332,7 +333,7 @@
       this.groundTexture.minFilter = THREE.LinearMipmapLinearFilter || THREE.LinearFilter;
       this.groundTexture.magFilter = THREE.LinearFilter;
       this.groundTexture.generateMipmaps = true;
-      this.groundWorldSize = 40000;
+      this.groundWorldSize = 70000;
       if (this.renderer.capabilities && this.renderer.capabilities.getMaxAnisotropy) {
         this.groundTexture.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
       }
@@ -343,31 +344,16 @@
       }
       this.groundTexture.needsUpdate = true;
       this.rebuildGroundTexture({ primary: "green", secondary: "green", mix: 0 });
-
-      this.ground = new THREE.Mesh(
-        new THREE.PlaneGeometry(this.groundWorldSize, this.groundWorldSize),
-        new THREE.MeshStandardMaterial({
-          color: 0x6c8d55,
-          map: this.groundTexture,
-          roughness: 0.98,
-          metalness: 0.02,
-          polygonOffset: true,
-          polygonOffsetFactor: 2,
-          polygonOffsetUnits: 2,
-        }),
-      );
-      this.ground.rotation.x = -Math.PI * 0.5;
-      this.ground.position.y = -0.08;
-      this.ground.receiveShadow = true;
-      this.root.add(this.ground);
+      this.ground = null;
 
       this.trackGroup = new THREE.Group();
       this.stationGroup = new THREE.Group();
+      this.gradientGroup = new THREE.Group();
       this.signalGroup = new THREE.Group();
       this.sceneryGroup = new THREE.Group();
       this.exhaustGroup = new THREE.Group();
       this.trainGroup = new THREE.Group();
-      this.root.add(this.trackGroup, this.stationGroup, this.signalGroup, this.sceneryGroup, this.exhaustGroup, this.trainGroup);
+      this.root.add(this.trackGroup, this.stationGroup, this.gradientGroup, this.signalGroup, this.sceneryGroup, this.exhaustGroup, this.trainGroup);
 
       this.hemiLight = new THREE.HemisphereLight(0xd9f1ff, 0x334024, 1.2);
       this.scene.add(this.hemiLight);
@@ -418,7 +404,7 @@
       this.camera.updateProjectionMatrix();
     }
 
-    setRoute({ route, trackWidth, trainConsist, tuning, sampleRoute, getSceneryPoint }) {
+    setRoute({ route, trackWidth, trainConsist, tuning, sampleRoute, getSceneryPoint, getTerrainHeight }) {
       if (!this.available || !route || this.routeRef === route) {
         return;
       }
@@ -431,23 +417,28 @@
         tuning,
         sampleRoute,
         getSceneryPoint,
+        getTerrainHeight,
       };
 
       clearGroup(this.trackGroup);
       clearGroup(this.stationGroup);
+      clearGroup(this.gradientGroup);
       clearGroup(this.signalGroup);
       clearGroup(this.sceneryGroup);
       clearGroup(this.trainGroup);
       this.signalRefs = [];
       this.stationRefs = [];
+      this.gradientRefs = [];
       this.sceneryRefs = [];
       this.trainMeshes = [];
       this.cameraReady = false;
       this.lastCameraUpdateTime = 0;
       this.lastRenderTime = 0;
 
+      this.buildGround();
       this.buildTrack();
       this.buildStations();
+      this.buildGradientMarkers();
       this.buildSignals();
       this.buildScenery();
       this.buildTrainMeshes();
@@ -455,6 +446,46 @@
       if (this.statusElement) {
         this.statusElement.textContent = "Drone follow";
       }
+    }
+
+    buildGround() {
+      const { getTerrainHeight } = this.routeState;
+      if (this.ground) {
+        this.root.remove(this.ground);
+        if (this.ground.geometry) {
+          this.ground.geometry.dispose();
+        }
+        if (this.ground.material) {
+          this.ground.material.dispose();
+        }
+        this.ground = null;
+      }
+
+      const geometry = new THREE.PlaneGeometry(this.groundWorldSize, this.groundWorldSize, 140, 140);
+      geometry.rotateX(-Math.PI * 0.5);
+      const position = geometry.attributes.position;
+      for (let index = 0; index < position.count; index += 1) {
+        const worldX = position.getX(index);
+        const worldZ = position.getZ(index);
+        const elevation = typeof getTerrainHeight === "function" ? getTerrainHeight(worldX, worldZ) : -0.08;
+        position.setY(index, elevation);
+      }
+      geometry.computeVertexNormals();
+
+      this.ground = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({
+          color: 0x6c8d55,
+          map: this.groundTexture,
+          roughness: 0.98,
+          metalness: 0.02,
+          polygonOffset: true,
+          polygonOffsetFactor: 2,
+          polygonOffsetUnits: 2,
+        }),
+      );
+      this.ground.receiveShadow = true;
+      this.root.add(this.ground);
     }
 
     buildTrack() {
@@ -466,12 +497,18 @@
       const samples = [];
       for (let distance = 0; distance <= route.totalLength; distance += sampleStep) {
         const point = sampleRoute(distance);
-        samples.push({ x: point.x, z: point.y, heading: point.heading, distance });
+        samples.push({ x: point.x, y: point.elevation, z: point.y, heading: point.heading, distance });
       }
       const lastPoint = sampleRoute(route.totalLength);
       const lastSample = samples[samples.length - 1];
       if (!lastSample || Math.abs(lastSample.distance - route.totalLength) > 0.001) {
-        samples.push({ x: lastPoint.x, z: lastPoint.y, heading: lastPoint.heading, distance: route.totalLength });
+        samples.push({
+          x: lastPoint.x,
+          y: lastPoint.elevation,
+          z: lastPoint.y,
+          heading: lastPoint.heading,
+          distance: route.totalLength,
+        });
       }
 
       const bedMaterial = new THREE.MeshStandardMaterial({
@@ -531,7 +568,7 @@
       for (let distance = 0; distance <= route.totalLength; distance += sleeperStep) {
         const point = sampleRoute(distance);
         const sleeper = new THREE.Mesh(sleeperGeometry, sleeperMaterial);
-        sleeper.position.set(point.x, 0.1, point.y);
+        sleeper.position.set(point.x, point.elevation + 0.1, point.y);
         sleeper.rotation.y = Math.PI * 0.5 - point.heading;
         sleeper.castShadow = true;
         sleeper.receiveShadow = true;
@@ -548,8 +585,8 @@
       samples.forEach((sample, index) => {
         const normalX = -Math.sin(sample.heading);
         const normalZ = Math.cos(sample.heading);
-        positions.push(sample.x + normalX * width * 0.5, y, sample.z + normalZ * width * 0.5);
-        positions.push(sample.x - normalX * width * 0.5, y, sample.z - normalZ * width * 0.5);
+        positions.push(sample.x + normalX * width * 0.5, sample.y + y, sample.z + normalZ * width * 0.5);
+        positions.push(sample.x - normalX * width * 0.5, sample.y + y, sample.z - normalZ * width * 0.5);
         normals.push(0, 1, 0, 0, 1, 0);
         const v = samples.length <= 1 ? 0 : index / (samples.length - 1);
         uvs.push(0, v, 1, v);
@@ -597,7 +634,7 @@
           );
           platform.position.set(
             point.x + normalX * side * (trackWidth * 1.75 + 5.8),
-            0.55,
+            point.elevation + 0.55,
             point.y + normalZ * side * (trackWidth * 1.75 + 5.8),
           );
           platform.rotation.y = Math.PI * 0.5 - point.heading;
@@ -610,7 +647,7 @@
           new THREE.CylinderGeometry(1.15, 1.15, 12, 20),
           markerMaterial,
         );
-        marker.position.set(point.x, 6.2, point.y);
+        marker.position.set(point.x, point.elevation + 6.2, point.y);
         marker.castShadow = true;
         group.add(marker);
 
@@ -626,7 +663,7 @@
             metalness: 0.04,
           }),
         );
-        halo.position.set(point.x, 0.12, point.y);
+        halo.position.set(point.x, point.elevation + 0.12, point.y);
         halo.receiveShadow = true;
         group.add(halo);
 
@@ -636,6 +673,49 @@
           marker,
           halo,
         });
+      });
+    }
+
+    buildGradientMarkers() {
+      const { route, trackWidth, sampleRoute } = this.routeState;
+      route.gradientMarkers.forEach((markerData) => {
+        const point = sampleRoute(markerData.distance);
+        const normalX = -Math.sin(point.heading);
+        const normalZ = Math.cos(point.heading);
+        const uphill = markerData.grade >= 0;
+        const signX = point.x + normalX * (trackWidth * 0.9 + 12);
+        const signZ = point.y + normalZ * (trackWidth * 0.9 + 12);
+        const signY = point.elevation + 4.1;
+
+        const post = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.16, 0.2, 4.6, 10),
+          new THREE.MeshStandardMaterial({
+            color: uphill ? 0xffc29b : 0xa6e2ff,
+            roughness: 0.72,
+            metalness: 0.16,
+          }),
+        );
+        post.position.set(signX, point.elevation + 2.3, signZ);
+        post.castShadow = true;
+        post.receiveShadow = true;
+
+        const sign = new THREE.Mesh(
+          new THREE.BoxGeometry(3.3, 2.2, 0.2),
+          new THREE.MeshStandardMaterial({
+            color: uphill ? 0xff9359 : 0x65cfff,
+            emissive: uphill ? 0x8a4218 : 0x114d68,
+            emissiveIntensity: 0.25,
+            roughness: 0.42,
+            metalness: 0.08,
+          }),
+        );
+        sign.position.set(signX, signY, signZ);
+        sign.rotation.y = point.heading;
+        sign.castShadow = true;
+        sign.receiveShadow = true;
+
+        this.gradientGroup.add(post, sign);
+        this.gradientRefs.push({ sign, uphill });
       });
     }
 
@@ -655,7 +735,7 @@
             metalness: 0.42,
           }),
         );
-        mast.position.set(signalX, 5.75, signalZ);
+        mast.position.set(signalX, point.elevation + 5.75, signalZ);
         mast.castShadow = true;
         mast.receiveShadow = true;
 
@@ -667,7 +747,7 @@
             metalness: 0.18,
           }),
         );
-        housing.position.set(signalX, 11.1, signalZ);
+        housing.position.set(signalX, point.elevation + 11.1, signalZ);
         housing.castShadow = true;
 
         const light = new THREE.Mesh(
@@ -680,7 +760,7 @@
             metalness: 0.08,
           }),
         );
-        light.position.set(signalX, 11.2, signalZ + signal.side * 0.18);
+        light.position.set(signalX, point.elevation + 11.2, signalZ + signal.side * 0.18);
         light.castShadow = true;
 
         const base = new THREE.Mesh(
@@ -691,7 +771,7 @@
             metalness: 0.18,
           }),
         );
-        base.position.set(signalX, 0.35, signalZ);
+        base.position.set(signalX, point.elevation + 0.35, signalZ);
         base.castShadow = true;
         base.receiveShadow = true;
 
@@ -705,7 +785,7 @@
       route.scenery.forEach((item) => {
         const point = getSceneryPoint(item);
         const object = this.createSceneryObject(item);
-        object.position.set(point.x, 0, point.y);
+        object.position.set(point.x, point.elevation, point.y);
         object.rotation.y = item.rotation;
         object.scale.setScalar(item.size * 2.5);
         applyShadowFlags(object, true, true);
@@ -1035,7 +1115,7 @@
       puff.age = 0;
       puff.life = 1.9 + Math.random() * 0.6;
       puff.x = sourceX;
-      puff.y = exhaust.height;
+      puff.y = (unit.renderElevation || 0) + exhaust.height;
       puff.z = sourceZ;
       puff.driftX = 0.16 - forwardX * (0.1 + intensity * 0.1) + normalX * sidewaysJitter;
       puff.driftY = 0.34 + intensity * 0.16 + Math.random() * 0.04;
@@ -1185,7 +1265,7 @@
     }
 
     updateGroundAppearance(biomeBlend) {
-      if (!biomeBlend) {
+      if (!biomeBlend || !this.ground || !this.ground.material) {
         return;
       }
 
@@ -1242,7 +1322,7 @@
           ? "#ff9b6d"
           : unit.bodyColor;
 
-        entry.group.position.set(unit.renderX, 0, unit.renderY);
+        entry.group.position.set(unit.renderX, unit.renderElevation || 0, unit.renderY);
         entry.group.rotation.y = Math.PI * 0.5 - unit.renderHeading;
         applyLitFlatColor(entry.bodyMaterial, bodyColor, 0.18);
         applyLitFlatColor(entry.roofMaterial, unit.roofColor, 0.12);
@@ -1318,12 +1398,12 @@
       const forwardZ = Math.sin(this.cameraHeading);
       const desiredTarget = new THREE.Vector3(
         consistCenterX + forwardX * (lookAhead * (1 - sideExposure * 0.24)) + normalX * sideExposure * 4.5,
-        5 + sideExposure * 1.4,
+        (trainPose.elevation || 0) + 5 + sideExposure * 1.4,
         consistCenterZ + forwardZ * (lookAhead * (1 - sideExposure * 0.24)) + normalZ * sideExposure * 4.5,
       );
       const desiredPosition = new THREE.Vector3(
         consistCenterX - forwardX * (centerBack * (1 - sideExposure * 0.12)) + normalX * (sideBias + 1.5),
-        height + sideExposure * 8,
+        (trainPose.elevation || 0) + height + sideExposure * 8,
         consistCenterZ - forwardZ * (centerBack * (1 - sideExposure * 0.12)) + normalZ * (sideBias + 1.5),
       );
 
@@ -1338,9 +1418,8 @@
 
       this.camera.position.copy(this.cameraPosition);
       this.camera.lookAt(this.cameraTarget);
-      this.sunLight.target.position.set(trainPose.x, 0, trainPose.y);
+      this.sunLight.target.position.set(trainPose.x, trainPose.elevation || 0, trainPose.y);
       this.root.add(this.sunLight.target);
-      this.ground.position.set(trainPose.x, -0.08, trainPose.y);
       this.updateGroundMotion(trainPose);
     }
 

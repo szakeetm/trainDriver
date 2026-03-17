@@ -145,6 +145,14 @@ const DEFAULT_TUNING = {
     biomeSectionLengthMin: 2400, // Minimum length in meters of a terrain/scenery biome section.
     biomeSectionLengthMax: 5200, // Maximum length in meters of a terrain/scenery biome section.
     biomeTransitionDistance: 320, // Distance in meters used to blend from one biome section into the next.
+    elevationSegmentLengthMin: 260, // Minimum length in meters of a vertical-profile segment.
+    elevationSegmentLengthMax: 900, // Maximum length in meters of a vertical-profile segment.
+    maxGradient: 0.028, // Steepest ruling gradient used by the generated route, expressed as rise/run.
+    stationGradeLimit: 0.004, // Stations are held to weak grades so stops stay believable.
+    stationGradeZone: 220, // Distance in meters around stations where only weak grades are allowed.
+    gradientChangeMax: 0.011, // Largest grade step between neighboring vertical-profile segments.
+    elevationRecoveryBias: 0.016, // How strongly the profile tends back toward the surrounding terrain baseline.
+    elevationMaxAbs: 120, // Soft cap in meters for route elevation above or below the world baseline.
   },
   signals: {
     spacingMin: 700, // Minimum spacing in meters between generated signals on long straights.
@@ -227,6 +235,7 @@ const DEFAULT_TUNING = {
     brakingForce: 2.5, // Base deceleration force at full applied braking.
     baseDrag: 0.008, // Constant rolling/aero drag term applied at all speeds.
     quadraticDrag: 0.0002, // Speed-squared drag term that grows strongly at high speed.
+    gradeResistancePerUnitGradient: 9.2, // Approximate acceleration change in m/s^2 for a 100% grade; 1% grade changes net acceleration by about 0.092 m/s^2.
     visibleSpeedMultiplier: 1.5, // Multiplier applied to route travel so the train visibly covers ground faster.
     speedCap: 92, // Hard upper speed cap in m/s.
   },
@@ -243,6 +252,8 @@ const DEFAULT_TUNING = {
     routePredictorWidth: 400, // Width in pixels of the lower-left route predictor panel.
     routePredictorHeight: 172, // Height in pixels of the lower-left route predictor panel.
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
+    gradientMarkerMinGrade: 0.008, // Minimum absolute grade before a warning marker is shown.
+    gradientMarkerSpacingMin: 220, // Minimum spacing in meters between successive gradient markers.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
     terrainClearWidthMin: 36, // Minimum width in pixels of the cleared corridor around the track.
     terrainClearWidthScale: 7.6, // Cleared corridor width multiplier relative to zoom scale.
@@ -437,6 +448,28 @@ function hashNoise(x, y) {
   return value - Math.floor(value);
 }
 
+function smoothstep(edge0, edge1, value) {
+  if (edge0 === edge1) {
+    return value >= edge1 ? 1 : 0;
+  }
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function fbmNoise(x, y) {
+  let amplitude = 0.5;
+  let frequency = 1;
+  let total = 0;
+  let amplitudeSum = 0;
+  for (let octave = 0; octave < 4; octave += 1) {
+    total += hashNoise(x * frequency, y * frequency) * amplitude;
+    amplitudeSum += amplitude;
+    amplitude *= 0.5;
+    frequency *= 2;
+  }
+  return amplitudeSum > 0 ? total / amplitudeSum : 0;
+}
+
 function choose(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
@@ -596,6 +629,7 @@ function getRenderedTrainUnits() {
         ...unit,
         renderX: unit.pose.x,
         renderY: unit.pose.y,
+        renderElevation: unit.pose.elevation,
         renderHeading: unit.pose.heading,
         rearX: rearPose.x,
         rearY: rearPose.y,
@@ -618,6 +652,7 @@ function getRenderedTrainUnits() {
       ...unit,
       renderX,
       renderY,
+      renderElevation: unit.pose && unit.pose.elevation != null ? unit.pose.elevation : 0,
       renderHeading,
       rearX: renderX - Math.cos(renderHeading) * unit.length * 0.5,
       rearY: renderY - Math.sin(renderHeading) * unit.length * 0.5,
@@ -774,6 +809,7 @@ function syncDroneInsetRoute() {
     tuning: TUNING,
     sampleRoute: evaluateRoute,
     getSceneryPoint,
+    getTerrainHeight: getTerrainHeightAtWorld,
   });
 }
 
@@ -830,6 +866,9 @@ function getViewMetrics(width, height) {
 
 function evaluateSegment(segment, distanceIntoSegment) {
   const d = clamp(distanceIntoSegment, 0, segment.length);
+  const elevationInfo = route && route.elevationProfile
+    ? evaluateElevationProfile(route.elevationProfile, segment.start + d)
+    : { elevation: 0, grade: 0, segment: null };
   if (Math.abs(segment.curvature) < 1e-6) {
     return {
       x: segment.x0 + Math.cos(segment.heading0) * d,
@@ -837,6 +876,9 @@ function evaluateSegment(segment, distanceIntoSegment) {
       heading: segment.heading0,
       curvature: 0,
       speedLimit: segment.speedLimit,
+      elevation: elevationInfo.elevation,
+      grade: elevationInfo.grade,
+      elevationSegment: elevationInfo.segment,
       segment,
     };
   }
@@ -849,6 +891,9 @@ function evaluateSegment(segment, distanceIntoSegment) {
     heading: h0 + k * d,
     curvature: k,
     speedLimit: segment.speedLimit,
+    elevation: elevationInfo.elevation,
+    grade: elevationInfo.grade,
+    elevationSegment: elevationInfo.segment,
     segment,
   };
 }
@@ -856,12 +901,18 @@ function evaluateSegment(segment, distanceIntoSegment) {
 function evaluateRoute(distance) {
   if (distance < 0) {
     const firstSegment = route.segments[0];
+    const elevationInfo = route && route.elevationProfile
+      ? evaluateElevationProfile(route.elevationProfile, distance)
+      : { elevation: 0, grade: 0, segment: null };
     return {
       x: firstSegment.x0 + Math.cos(firstSegment.heading0) * distance,
       y: firstSegment.y0 + Math.sin(firstSegment.heading0) * distance,
       heading: firstSegment.heading0,
       curvature: 0,
       speedLimit: firstSegment.speedLimit,
+      elevation: elevationInfo.elevation,
+      grade: elevationInfo.grade,
+      elevationSegment: elevationInfo.segment,
       segment: firstSegment,
     };
   }
@@ -897,6 +948,183 @@ function makeSegment(startState, length, curvature, speedLimit) {
       distance: segment.end,
     },
   };
+}
+
+function buildStationGradeZones(stations, totalLength) {
+  const halfZone = TUNING.route.stationGradeZone;
+  return stations
+    .map((station) => ({
+      start: Math.max(0, station.distance - halfZone),
+      end: Math.min(totalLength, station.distance + halfZone),
+    }))
+    .sort((a, b) => a.start - b.start);
+}
+
+function findStationGradeZone(distance, stationZones) {
+  return stationZones.find((zone) => distance >= zone.start && distance < zone.end) || null;
+}
+
+function generateElevationProfile(totalLength, stations) {
+  const segments = [];
+  const stationZones = buildStationGradeZones(stations, totalLength);
+  let cursor = 0;
+  let elevation = 0;
+  let previousGrade = 0;
+  let lastMarkerDistance = -Infinity;
+
+  while (cursor < totalLength - 1e-6) {
+    const activeZone = findStationGradeZone(cursor, stationZones);
+    const zoneEnd = activeZone ? activeZone.end : totalLength;
+    const nextZone = stationZones.find((zone) => zone.start > cursor) || null;
+    const freeRunEnd = activeZone ? zoneEnd : Math.min(zoneEnd, nextZone ? nextZone.start : totalLength);
+    const remaining = Math.max(0, freeRunEnd - cursor);
+    if (remaining <= 0.5) {
+      cursor = Math.max(cursor, freeRunEnd);
+      continue;
+    }
+
+    const desiredLength = activeZone
+      ? remaining
+      : rand(TUNING.route.elevationSegmentLengthMin, TUNING.route.elevationSegmentLengthMax);
+    const length = Math.min(desiredLength, remaining);
+    const maxGradient = activeZone ? TUNING.route.stationGradeLimit : TUNING.route.maxGradient;
+    const recoveryBias = clamp(
+      (-elevation / Math.max(TUNING.route.elevationMaxAbs, 1e-6)) * TUNING.route.elevationRecoveryBias,
+      -TUNING.route.elevationRecoveryBias,
+      TUNING.route.elevationRecoveryBias,
+    );
+    const gradeTarget = activeZone
+      ? rand(-TUNING.route.stationGradeLimit, TUNING.route.stationGradeLimit)
+      : clamp(
+        previousGrade
+          + rand(-TUNING.route.gradientChangeMax, TUNING.route.gradientChangeMax)
+          + recoveryBias
+          + (hashNoise(cursor * 0.0038, elevation * 0.02) - 0.5) * 0.004,
+        -maxGradient,
+        maxGradient,
+      );
+    const grade = activeZone
+      ? clamp(lerp(previousGrade, gradeTarget, 0.72), -maxGradient, maxGradient)
+      : gradeTarget;
+    const nextElevation = elevation + grade * length;
+    const segment = {
+      start: cursor,
+      end: cursor + length,
+      length,
+      grade,
+      elevation0: elevation,
+      elevation1: nextElevation,
+      weakZone: Boolean(activeZone),
+    };
+    segments.push(segment);
+
+    if (!segment.weakZone
+      && Math.abs(segment.grade) >= TUNING.visuals.gradientMarkerMinGrade
+      && segment.start - lastMarkerDistance >= TUNING.visuals.gradientMarkerSpacingMin) {
+      lastMarkerDistance = segment.start;
+    }
+
+    cursor = segment.end;
+    elevation = nextElevation;
+    previousGrade = grade;
+  }
+
+  return segments;
+}
+
+function evaluateElevationProfile(profileSegments, distance) {
+  if (!profileSegments || profileSegments.length === 0) {
+    return {
+      elevation: 0,
+      grade: 0,
+      segment: null,
+    };
+  }
+
+  const clampedDistance = clamp(distance, 0, profileSegments[profileSegments.length - 1].end);
+  const segment = profileSegments.find(
+    (item) => clampedDistance >= item.start && clampedDistance <= item.end,
+  ) || profileSegments[profileSegments.length - 1];
+  const localDistance = clamp(clampedDistance - segment.start, 0, segment.length);
+  return {
+    elevation: segment.elevation0 + segment.grade * localDistance,
+    grade: segment.grade,
+    segment,
+  };
+}
+
+function buildGradientMarkers(profileSegments) {
+  const markers = [];
+  let lastMarkerDistance = -Infinity;
+  profileSegments.forEach((segment) => {
+    if (segment.weakZone || Math.abs(segment.grade) < TUNING.visuals.gradientMarkerMinGrade) {
+      return;
+    }
+    if (segment.start - lastMarkerDistance < TUNING.visuals.gradientMarkerSpacingMin) {
+      return;
+    }
+    lastMarkerDistance = segment.start;
+    markers.push({
+      distance: segment.start + Math.min(28, segment.length * 0.2),
+      grade: segment.grade,
+      percent: segment.grade * 100,
+    });
+  });
+  return markers;
+}
+
+function buildTerrainTrackSamples(totalLength) {
+  const samples = [];
+  const step = 48;
+  for (let distance = 0; distance <= totalLength; distance += step) {
+    const point = evaluateRoute(distance);
+    samples.push({
+      distance,
+      x: point.x,
+      y: point.y,
+      elevation: point.elevation,
+    });
+  }
+  const lastPoint = evaluateRoute(totalLength);
+  const lastSample = samples[samples.length - 1];
+  if (!lastSample || Math.abs(lastSample.distance - totalLength) > 1e-6) {
+    samples.push({
+      distance: totalLength,
+      x: lastPoint.x,
+      y: lastPoint.y,
+      elevation: lastPoint.elevation,
+    });
+  }
+  return samples;
+}
+
+function getTerrainHeightAtWorld(worldX, worldY) {
+  const broad = (fbmNoise(worldX * 0.00038 + 13, worldY * 0.00038 - 7) - 0.5) * 34;
+  const medium = (fbmNoise(worldX * 0.0014 - 11, worldY * 0.0014 + 19) - 0.5) * 10;
+  const fine = (hashNoise(worldX * 0.009, worldY * 0.009) - 0.5) * 1.8;
+  let terrainHeight = broad + medium + fine;
+
+  if (route && route.terrainTrackSamples && route.terrainTrackSamples.length) {
+    let nearest = null;
+    let nearestSquared = Infinity;
+    route.terrainTrackSamples.forEach((sample) => {
+      const dx = sample.x - worldX;
+      const dy = sample.y - worldY;
+      const squared = dx * dx + dy * dy;
+      if (squared < nearestSquared) {
+        nearestSquared = squared;
+        nearest = sample;
+      }
+    });
+
+    if (nearest) {
+      const distance = Math.sqrt(nearestSquared);
+      const corridorBlend = 1 - smoothstep(18, 120, distance);
+      terrainHeight = lerp(terrainHeight, nearest.elevation - 0.35, corridorBlend);
+    }
+  }
+
+  return terrainHeight;
 }
 
 function generateBiomes(totalLength) {
@@ -1015,10 +1243,13 @@ function generateRoute() {
   segments.push(tail.segment);
 
   const totalLength = tail.segment.end;
+  const elevationProfile = generateElevationProfile(totalLength, stations);
 
   return {
     segments,
     stations,
+    elevationProfile,
+    gradientMarkers: buildGradientMarkers(elevationProfile),
     biomes: generateBiomes(totalLength),
     terrainCornerCache: new Map(),
     terrainTileCache: new Map(),
@@ -1364,6 +1595,7 @@ function generateScenery(stations, totalLength) {
 
 function createInitialState() {
   route = generateRoute();
+  route.terrainTrackSamples = buildTerrainTrackSamples(route.totalLength);
   return {
     started: false,
     finished: false,
@@ -1501,6 +1733,15 @@ function getUpcomingRouteEntries() {
       direction: segment.curvature >= 0 ? "Right" : "Left",
     }));
 
+  const gradientEntries = route.gradientMarkers
+    .filter((marker) => marker.distance >= state.distance)
+    .map((marker) => ({
+      type: "gradient",
+      distance: roundDisplayDistance(marker.distance - state.distance),
+      direction: marker.grade >= 0 ? "Up" : "Down",
+      gradePercent: Math.abs(marker.percent),
+    }));
+
   const signalEntries = route.signals
     .filter((signal) => signal.distance >= state.distance)
     .map((signal) => ({
@@ -1510,7 +1751,7 @@ function getUpcomingRouteEntries() {
       limitKph: signal.kind === "yellow" ? Math.round(signal.speedLimit * 3.6) : null,
     }));
 
-  return [...curveEntries, ...signalEntries]
+  return [...curveEntries, ...gradientEntries, ...signalEntries]
     .filter((entry) => entry.distance <= TUNING.route.upcomingCurveLookahead)
     .sort((a, b) => a.distance - b.distance)
     .slice(0, TUNING.visuals.routePredictorMaxEntries);
@@ -1705,6 +1946,7 @@ function updateControls(dt) {
 }
 
 function updatePhysics(dt) {
+  const routePose = currentSegmentInfo();
   const speedRatio = clamp(
     state.speed / TUNING.physics.tractionFadeReferenceSpeed,
     0,
@@ -1717,8 +1959,9 @@ function updatePhysics(dt) {
     * Math.max(TUNING.physics.tractionMinFactor, tractionFade);
   const braking = Math.max(0, -state.actualControl) * TUNING.physics.brakingForce;
   const drag = TUNING.physics.baseDrag + state.speed * state.speed * TUNING.physics.quadraticDrag;
+  const gradeAcceleration = -(routePose.grade || 0) * TUNING.physics.gradeResistancePerUnitGradient;
 
-  let acceleration = traction - braking - drag;
+  let acceleration = traction - braking - drag + gradeAcceleration;
   if (state.speed < 0.08 && acceleration < 0) {
     acceleration = 0;
   }
@@ -1808,6 +2051,10 @@ function checkFailureConditions() {
 function currentSegmentInfo() {
   const info = evaluateRoute(state.distance);
   return info;
+}
+
+function getCurrentGradientPercent() {
+  return currentSegmentInfo().grade * 100;
 }
 
 function updatePenalties(dt) {
@@ -1918,6 +2165,7 @@ function finishRun() {
 function updateUi() {
   const nextStation = route.stations[state.stationIndex];
   const upcomingLimit = findUpcomingLimit();
+  const gradientPercent = getCurrentGradientPercent();
   const shownLimit = upcomingLimit.limit;
   const shownUpcomingLimit = upcomingLimit.upcomingLimit;
   const gap = nextStation ? nextStation.distance - state.distance : 0;
@@ -1930,8 +2178,8 @@ function updateUi() {
   speedKph.textContent = Math.round(state.speed * 3.6);
   lineLimitKph.textContent = shownLimit == null ? "No limit" : Math.round(shownLimit * 3.6);
   lineLimitSecondary.textContent = shownLimit == null
-    ? "Line unrestricted"
-    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
+    ? `Line unrestricted${Math.abs(gradientPercent) >= 0.05 ? ` • ${gradientPercent >= 0 ? "Up" : "Down"} ${Math.abs(gradientPercent).toFixed(1)}%` : ""}`
+    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h${Math.abs(gradientPercent) >= 0.05 ? ` • ${gradientPercent >= 0 ? "Up" : "Down"} ${Math.abs(gradientPercent).toFixed(1)}%` : ""}`;
   distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
   const progressPercent = getGameProgressPercent();
@@ -2128,10 +2376,13 @@ function getSceneryPoint(item) {
   const point = evaluateRoute(item.distance);
   const normalX = -Math.sin(point.heading);
   const normalY = Math.cos(point.heading);
+  const worldX = point.x + normalX * item.offset;
+  const worldY = point.y + normalY * item.offset;
 
   return {
-    x: point.x + normalX * item.offset,
-    y: point.y + normalY * item.offset,
+    x: worldX,
+    y: worldY,
+    elevation: getTerrainHeightAtWorld(worldX, worldY),
   };
 }
 
@@ -2552,6 +2803,38 @@ function drawRouteMarkers(view, width, height) {
     ctx.fillText(`${Math.round(segment.speedLimit * 3.6)}`, screen.x, screen.y + 2);
   });
 
+  route.gradientMarkers.forEach((marker) => {
+    const signPoint = evaluateRoute(marker.distance);
+    const normalX = -Math.sin(signPoint.heading);
+    const normalY = Math.cos(signPoint.heading);
+    const markerPoint = {
+      x: signPoint.x + normalX * (TRACK_WIDTH * 0.9 + 14),
+      y: signPoint.y + normalY * (TRACK_WIDTH * 0.9 + 14),
+    };
+    const screen = {
+      x: width * 0.5 + (markerPoint.x - camera.x) * scale,
+      y: view.anchorY + (markerPoint.y - camera.y) * scale,
+    };
+    if (screen.y < -44 || screen.y > height + 44 || screen.x < -44 || screen.x > width + 44) {
+      return;
+    }
+
+    const uphill = marker.grade >= 0;
+    ctx.fillStyle = uphill ? "rgba(255, 162, 102, 0.16)" : "rgba(114, 212, 255, 0.16)";
+    ctx.strokeStyle = uphill ? "rgba(255, 162, 102, 0.92)" : "rgba(114, 212, 255, 0.92)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(screen.x - 20, screen.y - 18, 40, 26, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = uphill ? "#fff0de" : "#ddf6ff";
+    ctx.font = "700 10px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`${uphill ? "+" : "-"}${Math.abs(marker.percent).toFixed(1)}%`, screen.x, screen.y - 1);
+    ctx.fillText(uphill ? "UP" : "DN", screen.x, screen.y + 10);
+  });
+
   route.signals.forEach((signal) => {
     const basePoint = evaluateRoute(signal.distance);
     const normalX = -Math.sin(basePoint.heading);
@@ -2806,6 +3089,10 @@ function drawRoutePredictor(width, height) {
     const rowY = panelY + 80 + index * 22;
     const color = entry.type === "curve"
       ? "#ffbf52"
+      : entry.type === "gradient"
+        ? entry.direction === "Up"
+          ? "#ff9d66"
+          : "#7fd5ff"
       : entry.aspect === "red"
         ? "#ff6a62"
         : entry.aspect === "yellow"
@@ -2821,11 +3108,15 @@ function drawRoutePredictor(width, height) {
 
     const typeLabel = entry.type === "curve"
       ? `${entry.direction} curve`
+      : entry.type === "gradient"
+        ? `${entry.direction} grade`
       : `${entry.aspect.toUpperCase()} signal`;
     ctx.fillText(typeLabel, typeColumnX, rowY);
 
     const actionLabel = entry.type === "curve"
       ? `${entry.limitKph} km/h`
+      : entry.type === "gradient"
+        ? `${entry.gradePercent.toFixed(1)}%`
       : entry.aspect === "yellow"
         ? `${entry.limitKph} km/h`
         : entry.aspect === "red"
