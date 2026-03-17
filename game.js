@@ -3447,44 +3447,48 @@ function drawTrain(width, height) {
     }
 
     if (unit.type === "locomotive") {
-      drawOrientedPanel(
-        {
-          x: (roof[0].x + roof[1].x) * 0.5 + tangentX * (pixelLength * 0.04),
-          y: (roof[0].y + roof[1].y) * 0.5 + tangentY * (pixelLength * 0.04),
-        },
-        tangentX,
-        tangentY,
-        normalX,
-        normalY,
-        Math.max(5, pixelLength * 0.11),
-        pixelWidth * 0.16,
-        "rgba(255, 232, 160, 0.88)",
+      const windshieldCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.2);
+      const roofPodCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.54);
+      drawFaceBand(
+        frontFace,
+        0.38,
+        0.62,
+        0.2,
+        0.46,
+        "rgba(255, 232, 160, 0.9)",
       );
       drawOrientedPanel(
-        {
-          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5,
-          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5,
-        },
+        windshieldCenter,
         tangentX,
         tangentY,
         normalX,
         normalY,
-        pixelLength * 0.24,
-        pixelWidth * 0.32,
+        pixelLength * 0.12,
+        pixelWidth * 0.28,
+        "rgba(7, 21, 36, 0.82)",
+      );
+      drawOrientedPanel(
+        roofPodCenter,
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
+        pixelLength * 0.2,
+        pixelWidth * 0.26,
         "rgba(22, 29, 38, 0.95)",
       );
       drawOrientedPanel(
         {
-          x: roofFrontCenter.x + tangentX * (pixelLength * 0.02),
-          y: roofFrontCenter.y + tangentY * (pixelLength * 0.02),
+          x: windshieldCenter.x + tangentX * (pixelLength * 0.01),
+          y: windshieldCenter.y + tangentY * (pixelLength * 0.01),
         },
         tangentX,
         tangentY,
         normalX,
         normalY,
-        pixelLength * 0.16,
-        pixelWidth * 0.38,
-        "rgba(7, 21, 36, 0.78)",
+        pixelLength * 0.08,
+        pixelWidth * 0.18,
+        "rgba(235, 242, 248, 0.72)",
       );
 
       const cabSideFace = normalX + normalY > 0
