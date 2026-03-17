@@ -308,6 +308,8 @@ let MAX_POWER_KW = 0;
 let MAX_BRAKE_PRESSURE_BAR = 0;
 let TRAIN_TOTAL_LENGTH = 0;
 let TOTAL_STATIONS = 0;
+const CAMERA_TRAIN_LENGTH_LEAD_MULTIPLIER = 1;
+const CAMERA_SPEED_LEAD_SECONDS = 5;
 
 const keys = {
   accelerate: false,
@@ -635,8 +637,8 @@ function getViewMetrics(width, height) {
   const trainPose = leadUnit.pose;
   const rearPose = rearUnit.rearPose;
   const frontPose = leadUnit.frontPose;
-  const lengthTargetDistance = TRAIN_TOTAL_LENGTH;
-  const speedTargetDistance = state.speed * 5;
+  const lengthTargetDistance = TRAIN_TOTAL_LENGTH * CAMERA_TRAIN_LENGTH_LEAD_MULTIPLIER;
+  const speedTargetDistance = state.speed * CAMERA_SPEED_LEAD_SECONDS;
   const targetAheadDistance = Math.max(lengthTargetDistance, speedTargetDistance);
   const centerTargetDistance = Math.min(route.totalLength, state.distance + targetAheadDistance);
   const lengthTargetPose = evaluateRoute(Math.min(route.totalLength, state.distance + lengthTargetDistance));
