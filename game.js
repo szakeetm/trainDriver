@@ -3346,7 +3346,7 @@ function drawTrain(width, height) {
     const tangentY = axisY / axisLength;
     const normalX = -tangentY;
     const normalY = tangentX;
-    const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
+    const pixelLength = Math.max(TUNING.train.minPixelLength, axisLength);
     const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
     const bodyColor = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
     const topColor = shadeColor(bodyColor, 12);
@@ -3356,17 +3356,18 @@ function drawTrain(width, height) {
     const halfWidth = pixelWidth * 0.48;
     const bodyLiftY = Math.max(7, pixelWidth * 0.68);
     const frontInset = unit.type === "locomotive" ? pixelWidth * 0.16 : 0;
+    const locomotiveNoseDepth = unit.type === "locomotive" ? pixelLength * 0.1 : 0;
     const frontLeft = {
-      x: frontScreen.x - normalX * (halfWidth - frontInset) + tangentX * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
-      y: frontScreen.y - normalY * (halfWidth - frontInset) + tangentY * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+      x: frontScreen.x - normalX * (halfWidth - frontInset),
+      y: frontScreen.y - normalY * (halfWidth - frontInset),
     };
     const frontRight = {
-      x: frontScreen.x + normalX * (halfWidth - frontInset) + tangentX * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
-      y: frontScreen.y + normalY * (halfWidth - frontInset) + tangentY * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+      x: frontScreen.x + normalX * (halfWidth - frontInset),
+      y: frontScreen.y + normalY * (halfWidth - frontInset),
     };
     const midRight = {
-      x: frontScreen.x + normalX * halfWidth - tangentX * pixelLength * 0.14,
-      y: frontScreen.y + normalY * halfWidth - tangentY * pixelLength * 0.14,
+      x: frontScreen.x + normalX * halfWidth - tangentX * locomotiveNoseDepth,
+      y: frontScreen.y + normalY * halfWidth - tangentY * locomotiveNoseDepth,
     };
     const rearRight = {
       x: rearScreen.x + normalX * halfWidth,
@@ -3377,8 +3378,8 @@ function drawTrain(width, height) {
       y: rearScreen.y - normalY * halfWidth,
     };
     const midLeft = {
-      x: frontScreen.x - normalX * halfWidth - tangentX * pixelLength * 0.14,
-      y: frontScreen.y - normalY * halfWidth - tangentY * pixelLength * 0.14,
+      x: frontScreen.x - normalX * halfWidth - tangentX * locomotiveNoseDepth,
+      y: frontScreen.y - normalY * halfWidth - tangentY * locomotiveNoseDepth,
     };
     const base = unit.type === "locomotive"
       ? [frontLeft, frontRight, midRight, rearRight, rearLeft, midLeft]
