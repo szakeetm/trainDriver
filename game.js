@@ -114,11 +114,11 @@ const DEFAULT_TUNING = {
     lateralSpanMin: 7, // Base side-to-side world span used for zoom when stopped.
     lateralSpanBySpeed: 40, // Extra side-to-side world span added as speed rises.
     stoppedZoomMultiplier: 0.9, // Fraction of the safe fit scale used at zero speed so the whole train stays on-screen.
-    movingZoomMultiplier: 0.88, // Fraction of the safe fit scale used once the train is up to speed.
+    movingZoomMultiplier: 0.94, // Fraction of the safe fit scale used once the train is up to speed.
     minimumCenterLookAheadStoppedFactor: 1.3, // Minimum center target ahead distance in train lengths while stopped.
-    minimumCenterLookAheadMovingFactor: 3.1, // Minimum center target ahead distance in train lengths once speed builds.
-    locomotiveLeadViewportFractionStopped: 0.2, // Fraction of the viewport size between the locomotive and screen center while stopped.
-    locomotiveLeadViewportFractionMoving: 0.3, // Fraction of the viewport size between the locomotive and screen center at speed.
+    minimumCenterLookAheadMovingFactor: 2.4, // Minimum center target ahead distance in train lengths once speed builds.
+    locomotiveLeadViewportFractionStopped: 0.28, // Fraction of the viewport size between the locomotive and screen center while stopped.
+    locomotiveLeadViewportFractionMoving: 0.42, // Fraction of the viewport size between the locomotive and screen center at speed.
     anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
   },
   route: {
@@ -635,8 +635,8 @@ function getViewMetrics(width, height) {
   const rearUnit = trainUnits[trainUnits.length - 1];
   const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
-  const cameraSpeedFactor = smoothstep(2, 46, state.speed);
-  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 2.15);
+  const cameraSpeedFactor = smoothstep(6, 60, state.speed);
+  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 2.9);
   const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
   const lookBehind = TUNING.camera.lookBehindMin + cameraSpeedFactor * TUNING.camera.lookBehindBySpeed;
   const minimumCenterLookAhead = TRAIN_TOTAL_LENGTH * lerp(
@@ -647,15 +647,15 @@ function getViewMetrics(width, height) {
   const centerLookAheadDistance = Math.max(state.speed * 5, minimumCenterLookAhead);
   const centerTargetDistance = Math.min(route.totalLength, state.distance + centerLookAheadDistance);
   const lookAhead = lerp(TUNING.camera.lookAheadStopped, TUNING.camera.lookAheadMin, cameraSpeedFactor)
-    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.32
-    + gradeFactor * 90;
+    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.18
+    + gradeFactor * 80;
   const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
   const aheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead, centerTargetDistance));
   const rearPose = rearUnit.rearPose;
   const viewStartPose = evaluateRoute(rearDistance);
   const centerTargetPose = evaluateRoute(centerTargetDistance);
   const aheadPose = evaluateRoute(aheadDistance);
-  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.32;
+  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.18;
   const leadDistance = centerTargetDistance - state.distance;
   const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
   const aheadRenderBuffer = TUNING.camera.renderAheadBufferMin + cameraSpeedFactor * TUNING.camera.renderAheadBufferBySpeed;
@@ -3295,6 +3295,43 @@ function drawTrain(width, height) {
     ctx.fill();
   }
 
+  function interpolatePoint(a, b, t) {
+    return {
+      x: lerp(a.x, b.x, t),
+      y: lerp(a.y, b.y, t),
+    };
+  }
+
+  function fillQuad(points, fillStyle, strokeStyle = null) {
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+    points.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+    ctx.fill();
+    if (strokeStyle) {
+      ctx.strokeStyle = strokeStyle;
+      ctx.stroke();
+    }
+  }
+
+  function drawFaceBand(facePoints, alongStart, alongEnd, verticalStart, verticalEnd, fillStyle) {
+    const [bottomStart, bottomEnd, topEnd, topStart] = facePoints;
+    const bottomA = interpolatePoint(bottomStart, bottomEnd, alongStart);
+    const bottomB = interpolatePoint(bottomStart, bottomEnd, alongEnd);
+    const topA = interpolatePoint(topStart, topEnd, alongStart);
+    const topB = interpolatePoint(topStart, topEnd, alongEnd);
+    fillQuad(
+      [
+        interpolatePoint(bottomA, topA, verticalStart),
+        interpolatePoint(bottomB, topB, verticalStart),
+        interpolatePoint(bottomB, topB, verticalEnd),
+        interpolatePoint(bottomA, topA, verticalEnd),
+      ],
+      fillStyle,
+    );
+  }
+
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
   ctx.lineWidth = Math.max(TUNING.train.couplerLineWidthMin, scale * TUNING.train.couplerLineWidthScale);
@@ -3412,45 +3449,32 @@ function drawTrain(width, height) {
     ctx.strokeStyle = "rgba(255,255,255,0.62)";
     ctx.lineWidth = 1.25;
 
-    ctx.fillStyle = sideColor;
-    ctx.beginPath();
-    ctx.moveTo(base[2].x, base[2].y);
-    ctx.lineTo(base[3].x, base[3].y);
-    ctx.lineTo(top[3].x, top[3].y);
-    ctx.lineTo(top[2].x, top[2].y);
-    ctx.closePath();
-    ctx.fill();
+    const faceStroke = "rgba(255,255,255,0.16)";
+    const frontFace = [base[0], base[1], top[1], top[0]];
 
-    ctx.fillStyle = shadeColor(bodyColor, -24);
-    ctx.beginPath();
-    const leftFaceStart = unit.type === "locomotive" ? 4 : 3;
-    const leftFaceEnd = unit.type === "locomotive" ? 5 : 0;
-    ctx.moveTo(base[leftFaceStart].x, base[leftFaceStart].y);
-    ctx.lineTo(base[leftFaceEnd].x, base[leftFaceEnd].y);
-    ctx.lineTo(top[leftFaceEnd].x, top[leftFaceEnd].y);
-    ctx.lineTo(top[leftFaceStart].x, top[leftFaceStart].y);
-    ctx.closePath();
-    ctx.fill();
+    if (unit.type === "locomotive") {
+      const rightRearFace = [base[2], base[3], top[3], top[2]];
+      const rightFrontFace = [base[1], base[2], top[2], top[1]];
+      const leftRearFace = [base[4], base[5], top[5], top[4]];
+      const leftFrontFace = [base[5], base[0], top[0], top[5]];
+      const rearFace = [base[4], base[3], top[3], top[4]];
 
-    ctx.fillStyle = endColor;
-    ctx.beginPath();
-    ctx.moveTo(base[0].x, base[0].y);
-    ctx.lineTo(base[1].x, base[1].y);
-    ctx.lineTo(top[1].x, top[1].y);
-    ctx.lineTo(top[0].x, top[0].y);
-    ctx.closePath();
-    ctx.fill();
+      fillQuad(rightRearFace, sideColor, faceStroke);
+      fillQuad(rightFrontFace, shadeColor(bodyColor, -14), faceStroke);
+      fillQuad(leftRearFace, shadeColor(bodyColor, -24), faceStroke);
+      fillQuad(leftFrontFace, shadeColor(bodyColor, -20), faceStroke);
+      fillQuad(frontFace, endColor, faceStroke);
+      fillQuad(rearFace, shadeColor(bodyColor, -22), faceStroke);
+    } else {
+      const rightFace = [base[1], base[2], top[2], top[1]];
+      const leftFace = [base[3], base[0], top[0], top[3]];
+      const rearFace = [base[3], base[2], top[2], top[3]];
 
-    ctx.fillStyle = shadeColor(bodyColor, -22);
-    ctx.beginPath();
-    const rearLeftIndex = unit.type === "locomotive" ? 4 : 3;
-    const rearRightIndex = unit.type === "locomotive" ? 3 : 2;
-    ctx.moveTo(base[rearLeftIndex].x, base[rearLeftIndex].y);
-    ctx.lineTo(base[rearRightIndex].x, base[rearRightIndex].y);
-    ctx.lineTo(top[rearRightIndex].x, top[rearRightIndex].y);
-    ctx.lineTo(top[rearLeftIndex].x, top[rearLeftIndex].y);
-    ctx.closePath();
-    ctx.fill();
+      fillQuad(rightFace, sideColor, faceStroke);
+      fillQuad(leftFace, shadeColor(bodyColor, -24), faceStroke);
+      fillQuad(frontFace, endColor, faceStroke);
+      fillQuad(rearFace, shadeColor(bodyColor, -22), faceStroke);
+    }
 
     ctx.fillStyle = topColor;
     ctx.beginPath();
@@ -3520,19 +3544,37 @@ function drawTrain(width, height) {
         pixelWidth * 0.38,
         "rgba(7, 21, 36, 0.78)",
       );
+
+      const cabSideFace = normalX + normalY > 0
+        ? [base[1], base[2], top[2], top[1]]
+        : [base[5], base[0], top[0], top[5]];
+      drawFaceBand(
+        cabSideFace,
+        0.14,
+        0.56,
+        0.34,
+        0.68,
+        "rgba(245, 248, 255, 0.5)",
+      );
     } else {
-      drawOrientedPanel(
-        {
-          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5 + roofLiftX * 0.46,
-          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5 + roofLiftY * 0.46,
-        },
-        tangentX,
-        tangentY,
-        normalX,
-        normalY,
-        pixelLength * 0.48,
-        pixelWidth * 0.24,
-        "rgba(50, 73, 92, 0.45)",
+      const visibleSideFace = normalX + normalY > 0
+        ? [base[1], base[2], top[2], top[1]]
+        : [base[3], base[0], top[0], top[3]];
+      drawFaceBand(
+        visibleSideFace,
+        0.18,
+        0.82,
+        0.28,
+        0.7,
+        "rgba(244, 248, 255, 0.58)",
+      );
+      drawFaceBand(
+        visibleSideFace,
+        0.2,
+        0.8,
+        0.42,
+        0.58,
+        "rgba(110, 134, 154, 0.42)",
       );
     }
 
