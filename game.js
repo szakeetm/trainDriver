@@ -1249,6 +1249,7 @@ function generateRoute() {
     terrainCornerCache: new Map(),
     terrainHeightCache: new Map(),
     terrainTileCache: new Map(),
+    terrainTextureCache: new Map(),
     scenerySpriteCache: new Map(),
     signals: generateSignals(segments, stations, totalLength),
     scenery: generateScenery(stations, totalLength),
@@ -2431,6 +2432,19 @@ function getScenerySprite(key, drawFn) {
   return sprite;
 }
 
+function getTerrainTextureSprite(key, drawFn) {
+  if (route.terrainTextureCache.has(key)) {
+    return route.terrainTextureCache.get(key);
+  }
+
+  const textureCanvas = createSpriteCanvas(96, 96);
+  const textureCtx = textureCanvas.getContext("2d");
+  drawFn(textureCtx, textureCanvas.width, textureCanvas.height);
+  const texture = { canvas: textureCanvas };
+  route.terrainTextureCache.set(key, texture);
+  return texture;
+}
+
 function drawBackground(width, height) {
   const view = getViewMetrics(width, height);
   const { camera, scale } = view;
@@ -2522,22 +2536,22 @@ function drawBackground(width, height) {
 
       if (cellAverageHeight > rightNeighborHeight + 0.5) {
         const rightDrop = cellAverageHeight - rightNeighborHeight;
-        const rightBottom = worldToScreenWithView({
+        const lowerTopRight = worldToScreenWithView({
           x: worldX + cellSize,
           y: worldY + cellSize * 0.5,
           visualElevation: (topRightHeight + bottomRightHeight) * 0.5 - rightDrop,
         }, view, width);
-        const lowerCenter = worldToScreenWithView({
+        const lowerBottom = worldToScreenWithView({
           x: worldX + cellSize * 0.5,
-          y: worldY + cellSize * 0.5,
-          visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize * 0.5) - rightDrop,
+          y: worldY + cellSize,
+          visualElevation: (bottomLeftHeight + bottomRightHeight) * 0.5 - rightDrop * 0.92,
         }, view, width);
         ctx.fillStyle = `rgba(74, 88, 55, ${clamp(0.2 + rightDrop * 0.018, 0.2, 0.42).toFixed(3)})`;
         ctx.beginPath();
         ctx.moveTo(right.x, right.y);
         ctx.lineTo(bottom.x, bottom.y);
-        ctx.lineTo(lowerCenter.x, lowerCenter.y);
-        ctx.lineTo(rightBottom.x, rightBottom.y);
+        ctx.lineTo(lowerBottom.x, lowerBottom.y);
+        ctx.lineTo(lowerTopRight.x, lowerTopRight.y);
         ctx.closePath();
         ctx.fill();
       }
@@ -2564,76 +2578,95 @@ function drawBackground(width, height) {
         ctx.fill();
       }
 
-      const tileGradient = ctx.createLinearGradient(0, top.y, 0, bottom.y);
-      tileGradient.addColorStop(0, paletteColorToCss(topColor));
-      tileGradient.addColorStop(1, paletteColorToCss(bottomColor));
-      ctx.fillStyle = tileGradient;
+      const detailColor = mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5);
+      const riverMix = lerp(topLeft.riverMix, bottomRight.riverMix, 0.5);
+      const textureKey = [
+        Math.round(topColor[0]), Math.round(topColor[1]), Math.round(topColor[2]), Math.round(topColor[3] * 100),
+        Math.round(bottomColor[0]), Math.round(bottomColor[1]), Math.round(bottomColor[2]), Math.round(bottomColor[3] * 100),
+        Math.round(detailColor[0]), Math.round(detailColor[1]), Math.round(detailColor[2]),
+        Math.round(tileStyle.biomeSeed * 4),
+        Math.round(tileStyle.toneSeed * 4),
+        Math.round(riverMix * 4),
+      ].join(":");
+      const terrainTexture = getTerrainTextureSprite(textureKey, (textureCtx, spriteWidth, spriteHeight) => {
+        const tileGradient = textureCtx.createLinearGradient(0, 0, 0, spriteHeight);
+        tileGradient.addColorStop(0, paletteColorToCss(topColor));
+        tileGradient.addColorStop(1, paletteColorToCss(bottomColor));
+        textureCtx.fillStyle = tileGradient;
+        textureCtx.fillRect(0, 0, spriteWidth, spriteHeight);
+
+        textureCtx.fillStyle = `rgba(${Math.round(detailColor[0])}, ${Math.round(detailColor[1])}, ${Math.round(detailColor[2])}, 0.09)`;
+        const ovalCount = 1 + Math.round(tileStyle.toneSeed * 2);
+        for (let ovalIndex = 0; ovalIndex < ovalCount; ovalIndex += 1) {
+          const px = (hashNoise(tileStyle.biomeSeed * 97 + ovalIndex * 3.1, tileStyle.toneSeed * 83 + ovalIndex * 1.7) * 0.7 + 0.15) * spriteWidth;
+          const py = (hashNoise(tileStyle.toneSeed * 79 + ovalIndex * 2.3, tileStyle.biomeSeed * 61 + ovalIndex * 4.1) * 0.6 + 0.2) * spriteHeight;
+          const rx = (10 + hashNoise(ovalIndex + 17, tileStyle.biomeSeed * 37) * 18);
+          const ry = rx * 0.55;
+          const angle = hashNoise(ovalIndex + 23, tileStyle.toneSeed * 29) * Math.PI;
+          textureCtx.beginPath();
+          textureCtx.ellipse(px, py, rx, ry, angle, 0, Math.PI * 2);
+          textureCtx.fill();
+        }
+
+        if (riverMix > 0.05) {
+          textureCtx.fillStyle = `rgba(84, 154, 194, ${(0.08 + riverMix * 0.14).toFixed(3)})`;
+          textureCtx.beginPath();
+          textureCtx.ellipse(
+            spriteWidth * (0.32 + tileStyle.biomeSeed * 0.36),
+            spriteHeight * 0.52,
+            spriteWidth * 0.18,
+            spriteHeight * 0.08,
+            0,
+            0,
+            Math.PI * 2,
+          );
+          textureCtx.fill();
+        }
+      });
+
+      const tileMinX = Math.min(top.x, right.x, bottom.x, left.x);
+      const tileMaxX = Math.max(top.x, right.x, bottom.x, left.x);
+      const tileMinY = Math.min(top.y, right.y, bottom.y, left.y);
+      const tileMaxY = Math.max(top.y, right.y, bottom.y, left.y);
+      ctx.save();
       ctx.beginPath();
       ctx.moveTo(top.x, top.y);
       ctx.lineTo(right.x, right.y);
       ctx.lineTo(bottom.x, bottom.y);
       ctx.lineTo(left.x, left.y);
       ctx.closePath();
-      ctx.fill();
+      ctx.clip();
+      ctx.drawImage(terrainTexture.canvas, tileMinX, tileMinY, Math.max(1, tileMaxX - tileMinX), Math.max(1, tileMaxY - tileMinY));
+      ctx.restore();
       ctx.strokeStyle = `rgba(255, 255, 255, ${(0.07 + relief * 0.008).toFixed(3)})`;
       ctx.lineWidth = 1 + clamp(relief * 0.025, 0, 1.4);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(right.x, right.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.lineTo(left.x, left.y);
+      ctx.closePath();
       ctx.stroke();
 
       const slopeX = ((topRightHeight + bottomRightHeight) - (topLeftHeight + bottomLeftHeight)) * 0.5;
       const slopeY = ((bottomLeftHeight + bottomRightHeight) - (topLeftHeight + topRightHeight)) * 0.5;
       const light = clamp(0.52 + (-slopeX * 0.018) + (-slopeY * 0.014), 0.2, 0.82);
-      ctx.fillStyle = `rgba(255, 255, 255, ${(relief * 0.006 + light * 0.08).toFixed(3)})`;
+      const edgeHighlightAlpha = clamp(relief * 0.003 + light * 0.04, 0.02, 0.06);
+      ctx.strokeStyle = `rgba(255, 255, 255, ${edgeHighlightAlpha.toFixed(3)})`;
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(top.x, top.y);
       ctx.lineTo(right.x, right.y);
-      ctx.lineTo(center.x, center.y);
-      ctx.lineTo(left.x, left.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = `rgba(16, 24, 18, ${(relief * 0.008 + (1 - light) * 0.09).toFixed(3)})`;
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(16, 24, 18, ${clamp(relief * 0.004 + (1 - light) * 0.05, 0.02, 0.07).toFixed(3)})`;
       ctx.beginPath();
       ctx.moveTo(left.x, left.y);
-      ctx.lineTo(center.x, center.y);
-      ctx.lineTo(right.x, right.y);
       ctx.lineTo(bottom.x, bottom.y);
-      ctx.closePath();
-      ctx.fill();
-
-      if (relief > 2.6) {
-        const contourAlpha = clamp(0.045 + relief * 0.004, 0.05, 0.11);
-        ctx.strokeStyle = `rgba(245, 248, 235, ${contourAlpha.toFixed(3)})`;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(lerp(left.x, top.x, 0.35), lerp(left.y, top.y, 0.35));
-        ctx.lineTo(lerp(center.x, top.x, 0.22), lerp(center.y, top.y, 0.22));
-        ctx.lineTo(lerp(right.x, top.x, 0.35), lerp(right.y, top.y, 0.35));
-        ctx.stroke();
-      }
+      ctx.stroke();
 
       const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale * 0.8;
-      const detailColor = mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5);
-      ctx.fillStyle = paletteColorToCss(detailColor);
-      ctx.beginPath();
-      ctx.ellipse(
-        center.x + (hashNoise(cellGridX + 2, cellGridY + 5) - 0.5) * cellSize * scale * 0.8,
-        center.y + (hashNoise(cellGridX + 8, cellGridY + 11) - 0.5) * cellSize * scale * 0.35,
-        tuftSize,
-        tuftSize * 0.6,
-        hashNoise(cellGridX + 12, cellGridY + 15) * Math.PI,
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-
-      const riverMix = lerp(topLeft.riverMix, bottomRight.riverMix, 0.5);
-      if (riverMix > 0) {
-        const waterMix = riverMix;
-        const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36 * scale;
-        ctx.fillStyle = `rgba(84, 154, 194, ${(0.08 + waterMix * 0.14).toFixed(3)})`;
-        ctx.beginPath();
-        ctx.ellipse(center.x + ribbon, center.y, cellSize * scale * 0.18, cellSize * scale * 0.08, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      void tuftSize;
+      void center;
     }
   }
 
