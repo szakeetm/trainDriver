@@ -380,11 +380,11 @@ function createGameAudio() {
 
   engineLow.type = "sawtooth";
   engineHigh.type = "triangle";
-  engineLow.frequency.value = 24;
-  engineHigh.frequency.value = 40;
+  engineLow.frequency.value = 26;
+  engineHigh.frequency.value = 43;
   engineHigh.detune.value = 7;
-  engineLowGain.gain.value = 0.085;
-  engineHighGain.gain.value = 0.042;
+  engineLowGain.gain.value = 0.11;
+  engineHighGain.gain.value = 0.055;
   engineFilter.type = "lowpass";
   engineFilter.frequency.value = 260;
   engineFilter.Q.value = 0.8;
@@ -511,12 +511,12 @@ function updateGameAudio(dt = 0) {
     const accelNorm = clamp(Math.max(0, state.acceleration || 0) / Math.max(TUNING.physics.tractionForce, 1e-6), 0, 1);
     const brakeLoad = clamp(Math.max(0, -(state.acceleration || 0)) / Math.max(TUNING.physics.brakingForce, 1e-6), 0, 1);
 
-    const engineBase = activeRun ? 0.05 : 0;
-    const engineGain = engineBase + throttle * 0.14 + accelNorm * 0.055 + speedNorm * 0.04;
+    const engineBase = activeRun ? 0.065 : 0;
+    const engineGain = engineBase + throttle * 0.182 + accelNorm * 0.072 + speedNorm * 0.052;
     setAudioParam(gameAudio.engineMix.gain, engineGain, 0.12);
-    setAudioParam(gameAudio.engineLow.frequency, 22 + throttle * 20 + speedNorm * 12, 0.1);
-    setAudioParam(gameAudio.engineHigh.frequency, 36 + throttle * 34 + speedNorm * 20 + accelNorm * 8, 0.1);
-    setAudioParam(gameAudio.engineFilter.frequency, 150 + throttle * 420 + speedNorm * 220 + accelNorm * 120, 0.14);
+    setAudioParam(gameAudio.engineLow.frequency, 24 + throttle * 19 + speedNorm * 11, 0.1);
+    setAudioParam(gameAudio.engineHigh.frequency, 39 + throttle * 32 + speedNorm * 19 + accelNorm * 7, 0.1);
+    setAudioParam(gameAudio.engineFilter.frequency, 145 + throttle * 390 + speedNorm * 205 + accelNorm * 115, 0.14);
 
     const rollingGain = activeRun
       ? (
