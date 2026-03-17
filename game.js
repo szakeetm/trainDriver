@@ -630,160 +630,51 @@ function getRenderedTrainUnits() {
 
 function getViewMetrics(width, height) {
   const trainUnits = getTrainUnits();
-  const renderedTrainUnits = getRenderedTrainUnits();
   const leadUnit = trainUnits[0];
   const rearUnit = trainUnits[trainUnits.length - 1];
   const trainPose = leadUnit.pose;
-  const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
-  const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
-  const cameraSpeedFactor = smoothstep(10, 72, state.speed);
-  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 3.6);
-  const zoomGradeFactor = gradeFactor * cameraSpeedFactor;
-  const lookBehind = TUNING.camera.lookBehindMin + cameraSpeedFactor * TUNING.camera.lookBehindBySpeed;
-  const minimumCenterLookAhead = TRAIN_TOTAL_LENGTH * lerp(
-    TUNING.camera.minimumCenterLookAheadStoppedFactor,
-    TUNING.camera.minimumCenterLookAheadMovingFactor,
-    zoomSpeedFactor,
-  );
-  const centerLookAheadDistance = Math.max(state.speed * 5, minimumCenterLookAhead);
-  const centerTargetDistance = Math.min(route.totalLength, state.distance + centerLookAheadDistance);
-  const lookAhead = lerp(TUNING.camera.lookAheadStopped, TUNING.camera.lookAheadMin, cameraSpeedFactor)
-    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.18
-    + zoomGradeFactor * 80;
-  const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
-  const fitAheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead * 0.68, centerTargetDistance));
-  const aheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead, fitAheadDistance));
   const rearPose = rearUnit.rearPose;
-  const viewStartPose = evaluateRoute(rearDistance);
+  const frontPose = leadUnit.frontPose;
+  const targetAheadDistance = Math.max(TRAIN_TOTAL_LENGTH * 2, state.speed * 5);
+  const centerTargetDistance = Math.min(route.totalLength, state.distance + targetAheadDistance);
   const centerTargetPose = evaluateRoute(centerTargetDistance);
-  const fitAheadPose = evaluateRoute(fitAheadDistance);
-  const aheadPose = evaluateRoute(aheadDistance);
-  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.18;
-  const leadDistance = centerTargetDistance - state.distance;
-  const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
-  const aheadRenderBuffer = TUNING.camera.renderAheadBufferMin + cameraSpeedFactor * TUNING.camera.renderAheadBufferBySpeed;
   const camera = {
-    x: (rearPose.x * 0.18) + (centerTargetPose.x * 0.62) + (fitAheadPose.x * 0.2),
-    y: (rearPose.y * 0.18) + (centerTargetPose.y * 0.62) + (fitAheadPose.y * 0.2),
+    x: centerTargetPose.x,
+    y: centerTargetPose.y,
   };
-  const samplePoints = [];
-  const sampleStep = 80;
-  for (let distance = rearDistance; distance <= fitAheadDistance; distance += sampleStep) {
-    samplePoints.push(evaluateRoute(distance));
-  }
-  samplePoints.push(viewStartPose, rearPose, trainPose, centerTargetPose, fitAheadPose);
-
-  [viewStartPose, rearPose, trainPose, centerTargetPose, fitAheadPose].forEach((pose) => {
-    const normalX = -Math.sin(pose.heading);
-    const normalY = Math.cos(pose.heading);
-    samplePoints.push({
-      x: pose.x + normalX * lateralSpan * 0.5,
-      y: pose.y + normalY * lateralSpan * 0.5,
-      visualElevation: pose.visualElevation,
-    });
-    samplePoints.push({
-      x: pose.x - normalX * lateralSpan * 0.5,
-      y: pose.y - normalY * lateralSpan * 0.5,
-      visualElevation: pose.visualElevation,
-    });
-  });
-
-  renderedTrainUnits.forEach((unit) => {
-    const heading = unit.renderHeading;
-    const tangentX = Math.cos(heading);
-    const tangentY = Math.sin(heading);
-    const normalX = -tangentY;
-    const normalY = tangentX;
-    const halfLength = unit.length * 0.5;
-    const halfWidth = unit.width * 0.58;
-    const centerPoint = {
-      x: unit.renderX,
-      y: unit.renderY,
-      visualElevation: unit.visualElevation,
-    };
-    const frontPoint = {
-      x: unit.renderX + tangentX * halfLength,
-      y: unit.renderY + tangentY * halfLength,
-      visualElevation: unit.visualElevation,
-    };
-    const rearPoint = {
-      x: unit.renderX - tangentX * halfLength,
-      y: unit.renderY - tangentY * halfLength,
-      visualElevation: unit.visualElevation,
-    };
-
-    samplePoints.push(centerPoint, frontPoint, rearPoint);
-
-    [frontPoint, rearPoint].forEach((point) => {
-      samplePoints.push({
-        x: point.x + normalX * halfWidth,
-        y: point.y + normalY * halfWidth,
-        visualElevation: point.visualElevation,
-      });
-      samplePoints.push({
-        x: point.x - normalX * halfWidth,
-        y: point.y - normalY * halfWidth,
-        visualElevation: point.visualElevation,
-      });
-    });
-  });
-
-  const projectedPoints = samplePoints.map((point) => projectIsometricPoint(point, camera));
-  const sideMargin = 48;
-  const topMargin = 52;
-  const bottomMargin = 40;
-  const centerX = width * 0.5;
-  const centerY = height * 0.5;
-  const locomotiveProj = projectIsometricPoint(trainPose, camera);
   const centerProj = projectIsometricPoint(centerTargetPose, camera);
-  let projectedDirX = centerProj.x - locomotiveProj.x;
-  let projectedDirY = centerProj.y - locomotiveProj.y;
-  let projectedDirLength = Math.hypot(projectedDirX, projectedDirY);
-  if (projectedDirLength < 1e-6) {
-    const projectedAngle = getProjectedAngle(trainPose.heading);
-    projectedDirX = Math.cos(projectedAngle);
-    projectedDirY = Math.sin(projectedAngle);
-    projectedDirLength = 1;
-  }
-  projectedDirX /= projectedDirLength;
-  projectedDirY /= projectedDirLength;
-  const leadPixels = Math.min(width, height) * lerp(
-    TUNING.camera.locomotiveLeadViewportFractionStopped,
-    TUNING.camera.locomotiveLeadViewportFractionMoving,
-    cameraSpeedFactor,
-  );
-  const targetLocoX = centerX - projectedDirX * leadPixels;
-  const targetLocoY = centerY - projectedDirY * leadPixels;
-  let scaleLimit = Number.POSITIVE_INFINITY;
-  projectedPoints.forEach((point) => {
-    const deltaX = point.x - locomotiveProj.x;
-    const deltaY = point.y - locomotiveProj.y;
-    if (Math.abs(deltaX) > 1e-6) {
-      const boundX = deltaX > 0
-        ? ((width - sideMargin) - targetLocoX) / deltaX
-        : (sideMargin - targetLocoX) / deltaX;
-      if (boundX > 0) {
-        scaleLimit = Math.min(scaleLimit, boundX);
-      }
-    }
-    if (Math.abs(deltaY) > 1e-6) {
-      const boundY = deltaY > 0
-        ? ((height - bottomMargin) - targetLocoY) / deltaY
-        : (topMargin - targetLocoY) / deltaY;
-      if (boundY > 0) {
-        scaleLimit = Math.min(scaleLimit, boundY);
-      }
-    }
+  const frontProj = projectIsometricPoint(frontPose, camera);
+  const rearProj = projectIsometricPoint(rearPose, camera);
+  const rearHeading = rearUnit.heading;
+  const rearNormalX = -Math.sin(rearHeading);
+  const rearNormalY = Math.cos(rearHeading);
+  const rearHalfWidth = rearUnit.width * 0.58;
+  const rearLeftProj = projectIsometricPoint({
+    x: rearPose.x - rearNormalX * rearHalfWidth,
+    y: rearPose.y - rearNormalY * rearHalfWidth,
+    visualElevation: rearPose.visualElevation,
+  }, camera);
+  const rearRightProj = projectIsometricPoint({
+    x: rearPose.x + rearNormalX * rearHalfWidth,
+    y: rearPose.y + rearNormalY * rearHalfWidth,
+    visualElevation: rearPose.visualElevation,
+  }, camera);
+  const shorterHalf = Math.max(80, Math.min(width, height) * 0.5 - 56);
+  const rearFitPoints = [rearProj, rearLeftProj, rearRightProj];
+  let rearSpan = 1;
+  rearFitPoints.forEach((point) => {
+    rearSpan = Math.max(
+      rearSpan,
+      Math.abs(point.x - centerProj.x),
+      Math.abs(point.y - centerProj.y),
+    );
   });
-  if (!Number.isFinite(scaleLimit)) {
-    scaleLimit = 1;
-  }
-  let scale = Math.max(
-    0.0001,
-    scaleLimit * lerp(TUNING.camera.stoppedZoomMultiplier, TUNING.camera.movingZoomMultiplier, zoomSpeedFactor),
-  );
-  const anchorX = targetLocoX - locomotiveProj.x * scale;
-  const anchorY = targetLocoY - locomotiveProj.y * scale;
+  const scale = Math.max(0.0001, shorterHalf / rearSpan);
+  const anchorX = width * 0.5 - centerProj.x * scale;
+  const anchorY = height * 0.5 - centerProj.y * scale;
+  const trainLengthPixels = Math.hypot(frontProj.x - rearProj.x, frontProj.y - rearProj.y) * scale;
+  const rearRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH, 180);
+  const aheadRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH * 3.5, state.speed * 6, 520);
 
   return {
     camera,
@@ -792,9 +683,10 @@ function getViewMetrics(width, height) {
     scale,
     anchorX,
     anchorY,
-    startDistance: Math.max(0, rearDistance - rearRenderBuffer),
-    endDistance: Math.min(route.totalLength, aheadDistance + aheadRenderBuffer),
-    leadDistance,
+    startDistance: Math.max(0, rearUnit.rearDistance - rearRenderBuffer),
+    endDistance: Math.min(route.totalLength, centerTargetDistance + aheadRenderBuffer),
+    leadDistance: centerTargetDistance - state.distance,
+    trainLengthPixels,
   };
 }
 
