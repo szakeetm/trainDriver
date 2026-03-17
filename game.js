@@ -1724,15 +1724,17 @@ function findUpcomingLimit() {
 }
 
 function getRedStopZone(signal) {
+  const halfLength = STATION_WINDOW;
   return {
-    centerDistance: Math.max(0, signal.distance - TUNING.signals.redStopWindow * 0.5),
-    radius: TUNING.signals.redStopWindow * TUNING.signals.redStopCircleScale,
+    centerDistance: Math.max(0, signal.distance - halfLength * 0.5),
+    halfLength,
+    radius: halfLength,
   };
 }
 
 function isInsideRedStopZone(signal, distance = state.distance) {
   const stopZone = getRedStopZone(signal);
-  return Math.abs(distance - stopZone.centerDistance) <= stopZone.radius;
+  return Math.abs(distance - stopZone.centerDistance) <= stopZone.halfLength;
 }
 
 function processSignals(dt) {
@@ -1748,7 +1750,7 @@ function processSignals(dt) {
   const gap = nextRed.distance - state.distance;
   const stopZone = getRedStopZone(nextRed);
   const inStopZone = isInsideRedStopZone(nextRed);
-  if (state.distance > stopZone.centerDistance + stopZone.radius) {
+  if (state.distance > stopZone.centerDistance + stopZone.halfLength) {
     beginDerailment("Passed a red signal at stop.");
     return true;
   }
@@ -1769,11 +1771,11 @@ function processSignals(dt) {
           detail: "Proceed when ready.",
         };
       }
-    } else if (state.distance <= stopZone.centerDistance + stopZone.radius) {
+    } else if (state.distance <= stopZone.centerDistance + stopZone.halfLength) {
       const zoneGap = stopZone.centerDistance - state.distance;
       state.signalStatus = {
         message: "Red signal ahead",
-        detail: zoneGap > 0 ? `Stop in the red circle in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red circle.",
+        detail: zoneGap > 0 ? `Stop in the red marker in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red marker.",
       };
     }
   }
@@ -3087,15 +3089,15 @@ function drawRouteMarkers(view, width, height) {
     ctx.strokeStyle = uphill ? "rgba(255, 162, 102, 0.92)" : "rgba(114, 212, 255, 0.92)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(screen.x - 20, screen.y - 18, 40, 26, 8);
+    ctx.roundRect(screen.x - 20, screen.y - 21, 40, 32, 8);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = uphill ? "#fff0de" : "#ddf6ff";
     ctx.font = "700 10px Inter, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${uphill ? "+" : "-"}${Math.abs(marker.percent).toFixed(1)}%`, screen.x, screen.y - 1);
-    ctx.fillText(uphill ? "UP" : "DN", screen.x, screen.y + 10);
+    ctx.fillText(`${uphill ? "+" : "-"}${Math.abs(marker.percent).toFixed(1)}%`, screen.x, screen.y - 4);
+    ctx.fillText(uphill ? "UP" : "DN", screen.x, screen.y + 9);
   });
 
   route.signals.forEach((signal) => {
@@ -3154,17 +3156,23 @@ function drawRouteMarkers(view, width, height) {
 
     if (signal.kind === "red" && signal.aspect === "red") {
       const stopZone = getRedStopZone(signal);
-      const stopCircleDistance = stopZone.centerDistance;
-      const stopCirclePoint = evaluateRoute(stopCircleDistance);
-      const stopCircleScreen = worldToScreenWithView(stopCirclePoint, view, width);
-      const stopCircleRadius = Math.max(9, stopZone.radius * scale);
-      ctx.fillStyle = "rgba(255, 106, 98, 0.1)";
-      ctx.strokeStyle = "rgba(255, 146, 136, 0.7)";
+      const stopMarkerPoint = evaluateRoute(stopZone.centerDistance);
+      const stopMarkerScreen = worldToScreenWithView(stopMarkerPoint, view, width);
+      const stopMarkerWidth = clamp(stopZone.halfLength * scale * 2, 34, 132);
+      const stopMarkerHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
+      const stopMarkerRadius = Math.min(stopMarkerHeight * 0.5, 10);
+      const stopMarkerAngle = getProjectedAngle(stopMarkerPoint.heading);
+      ctx.save();
+      ctx.translate(stopMarkerScreen.x, stopMarkerScreen.y);
+      ctx.rotate(stopMarkerAngle);
+      ctx.fillStyle = "rgba(255, 106, 98, 0.14)";
+      ctx.strokeStyle = "rgba(255, 146, 136, 0.85)";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(stopCircleScreen.x, stopCircleScreen.y, stopCircleRadius, 0, Math.PI * 2);
+      ctx.roundRect(-stopMarkerWidth * 0.5, -stopMarkerHeight * 0.5, stopMarkerWidth, stopMarkerHeight, stopMarkerRadius);
       ctx.fill();
       ctx.stroke();
+      ctx.restore();
 
       const gap = signal.distance - state.distance;
       if (gap >= 0 && gap <= TUNING.signals.redCountdownDisplayDistance) {
@@ -3180,7 +3188,7 @@ function drawRouteMarkers(view, width, height) {
 
         ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
         ctx.font = "600 10px Inter, sans-serif";
-        ctx.fillText("Stop here", stopCircleScreen.x, stopCircleScreen.y - stopCircleRadius - 8);
+        ctx.fillText("Stop here", stopMarkerScreen.x, stopMarkerScreen.y - stopMarkerHeight * 0.5 - 8);
       }
     }
     ctx.restore();
