@@ -311,6 +311,8 @@ let TRAIN_TOTAL_LENGTH = 0;
 let TOTAL_STATIONS = 0;
 const CAMERA_TRAIN_LENGTH_LEAD_MULTIPLIER = 0.7;
 const CAMERA_SPEED_LEAD_SECONDS = 7;
+const CAMERA_TARGET_BLEND_RATIO = 0.34;
+const CAMERA_TARGET_BLEND_MIN_METERS = 18;
 
 const keys = {
   accelerate: false,
@@ -641,7 +643,13 @@ function getViewMetrics(width, height) {
   const frontPose = leadUnit.frontPose;
   const lengthTargetDistance = TRAIN_TOTAL_LENGTH * CAMERA_TRAIN_LENGTH_LEAD_MULTIPLIER;
   const speedTargetDistance = state.speed * CAMERA_SPEED_LEAD_SECONDS;
-  const targetAheadDistance = Math.max(lengthTargetDistance, speedTargetDistance);
+  const targetGap = speedTargetDistance - lengthTargetDistance;
+  const targetBlendBand = Math.max(
+    CAMERA_TARGET_BLEND_MIN_METERS,
+    Math.max(lengthTargetDistance, speedTargetDistance) * CAMERA_TARGET_BLEND_RATIO,
+  );
+  const targetBlend = smoothstep(-targetBlendBand, targetBlendBand, targetGap);
+  const targetAheadDistance = lerp(lengthTargetDistance, speedTargetDistance, targetBlend);
   const centerTargetDistance = Math.min(route.totalLength, state.distance + targetAheadDistance);
   const lengthTargetPose = evaluateRoute(Math.min(route.totalLength, state.distance + lengthTargetDistance));
   const speedTargetPose = evaluateRoute(Math.min(route.totalLength, state.distance + speedTargetDistance));
@@ -703,7 +711,13 @@ function getViewMetrics(width, height) {
       lengthTargetDistance,
       speedTargetDistance,
       chosenTargetDistance: targetAheadDistance,
-      chosenSource: speedTargetDistance > lengthTargetDistance ? "speed" : "length",
+      chosenSource: Math.abs(targetGap) < targetBlendBand * 0.92
+        ? "blend"
+        : speedTargetDistance > lengthTargetDistance
+          ? "speed"
+          : "length",
+      targetBlend,
+      targetBlendBand,
     },
   };
 }
@@ -3642,7 +3656,7 @@ function drawCameraDebugOverlay(width, height) {
   const panelX = width - 312;
   const panelY = 18;
   const panelWidth = 286;
-  const panelHeight = 124;
+  const panelHeight = 142;
   ctx.save();
   ctx.fillStyle = "rgba(6, 16, 28, 0.72)";
   ctx.strokeStyle = "rgba(170, 222, 255, 0.18)";
@@ -3662,6 +3676,7 @@ function drawCameraDebugOverlay(width, height) {
     { label: "Length", value: `${debug.lengthTargetDistance.toFixed(1)} m`, color: "rgba(255, 191, 82, 0.95)" },
     { label: "Speed", value: `${debug.speedTargetDistance.toFixed(1)} m`, color: "rgba(114, 212, 255, 0.95)" },
     { label: "Chosen", value: `${debug.chosenTargetDistance.toFixed(1)} m (${debug.chosenSource})`, color: "rgba(255,255,255,0.98)" },
+    { label: "Blend", value: `${Math.round(debug.targetBlend * 100)}% speed`, color: "rgba(196, 232, 255, 0.9)" },
   ];
   rows.forEach((row, index) => {
     const y = panelY + 48 + index * 18;
