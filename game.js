@@ -302,6 +302,7 @@ let isDroneInsetMinimized = true;
 let droneInsetRenderer = null;
 let gameAudio = null;
 let audioDebugLogged = false;
+let audioUnlockInitialized = false;
 
 function logAudioDebug(message, details = null) {
   if (details == null) {
@@ -475,6 +476,30 @@ function ensureGameAudioReady() {
   }
 
   return gameAudio;
+}
+
+function unlockGameAudioFromGesture() {
+  const audio = ensureGameAudioReady();
+  if (audio && audio.context && audio.context.state === "running") {
+    window.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
+    window.removeEventListener("keydown", unlockGameAudioFromGesture, true);
+    window.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
+    window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
+    audioUnlockInitialized = false;
+  }
+}
+
+function initializeAudioUnlock() {
+  if (audioUnlockInitialized) {
+    return;
+  }
+
+  audioUnlockInitialized = true;
+  logAudioDebug("Waiting for user gesture to unlock audio.");
+  window.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
+  window.addEventListener("keydown", unlockGameAudioFromGesture, true);
+  window.addEventListener("touchstart", unlockGameAudioFromGesture, true);
+  window.addEventListener("mousedown", unlockGameAudioFromGesture, true);
 }
 
 function updateGameAudio(dt = 0) {
@@ -3251,7 +3276,6 @@ function startRun() {
     return;
   }
 
-  ensureGameAudioReady();
   state = createInitialState();
   syncDroneInsetRoute();
   state.started = true;
@@ -3263,12 +3287,16 @@ function startRun() {
   updateUi();
 }
 
-restartButton.addEventListener("click", startRun);
+restartButton.addEventListener("click", () => {
+  unlockGameAudioFromGesture();
+  startRun();
+});
 
 function initializeGame() {
   initializeDroneInsetResizeHandle();
   initializeDroneInsetRenderer();
   initializeDroneInsetToggle();
+  initializeAudioUnlock();
 
   applyTuning();
   syncAssistLegend();
