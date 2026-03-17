@@ -114,9 +114,9 @@ const DEFAULT_TUNING = {
     lateralSpanMin: 7, // Base side-to-side world span used for zoom when stopped.
     lateralSpanBySpeed: 40, // Extra side-to-side world span added as speed rises.
     stoppedZoomMultiplier: 0.9, // Fraction of the safe fit scale used at zero speed so the whole train stays on-screen.
-    movingZoomMultiplier: 0.84, // Fraction of the safe fit scale used once the train is up to speed.
+    movingZoomMultiplier: 0.88, // Fraction of the safe fit scale used once the train is up to speed.
     minimumCenterLookAheadStoppedFactor: 1.3, // Minimum center target ahead distance in train lengths while stopped.
-    minimumCenterLookAheadMovingFactor: 4.2, // Minimum center target ahead distance in train lengths once speed builds.
+    minimumCenterLookAheadMovingFactor: 3.1, // Minimum center target ahead distance in train lengths once speed builds.
     locomotiveLeadViewportFractionStopped: 0.2, // Fraction of the viewport size between the locomotive and screen center while stopped.
     locomotiveLeadViewportFractionMoving: 0.3, // Fraction of the viewport size between the locomotive and screen center at speed.
     anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
@@ -635,8 +635,8 @@ function getViewMetrics(width, height) {
   const rearUnit = trainUnits[trainUnits.length - 1];
   const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
-  const cameraSpeedFactor = smoothstep(0.75, 32, state.speed);
-  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 1.6);
+  const cameraSpeedFactor = smoothstep(2, 46, state.speed);
+  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 2.15);
   const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
   const lookBehind = TUNING.camera.lookBehindMin + cameraSpeedFactor * TUNING.camera.lookBehindBySpeed;
   const minimumCenterLookAhead = TRAIN_TOTAL_LENGTH * lerp(
@@ -647,15 +647,15 @@ function getViewMetrics(width, height) {
   const centerLookAheadDistance = Math.max(state.speed * 5, minimumCenterLookAhead);
   const centerTargetDistance = Math.min(route.totalLength, state.distance + centerLookAheadDistance);
   const lookAhead = lerp(TUNING.camera.lookAheadStopped, TUNING.camera.lookAheadMin, cameraSpeedFactor)
-    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.55
-    + gradeFactor * 120;
+    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.32
+    + gradeFactor * 90;
   const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
   const aheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead, centerTargetDistance));
   const rearPose = rearUnit.rearPose;
   const viewStartPose = evaluateRoute(rearDistance);
   const centerTargetPose = evaluateRoute(centerTargetDistance);
   const aheadPose = evaluateRoute(aheadDistance);
-  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.55;
+  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.32;
   const leadDistance = centerTargetDistance - state.distance;
   const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
   const aheadRenderBuffer = TUNING.camera.renderAheadBufferMin + cameraSpeedFactor * TUNING.camera.renderAheadBufferBySpeed;
