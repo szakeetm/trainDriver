@@ -103,13 +103,13 @@ const DEFAULT_TUNING = {
   camera: {
     lookBehindMin: 150, // Distance in meters kept visible behind the train at zero speed.
     lookBehindBySpeed: 360, // Extra behind distance added as speed rises.
-    lookAheadMin: 620, // Distance in meters kept visible ahead of the train at zero speed.
-    lookAheadBySpeed: 1760, // Extra forward look-ahead added as speed rises.
+    lookAheadMin: 500, // Distance in meters kept visible ahead of the train at zero speed.
+    lookAheadBySpeed: 1040, // Extra forward look-ahead added as speed rises.
     leadDistanceMin: 90, // Minimum distance in meters that the camera focus point leads the train along the route.
     leadDistanceBySpeed: 520, // Extra forward lead distance added as speed rises so the view looks into the curve.
     trainScreenMargin: 96, // Minimum screen-space margin in pixels kept around the train when the camera leads ahead.
-    lateralSpanMin: 10, // Base side-to-side world span used for zoom when stopped.
-    lateralSpanBySpeed: 340, // Extra side-to-side world span added as speed rises.
+    lateralSpanMin: 7, // Base side-to-side world span used for zoom when stopped.
+    lateralSpanBySpeed: 120, // Extra side-to-side world span added as speed rises.
     stoppedZoomMultiplier: 2.55, // Extra zoom applied at zero speed after span-based scaling is computed.
     movingZoomMultiplier: 1.56, // Zoom multiplier once the train is up to speed, keeping more speed sensation at high velocity.
     anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
@@ -666,23 +666,19 @@ function getViewMetrics(width, height) {
   const rearUnit = trainUnits[trainUnits.length - 1];
   const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
+  const zoomSpeedFactor = Math.pow(speedFactor, 1.65);
   const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
   const gradeBias = clamp(-(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), -1, 1);
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
   const lookAhead = TUNING.camera.lookAheadMin
-    + speedFactor * TUNING.camera.lookAheadBySpeed
-    + gradeFactor * 280;
+    + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed
+    + gradeFactor * 180;
   const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
   const aheadDistance = Math.min(route.totalLength, state.distance + lookAhead);
   const rearPose = rearUnit.rearPose;
   const viewStartPose = evaluateRoute(rearDistance);
   const aheadPose = evaluateRoute(aheadDistance);
-  const lateralSpan = TUNING.camera.lateralSpanMin + speedFactor * TUNING.camera.lateralSpanBySpeed;
-  const zoomMultiplier = lerp(
-    TUNING.camera.stoppedZoomMultiplier,
-    TUNING.camera.movingZoomMultiplier,
-    speedFactor,
-  );
+  const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed;
   const requestedLeadDistance = TUNING.camera.leadDistanceMin + speedFactor * TUNING.camera.leadDistanceBySpeed;
   const leadDistance = Math.min(requestedLeadDistance, Math.max(0, aheadDistance - state.distance));
   const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
@@ -774,7 +770,10 @@ function getViewMetrics(width, height) {
   if (!Number.isFinite(scaleLimit)) {
     scaleLimit = 1;
   }
-  let scale = Math.max(0.0001, scaleLimit * 0.985);
+  let scale = Math.max(
+    0.0001,
+    scaleLimit * lerp(TUNING.camera.stoppedZoomMultiplier, TUNING.camera.movingZoomMultiplier, zoomSpeedFactor) * 0.62,
+  );
   const anchorX = targetRearScreen.x - rearProj.x * scale;
   const dynamicAnchorY = clamp(
     0.62 - gradeBias * (0.05 + gradeFactor * 0.08),
@@ -2594,6 +2593,22 @@ function drawBackground(width, height) {
         tileGradient.addColorStop(1, paletteColorToCss(bottomColor));
         textureCtx.fillStyle = tileGradient;
         textureCtx.fillRect(0, 0, spriteWidth, spriteHeight);
+
+        textureCtx.strokeStyle = `rgba(${Math.round(detailColor[0])}, ${Math.round(detailColor[1])}, ${Math.round(detailColor[2])}, 0.08)`;
+        textureCtx.lineWidth = 6;
+        textureCtx.beginPath();
+        textureCtx.moveTo(-spriteWidth * 0.15, spriteHeight * (0.22 + tileStyle.biomeSeed * 0.18));
+        textureCtx.lineTo(spriteWidth * 0.92, spriteHeight * (0.72 + tileStyle.biomeSeed * 0.14));
+        textureCtx.moveTo(spriteWidth * 0.08, spriteHeight * (0.1 + tileStyle.toneSeed * 0.12));
+        textureCtx.lineTo(spriteWidth * 1.08, spriteHeight * (0.56 + tileStyle.toneSeed * 0.16));
+        textureCtx.stroke();
+
+        textureCtx.strokeStyle = `rgba(255, 255, 255, ${((0.03 + tileStyle.toneSeed * 0.025)).toFixed(3)})`;
+        textureCtx.lineWidth = 2;
+        textureCtx.beginPath();
+        textureCtx.moveTo(spriteWidth * 0.06, spriteHeight * (0.28 + tileStyle.biomeSeed * 0.08));
+        textureCtx.lineTo(spriteWidth * 0.94, spriteHeight * (0.44 + tileStyle.biomeSeed * 0.08));
+        textureCtx.stroke();
 
         textureCtx.fillStyle = `rgba(${Math.round(detailColor[0])}, ${Math.round(detailColor[1])}, ${Math.round(detailColor[2])}, 0.09)`;
         const ovalCount = 1 + Math.round(tileStyle.toneSeed * 2);

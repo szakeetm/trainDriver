@@ -96,13 +96,13 @@
   "camera": {
     "lookBehindMin": 150,
     "lookBehindBySpeed": 360,
-    "lookAheadMin": 620,
-    "lookAheadBySpeed": 1760,
+    "lookAheadMin": 500,
+    "lookAheadBySpeed": 1040,
     "leadDistanceMin": 90,
     "leadDistanceBySpeed": 520,
     "trainScreenMargin": 96,
-    "lateralSpanMin": 10,
-    "lateralSpanBySpeed": 340,
+    "lateralSpanMin": 7,
+    "lateralSpanBySpeed": 120,
     "stoppedZoomMultiplier": 2.55,
     "movingZoomMultiplier": 1.56,
     "anchorY": 0.5
