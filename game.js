@@ -659,34 +659,70 @@ function getViewMetrics(width, height) {
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
   const lookAhead = TUNING.camera.lookAheadMin + speedFactor * TUNING.camera.lookAheadBySpeed;
-  const longitudinalSpan = lookBehind + lookAhead;
+  const rearDistance = Math.max(0, state.distance - TRAIN_TOTAL_LENGTH - COUPLER_GAP * Math.max(0, TRAIN_CONSIST.length - 1));
+  const aheadDistance = Math.min(route.totalLength, state.distance + lookAhead);
+  const rearPose = evaluateRoute(rearDistance);
+  const aheadPose = evaluateRoute(aheadDistance);
   const lateralSpan = TUNING.camera.lateralSpanMin + speedFactor * TUNING.camera.lateralSpanBySpeed;
   const zoomMultiplier = lerp(
     TUNING.camera.stoppedZoomMultiplier,
     TUNING.camera.movingZoomMultiplier,
     speedFactor,
   );
-  const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
-  const consistPadding = TRAIN_TOTAL_LENGTH * 0.62;
-  const projectedWidth = longitudinalSpan + lateralSpan + consistPadding;
-  const projectedHeight = (longitudinalSpan + lateralSpan + consistPadding * 0.75) * isoVerticalScale;
-  const scale = Math.min(width / projectedWidth, height / projectedHeight) * zoomMultiplier * 0.9;
   const requestedLeadDistance = TUNING.camera.leadDistanceMin + speedFactor * TUNING.camera.leadDistanceBySpeed;
-  const maxLeadDistance = Math.max(0, (height * 0.26 - TUNING.camera.trainScreenMargin) / Math.max(scale * isoVerticalScale, 1e-6));
-  const leadDistance = Math.min(requestedLeadDistance, maxLeadDistance);
+  const leadDistance = Math.min(requestedLeadDistance, Math.max(0, aheadDistance - state.distance));
   const camera = {
-    x: trainPose.x + Math.cos(trainPose.heading) * leadDistance,
-    y: trainPose.y + Math.sin(trainPose.heading) * leadDistance,
+    x: (rearPose.x * 0.34) + (aheadPose.x * 0.66),
+    y: (rearPose.y * 0.34) + (aheadPose.y * 0.66),
   };
+  const samplePoints = [];
+  const sampleStep = 80;
+  for (let distance = rearDistance; distance <= aheadDistance; distance += sampleStep) {
+    samplePoints.push(evaluateRoute(distance));
+  }
+  samplePoints.push(rearPose, trainPose, aheadPose);
+
+  [rearPose, trainPose, aheadPose].forEach((pose) => {
+    const normalX = -Math.sin(pose.heading);
+    const normalY = Math.cos(pose.heading);
+    samplePoints.push({
+      x: pose.x + normalX * lateralSpan * 0.5,
+      y: pose.y + normalY * lateralSpan * 0.5,
+      visualElevation: pose.visualElevation,
+    });
+    samplePoints.push({
+      x: pose.x - normalX * lateralSpan * 0.5,
+      y: pose.y - normalY * lateralSpan * 0.5,
+      visualElevation: pose.visualElevation,
+    });
+  });
+
+  const projectedPoints = samplePoints.map((point) => projectIsometricPoint(point, camera));
+  const minProjX = Math.min(...projectedPoints.map((point) => point.x));
+  const maxProjX = Math.max(...projectedPoints.map((point) => point.x));
+  const minProjY = Math.min(...projectedPoints.map((point) => point.y));
+  const rearProj = projectIsometricPoint(rearPose, camera);
+  const sideMargin = 48;
+  const topMargin = 52;
+  const bottomMargin = 40;
+  let scale = Math.min(
+    (width - sideMargin * 2) / Math.max(maxProjX - minProjX, 1e-6),
+    (height - topMargin - bottomMargin) / Math.max(rearProj.y - minProjY, 1e-6),
+  ) * zoomMultiplier;
+  scale *= 0.98;
+  const anchorX = sideMargin - minProjX * scale;
+  const anchorY = height - bottomMargin - rearProj.y * scale;
 
   return {
     camera,
     trainPose,
+    rearPose,
     scale,
-    anchorX: width * 0.5,
-    anchorY: height * 0.58,
-    startDistance: Math.max(0, state.distance - lookBehind),
-    endDistance: Math.min(route.totalLength, state.distance + lookAhead),
+    anchorX,
+    anchorY,
+    startDistance: rearDistance,
+    endDistance: aheadDistance,
+    leadDistance,
   };
 }
 
@@ -2062,14 +2098,10 @@ function updateMarker(element, value) {
 }
 
 function worldToScreenWithView(point, view, width) {
-  const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
-  const elevationScale = TUNING.visuals.isometricElevationScale;
-  const elevation = point.visualElevation != null ? point.visualElevation : point.elevation || 0;
-  const dx = point.x - view.camera.x;
-  const dy = point.y - view.camera.y;
+  const projected = projectIsometricPoint(point, view.camera);
   return {
-    x: view.anchorX + (dx - dy) * view.scale,
-    y: view.anchorY + (dx + dy) * view.scale * isoVerticalScale - elevation * view.scale * elevationScale,
+    x: view.anchorX + projected.x * view.scale,
+    y: view.anchorY + projected.y * view.scale,
   };
 }
 
@@ -2077,6 +2109,18 @@ function getProjectedAngle(heading) {
   const projectedX = Math.cos(heading) - Math.sin(heading);
   const projectedY = (Math.cos(heading) + Math.sin(heading)) * TUNING.visuals.isometricVerticalScale;
   return Math.atan2(projectedY, projectedX);
+}
+
+function projectIsometricPoint(point, camera) {
+  const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
+  const elevationScale = TUNING.visuals.isometricElevationScale;
+  const elevation = point.visualElevation != null ? point.visualElevation : point.elevation || 0;
+  const dx = point.x - camera.x;
+  const dy = point.y - camera.y;
+  return {
+    x: dx - dy,
+    y: (dx + dy) * isoVerticalScale - elevation * elevationScale,
+  };
 }
 
 function shadeColor(color, amount) {
@@ -2104,6 +2148,53 @@ function shadeColor(color, amount) {
     return `rgb(${adjusted.map((channel) => Math.round(channel)).join(", ")})`;
   }
   return color;
+}
+
+function drawIsoPrism(width, depth, height, topColor, leftColor, rightColor, strokeColor = "rgba(255,255,255,0.35)") {
+  const halfWidth = width * 0.5;
+  const halfDepth = depth * 0.5;
+  const topFace = [
+    { x: 0, y: -height - halfDepth },
+    { x: halfWidth, y: -height },
+    { x: 0, y: -height + halfDepth },
+    { x: -halfWidth, y: -height },
+  ];
+  const leftFace = [
+    { x: -halfWidth, y: -height },
+    { x: 0, y: -height + halfDepth },
+    { x: 0, y: halfDepth },
+    { x: -halfWidth, y: 0 },
+  ];
+  const rightFace = [
+    { x: halfWidth, y: -height },
+    { x: 0, y: -height + halfDepth },
+    { x: 0, y: halfDepth },
+    { x: halfWidth, y: 0 },
+  ];
+
+  ctx.fillStyle = leftColor;
+  ctx.beginPath();
+  ctx.moveTo(leftFace[0].x, leftFace[0].y);
+  leftFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = rightColor;
+  ctx.beginPath();
+  ctx.moveTo(rightFace[0].x, rightFace[0].y);
+  rightFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = topColor;
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(topFace[0].x, topFace[0].y);
+  topFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
 }
 
 function drawBackground(width, height) {
@@ -2312,161 +2403,64 @@ function drawScenery(view, width, height) {
 
     ctx.save();
     ctx.translate(screen.x, screen.y);
-    ctx.rotate(item.rotation);
+    ctx.rotate(getProjectedAngle(item.rotation));
+
+    const unitScale = scale * item.size;
+    const foliage = item.tint > 0 ? "#4f8a52" : "#427446";
 
     if (item.kind === "tree") {
-      const canopy = Math.max(10, scale * 10 * item.size);
-      const trunkHeight = Math.max(7, scale * 7 * item.size);
-      ctx.fillStyle = "rgba(15, 24, 32, 0.18)";
-      ctx.beginPath();
-      ctx.ellipse(0, canopy * 0.5, canopy * 0.9, canopy * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#5b4234";
-      ctx.fillRect(-canopy * 0.12, canopy * 0.1, canopy * 0.24, trunkHeight);
-      ctx.fillStyle = item.tint > 0 ? "#3c8054" : "#2f6f49";
-      ctx.beginPath();
-      ctx.arc(0, 0, canopy, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(-canopy * 0.62, canopy * 0.1, canopy * 0.7, 0, Math.PI * 2);
-      ctx.arc(canopy * 0.62, canopy * 0.12, canopy * 0.66, 0, Math.PI * 2);
-      ctx.fill();
+      drawIsoPrism(Math.max(6, unitScale * 2.2), Math.max(5, unitScale * 1.8), Math.max(10, unitScale * 8), "#6a4b38", "#523827", "#7a5843");
+      ctx.translate(0, -Math.max(10, unitScale * 8));
+      drawIsoPrism(Math.max(18, unitScale * 7.2), Math.max(14, unitScale * 5.8), Math.max(18, unitScale * 7.8), shadeColor(foliage, 10), shadeColor(foliage, -16), shadeColor(foliage, -6));
     } else if (item.kind === "bush") {
-      const bush = Math.max(8, scale * 7.5 * item.size);
-      ctx.fillStyle = item.tint > 0 ? "#4f8a52" : "#427446";
-      ctx.beginPath();
-      ctx.arc(-bush * 0.5, 0, bush * 0.72, 0, Math.PI * 2);
-      ctx.arc(bush * 0.45, 0, bush * 0.78, 0, Math.PI * 2);
-      ctx.arc(0, -bush * 0.18, bush * 0.86, 0, Math.PI * 2);
-      ctx.fill();
+      drawIsoPrism(Math.max(16, unitScale * 6.6), Math.max(12, unitScale * 5.2), Math.max(9, unitScale * 3.4), shadeColor(foliage, 10), shadeColor(foliage, -14), shadeColor(foliage, -6));
     } else if (item.kind === "rock") {
-      const rock = Math.max(9, scale * 7 * item.size);
-      ctx.fillStyle = "#758392";
-      ctx.beginPath();
-      ctx.moveTo(-rock, rock * 0.4);
-      ctx.lineTo(-rock * 0.45, -rock * 0.8);
-      ctx.lineTo(rock * 0.7, -rock * 0.55);
-      ctx.lineTo(rock, rock * 0.2);
-      ctx.lineTo(rock * 0.16, rock);
-      ctx.closePath();
-      ctx.fill();
+      drawIsoPrism(Math.max(14, unitScale * 5.5), Math.max(10, unitScale * 4.2), Math.max(8, unitScale * 3), "#8b97a2", "#67727d", "#7a8792");
     } else if (item.kind === "hut") {
-      const hutWidth = Math.max(13, scale * 12 * item.size);
-      const hutHeight = Math.max(11, scale * 10 * item.size);
-      ctx.fillStyle = "#c6935f";
-      ctx.fillRect(-hutWidth / 2, -hutHeight / 2, hutWidth, hutHeight);
-      ctx.fillStyle = "#71492f";
-      ctx.beginPath();
-      ctx.moveTo(-hutWidth * 0.62, -hutHeight / 2);
-      ctx.lineTo(0, -hutHeight * 1.02);
-      ctx.lineTo(hutWidth * 0.62, -hutHeight / 2);
-      ctx.closePath();
-      ctx.fill();
+      drawIsoPrism(Math.max(18, unitScale * 6.5), Math.max(14, unitScale * 5), Math.max(14, unitScale * 5.4), "#d0a16e", "#a77445", "#be8d60");
+      ctx.translate(0, -Math.max(14, unitScale * 5.4));
+      drawIsoPrism(Math.max(20, unitScale * 7.2), Math.max(16, unitScale * 5.7), Math.max(6, unitScale * 2.2), "#7d5539", "#643f2a", "#8c6041");
     } else if (item.kind === "barn") {
-      const barnWidth = Math.max(18, scale * 18 * item.size);
-      const barnHeight = Math.max(14, scale * 12 * item.size);
-      ctx.fillStyle = "#b34f43";
-      ctx.fillRect(-barnWidth / 2, -barnHeight / 2, barnWidth, barnHeight);
-      ctx.fillStyle = "#7c2c24";
-      ctx.beginPath();
-      ctx.moveTo(-barnWidth * 0.58, -barnHeight / 2);
-      ctx.lineTo(0, -barnHeight * 1.08);
-      ctx.lineTo(barnWidth * 0.58, -barnHeight / 2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#f0d9b0";
-      ctx.fillRect(-barnWidth * 0.12, -barnHeight * 0.05, barnWidth * 0.24, barnHeight * 0.55);
+      drawIsoPrism(Math.max(24, unitScale * 8.5), Math.max(18, unitScale * 6.5), Math.max(16, unitScale * 6), "#c55f53", "#913a31", "#ab4b40");
+      ctx.translate(0, -Math.max(16, unitScale * 6));
+      drawIsoPrism(Math.max(26, unitScale * 9), Math.max(20, unitScale * 7), Math.max(7, unitScale * 2.6), "#8d3b33", "#6f2a24", "#7e312a");
     } else if (item.kind === "billboard") {
-      const boardWidth = Math.max(16, scale * 18 * item.size);
-      const boardHeight = Math.max(10, scale * 9 * item.size);
-      ctx.fillStyle = "#3a2e27";
-      ctx.fillRect(-boardWidth * 0.35, boardHeight * 0.05, boardWidth * 0.08, boardHeight * 0.9);
-      ctx.fillRect(boardWidth * 0.27, boardHeight * 0.05, boardWidth * 0.08, boardHeight * 0.9);
-      ctx.fillStyle = item.tint > 0 ? "#ffe28a" : "#9ad7ff";
-      ctx.fillRect(-boardWidth / 2, -boardHeight / 2, boardWidth, boardHeight);
-      ctx.fillStyle = "rgba(25, 40, 56, 0.75)";
-      ctx.fillRect(-boardWidth * 0.34, -boardHeight * 0.18, boardWidth * 0.68, boardHeight * 0.18);
+      drawIsoPrism(Math.max(3, unitScale * 1.1), Math.max(3, unitScale * 1.1), Math.max(18, unitScale * 8), "#5c4638", "#48362c", "#654d3e");
+      ctx.translate(0, -Math.max(18, unitScale * 8));
+      drawIsoPrism(Math.max(22, unitScale * 8.6), Math.max(5, unitScale * 1.9), Math.max(10, unitScale * 3.8), item.tint > 0 ? "#ffe28a" : "#9ad7ff", "#d0b56c", "#87b9da");
     } else if (item.kind === "pond") {
-      const pondWidth = Math.max(18, scale * 20 * item.size);
-      const pondHeight = Math.max(12, scale * 12 * item.size);
-      ctx.fillStyle = "rgba(35, 98, 140, 0.24)";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, pondWidth * 0.9, pondHeight * 0.82, 0, 0, Math.PI * 2);
-      ctx.fill();
       ctx.fillStyle = "rgba(92, 177, 221, 0.72)";
       ctx.beginPath();
-      ctx.ellipse(0, 0, pondWidth * 0.72, pondHeight * 0.64, 0, 0, Math.PI * 2);
+      ctx.moveTo(0, -unitScale * 2.2);
+      ctx.lineTo(unitScale * 3.2, 0);
+      ctx.lineTo(0, unitScale * 2.2);
+      ctx.lineTo(-unitScale * 3.2, 0);
+      ctx.closePath();
       ctx.fill();
     } else if (item.kind === "ruins") {
-      const ruinWidth = Math.max(14, scale * 14 * item.size);
-      const ruinHeight = Math.max(10, scale * 9 * item.size);
-      ctx.fillStyle = "#8a7a6a";
-      ctx.fillRect(-ruinWidth / 2, -ruinHeight / 2, ruinWidth, ruinHeight);
-      ctx.clearRect(-ruinWidth * 0.14, -ruinHeight * 0.1, ruinWidth * 0.28, ruinHeight * 0.42);
-      ctx.fillStyle = "#6b5c4f";
-      ctx.fillRect(-ruinWidth * 0.54, -ruinHeight * 0.54, ruinWidth * 0.18, ruinHeight * 1.02);
-      ctx.fillRect(ruinWidth * 0.28, -ruinHeight * 0.42, ruinWidth * 0.16, ruinHeight * 0.9);
+      drawIsoPrism(Math.max(18, unitScale * 7), Math.max(14, unitScale * 5.2), Math.max(11, unitScale * 4.2), "#9b8a79", "#776756", "#897866");
     } else if (item.kind === "cactus") {
-      const cactusHeight = Math.max(16, scale * 16 * item.size);
-      const cactusWidth = Math.max(5, scale * 4 * item.size);
-      ctx.fillStyle = "#3c7d4f";
-      ctx.fillRect(-cactusWidth / 2, -cactusHeight / 2, cactusWidth, cactusHeight);
-      ctx.fillRect(-cactusWidth * 1.35, -cactusHeight * 0.12, cactusWidth * 0.9, cactusHeight * 0.42);
-      ctx.fillRect(cactusWidth * 0.45, -cactusHeight * 0.02, cactusWidth * 0.9, cactusHeight * 0.34);
+      drawIsoPrism(Math.max(7, unitScale * 2.5), Math.max(6, unitScale * 2.2), Math.max(18, unitScale * 8.6), "#4c8b5c", "#346844", "#3f7850");
     } else if (item.kind === "stump") {
-      const stumpWidth = Math.max(7, scale * 6 * item.size);
-      const stumpHeight = Math.max(5, scale * 4.5 * item.size);
-      ctx.fillStyle = "#7b5a3d";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, stumpWidth, stumpHeight, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(220, 190, 142, 0.55)";
-      ctx.beginPath();
-      ctx.ellipse(0, -stumpHeight * 0.1, stumpWidth * 0.58, stumpHeight * 0.44, 0, 0, Math.PI * 2);
-      ctx.fill();
+      drawIsoPrism(Math.max(10, unitScale * 4.1), Math.max(8, unitScale * 3.1), Math.max(6, unitScale * 2.2), "#8b6744", "#6d4f32", "#7b5a3b");
     } else if (item.kind === "hayBale") {
-      const baleWidth = Math.max(10, scale * 10 * item.size);
-      const baleHeight = Math.max(7, scale * 7 * item.size);
-      ctx.fillStyle = "#d7b55a";
-      ctx.beginPath();
-      ctx.roundRect(-baleWidth / 2, -baleHeight / 2, baleWidth, baleHeight, baleHeight * 0.35);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(132, 99, 43, 0.65)";
-      ctx.lineWidth = Math.max(1, scale * 0.55);
-      ctx.beginPath();
-      ctx.moveTo(-baleWidth * 0.16, -baleHeight * 0.4);
-      ctx.lineTo(-baleWidth * 0.16, baleHeight * 0.4);
-      ctx.moveTo(baleWidth * 0.18, -baleHeight * 0.4);
-      ctx.lineTo(baleWidth * 0.18, baleHeight * 0.4);
-      ctx.stroke();
+      drawIsoPrism(Math.max(12, unitScale * 4.8), Math.max(9, unitScale * 3.6), Math.max(7, unitScale * 2.8), "#e0be66", "#ba9647", "#cfae5c");
     } else if (item.kind === "silo") {
-      const siloWidth = Math.max(10, scale * 10 * item.size);
-      const siloHeight = Math.max(18, scale * 17 * item.size);
-      ctx.fillStyle = "#aab4bc";
-      ctx.fillRect(-siloWidth / 2, -siloHeight / 2, siloWidth, siloHeight);
-      ctx.fillStyle = "#7f8a95";
-      ctx.beginPath();
-      ctx.ellipse(0, -siloHeight / 2, siloWidth * 0.5, siloWidth * 0.36, 0, Math.PI, Math.PI * 2);
-      ctx.fill();
+      drawIsoPrism(Math.max(13, unitScale * 4.8), Math.max(13, unitScale * 4.8), Math.max(20, unitScale * 9), "#bcc5cd", "#8e989f", "#a2adb4");
     } else if (item.kind === "windmill") {
-      const mastHeight = Math.max(18, scale * 18 * item.size);
-      const bladeLength = Math.max(9, scale * 8 * item.size);
-      ctx.strokeStyle = "#c6d3db";
-      ctx.lineWidth = Math.max(1.2, scale * 0.8);
-      ctx.beginPath();
-      ctx.moveTo(0, mastHeight * 0.5);
-      ctx.lineTo(0, -mastHeight * 0.5);
-      ctx.stroke();
-      ctx.translate(0, -mastHeight * 0.48);
-      ctx.rotate(item.rotation * 2.4);
+      drawIsoPrism(Math.max(4, unitScale * 1.2), Math.max(4, unitScale * 1.2), Math.max(22, unitScale * 10), "#d7dee4", "#9aa8b1", "#b5c1c9");
+      ctx.translate(0, -Math.max(22, unitScale * 10));
+      ctx.strokeStyle = "#e9f0f5";
+      ctx.lineWidth = Math.max(1, unitScale * 0.35);
       for (let bladeIndex = 0; bladeIndex < 4; bladeIndex += 1) {
-        ctx.rotate(Math.PI * 0.5);
+        const angle = bladeIndex * Math.PI * 0.5 + item.rotation * 2.4;
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.lineTo(bladeLength, 0);
+        ctx.lineTo(Math.cos(angle) * unitScale * 4.2, Math.sin(angle) * unitScale * 2.2);
         ctx.stroke();
       }
+    } else {
+      drawIsoPrism(Math.max(16, unitScale * 6), Math.max(12, unitScale * 4.8), Math.max(12, unitScale * 4.4), "#c8b18f", "#9d8666", "#b39a79");
     }
 
     ctx.restore();
