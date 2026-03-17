@@ -2,7 +2,6 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 const appShell = document.getElementById("appShell");
-const introCard = document.getElementById("coverScreen");
 const droneInset = document.getElementById("droneInset");
 const droneInsetMount = document.getElementById("droneInsetMount");
 const droneInsetStatus = document.getElementById("droneInsetStatus");
@@ -11,7 +10,6 @@ const droneInsetResizeHandle = document.getElementById("droneInsetResizeHandle")
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
-const startButton = document.getElementById("startButton");
 const restartButton = document.getElementById("restartButton");
 const accelerateButton = document.getElementById("accelerateButton");
 const brakeButton = document.getElementById("brakeButton");
@@ -781,17 +779,35 @@ function syncAssistLegend() {
 
 function setButtonHold(button, key) {
   const engage = (event) => {
-    event.preventDefault();
+    if (event) {
+      event.preventDefault();
+    }
     keys[key] = true;
   };
   const release = () => {
     keys[key] = false;
   };
 
-  button.addEventListener("pointerdown", engage);
+  button.addEventListener("pointerdown", (event) => {
+    engage(event);
+    if (typeof button.setPointerCapture === "function") {
+      try {
+        button.setPointerCapture(event.pointerId);
+      } catch (error) {
+        // Ignore unsupported pointer-capture cases and fall back to regular events.
+      }
+    }
+  });
   button.addEventListener("pointerup", release);
   button.addEventListener("pointerleave", release);
   button.addEventListener("pointercancel", release);
+  button.addEventListener("lostpointercapture", release);
+  button.addEventListener("mousedown", engage);
+  button.addEventListener("mouseup", release);
+  button.addEventListener("mouseleave", release);
+  button.addEventListener("touchstart", engage, { passive: false });
+  button.addEventListener("touchend", release, { passive: true });
+  button.addEventListener("touchcancel", release, { passive: true });
 }
 
 setButtonHold(accelerateButton, "accelerate");
@@ -3221,13 +3237,10 @@ function startRun() {
   }
 
   ensureGameAudioReady();
-  appShell.classList.remove("hidden");
   state = createInitialState();
   syncDroneInsetRoute();
   state.started = true;
-  introCard.classList.add("hidden");
   finishCard.classList.add("hidden");
-  document.body.classList.remove("cover-active");
   resizeCanvas();
   state.message = "Departing Origin";
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
@@ -3235,26 +3248,18 @@ function startRun() {
   updateUi();
 }
 
-startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
 
 function initializeGame() {
-  document.body.classList.add("cover-active");
-  statusText.textContent = "Loading settings";
-  subStatus.textContent = "Loading built-in gameplay settings.";
-
   initializeDroneInsetResizeHandle();
   initializeDroneInsetRenderer();
   initializeDroneInsetToggle();
 
   applyTuning();
-
-  state = createInitialState();
-  syncDroneInsetRoute();
   syncAssistLegend();
-  updateGameAudio(0);
-  updateUi();
+  state = createInitialState();
   lastFrame = performance.now();
+  startRun();
   requestAnimationFrame(loop);
 }
 

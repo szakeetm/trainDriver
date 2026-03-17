@@ -7,31 +7,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <section class="cover-screen" id="coverScreen" aria-label="Game cover screen">
-      <div class="cover-screen__backdrop"></div>
-      <div class="cover-screen__content">
-        <p class="eyebrow">cover release</p>
-        <h1>train driver 1.1</h1>
-        <p class="cover-screen__lead">
-          Drive a fast regional train across a random route, manage speed through curves,
-          and stop cleanly at every station.
-        </p>
-
-        <section class="cover-screen__panel" aria-labelledby="instructionsTitle">
-          <h2 id="instructionsTitle">Instructions</h2>
-          <ul class="cover-screen__instructions">
-            <li>Press <strong>Drive</strong> to enter the cab and begin immediately.</li>
-            <li>Use <strong>Accelerate</strong> or <strong>↑ / W</strong> to build power.</li>
-            <li>Use <strong>Brake</strong> or <strong>↓ / S</strong> to slow down for curves and stations.</li>
-            <li>Green rings mark stations, amber signs warn of curve limits, and precise stops score best.</li>
-          </ul>
-        </section>
-
-        <button id="startButton" class="primary-button cover-screen__button">Drive</button>
-      </div>
-    </section>
-
-    <div class="app-shell hidden" id="appShell">
+    <div class="app-shell" id="appShell">
       <main class="game-panel">
         <div class="canvas-wrap">
           <canvas id="gameCanvas" aria-label="Top down train driving game"></canvas>
@@ -111,14 +87,14 @@
           </article>
         </section>
 
-        <section class="control-card compact">
+        <section class="control-card compact stations-card">
           <h3>Remaining stations</h3>
           <ul class="station-progress-list" id="remainingStations">
             <li class="station-progress-empty">No remaining stations.</li>
           </ul>
         </section>
 
-        <section class="control-card">
+        <section class="control-card drive-card">
           <div class="bar-header">
             <h3>Power / brake</h3>
             <span id="actualLabel">Coast</span>
@@ -137,7 +113,7 @@
           <p class="tiny-help">Keyboard: ↑ / W accelerate, ↓ / S brake</p>
         </section>
 
-        <section class="control-card compact">
+        <section class="control-card compact notes-card">
           <h3>Route notes</h3>
           <ul class="notes-list">
             <li>Green rings mark stations.</li>
