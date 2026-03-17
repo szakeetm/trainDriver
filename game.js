@@ -31,6 +31,7 @@ const requestedMarker = document.getElementById("requestedMarker");
 const requestedLabel = document.getElementById("requestedLabel");
 const actualLabel = document.getElementById("actualLabel");
 const controlDelta = document.getElementById("controlDelta");
+const audioDebugStatus = document.getElementById("audioDebugStatus");
 const lineLimitSecondary = lineLimitKph.parentElement;
 const stationAssist = document.getElementById("stationAssist");
 const assistScale = document.getElementById("assistScale");
@@ -313,6 +314,79 @@ function logAudioDebug(message, details = null) {
   console.info(`[audio] ${message}`, details);
 }
 
+function updateAudioDebugStatus(message, details = null) {
+  if (!audioDebugStatus) {
+    return;
+  }
+
+  const contextState = gameAudio?.context?.state || "none";
+  const session = navigator.audioSession || navigator.webkitAudioSession || null;
+  const bits = [`Audio: ${message}`, `ctx:${contextState}`];
+
+  if (session?.type) {
+    bits.push(`session:${session.type}`);
+  }
+  if (session?.state) {
+    bits.push(`sessionState:${session.state}`);
+  }
+
+  if (details && typeof details === "object") {
+    if (details.trigger) {
+      bits.push(`trigger:${details.trigger}`);
+    }
+    if (details.reason) {
+      bits.push(`reason:${details.reason}`);
+    }
+    if (details.userActivation) {
+      bits.push(`user:${details.userActivation}`);
+    }
+  }
+
+  audioDebugStatus.textContent = bits.join(" | ");
+}
+
+function setAudioDebug(message, details = null) {
+  logAudioDebug(message, details);
+  updateAudioDebugStatus(message, details);
+}
+
+function getAudioUserActivationState() {
+  if (!navigator.userActivation) {
+    return "n/a";
+  }
+  if (navigator.userActivation.isActive) {
+    return "active";
+  }
+  if (navigator.userActivation.hasBeenActive) {
+    return "used";
+  }
+  return "idle";
+}
+
+function configureAudioSession() {
+  const session = navigator.audioSession || navigator.webkitAudioSession || null;
+  if (!session) {
+    setAudioDebug("no audioSession API", { userActivation: getAudioUserActivationState() });
+    return;
+  }
+
+  try {
+    if (session.type !== "playback") {
+      session.type = "playback";
+    }
+    setAudioDebug("audioSession ready", {
+      reason: session.state || "ok",
+      userActivation: getAudioUserActivationState(),
+    });
+  } catch (error) {
+    console.warn("[audio] Failed to configure audioSession.", error);
+    updateAudioDebugStatus("audioSession failed", {
+      reason: error?.message || "error",
+      userActivation: getAudioUserActivationState(),
+    });
+  }
+}
+
 function setAudioParam(audioParam, value, smoothing = 0.08) {
   if (!audioParam) {
     return;
@@ -345,12 +419,22 @@ function createNoiseBuffer(context, durationSeconds = 2) {
 function createGameAudio() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) {
-    logAudioDebug("Web Audio API unavailable in this browser.");
+    setAudioDebug("Web Audio unavailable");
     return null;
   }
 
+  configureAudioSession();
   const context = new AudioContextClass();
-  logAudioDebug("Created audio context.", { state: context.state, sampleRate: context.sampleRate });
+  context.addEventListener("statechange", () => {
+    setAudioDebug("context statechange", {
+      reason: context.state,
+      userActivation: getAudioUserActivationState(),
+    });
+  });
+  setAudioDebug("Created audio context", {
+    reason: `${context.state} @ ${context.sampleRate}Hz`,
+    userActivation: getAudioUserActivationState(),
+  });
   const master = context.createGain();
   const mix = context.createGain();
   const engineMix = context.createGain();
@@ -466,10 +550,14 @@ function warmUpAudioContext(context) {
     gain.connect(context.destination);
     source.start(0);
     source.stop(0);
-    logAudioDebug("Warmed up audio context for mobile playback.");
+    setAudioDebug("warmed up", { userActivation: getAudioUserActivationState() });
     return Promise.resolve(true);
   } catch (error) {
     console.warn("[audio] Audio warm-up failed.", error);
+    updateAudioDebugStatus("warm-up failed", {
+      reason: error?.message || "error",
+      userActivation: getAudioUserActivationState(),
+    });
     return Promise.resolve(false);
   }
 }
@@ -477,47 +565,78 @@ function warmUpAudioContext(context) {
 function ensureGameAudioReady() {
   try {
     if (!gameAudio) {
-      logAudioDebug("Initializing game audio.");
+      setAudioDebug("initializing", { userActivation: getAudioUserActivationState() });
       gameAudio = createGameAudio();
       if (!gameAudio) {
-        logAudioDebug("Audio initialization returned no audio graph.");
+        setAudioDebug("init returned no graph");
       }
     }
 
-    if (gameAudio && gameAudio.context.state === "suspended") {
-      logAudioDebug("Resuming suspended audio context.");
+    if (gameAudio && gameAudio.context.state !== "running") {
+      setAudioDebug("resume requested", {
+        reason: gameAudio.context.state,
+        userActivation: getAudioUserActivationState(),
+      });
       gameAudio.context.resume()
         .then(() => {
-          logAudioDebug("Audio context resumed.", { state: gameAudio?.context?.state });
+          setAudioDebug("resume resolved", {
+            reason: gameAudio?.context?.state || "unknown",
+            userActivation: getAudioUserActivationState(),
+          });
         })
         .catch((error) => {
           console.error("[audio] Audio context resume rejected.", error);
+          updateAudioDebugStatus("resume rejected", {
+            reason: error?.message || "error",
+            userActivation: getAudioUserActivationState(),
+          });
         });
     }
   } catch (error) {
     console.error("[audio] Audio initialization failed. Continuing without sound.", error);
+    updateAudioDebugStatus("init failed", {
+      reason: error?.message || "error",
+      userActivation: getAudioUserActivationState(),
+    });
     gameAudio = null;
   }
 
   return gameAudio;
 }
 
-async function unlockGameAudioFromGesture() {
+async function unlockGameAudioFromGesture(event = null) {
   if (audioUnlockPromise) {
     return audioUnlockPromise;
   }
 
   audioUnlockPromise = (async () => {
-  const audio = ensureGameAudioReady();
+    const trigger = event?.type || "manual";
+    setAudioDebug("gesture seen", {
+      trigger,
+      userActivation: getAudioUserActivationState(),
+    });
+    const audio = ensureGameAudioReady();
     if (!audio?.context) {
+      updateAudioDebugStatus("no context", {
+        trigger,
+        userActivation: getAudioUserActivationState(),
+      });
       return false;
     }
 
     try {
       if (audio.context.state !== "running") {
-        logAudioDebug("Attempting gesture-driven audio unlock.", { state: audio.context.state });
+        setAudioDebug("unlock attempting", {
+          trigger,
+          reason: audio.context.state,
+          userActivation: getAudioUserActivationState(),
+        });
         await audio.context.resume();
-        logAudioDebug("Audio context resumed from gesture.", { state: audio.context.state });
+        setAudioDebug("unlock resume resolved", {
+          trigger,
+          reason: audio.context.state,
+          userActivation: getAudioUserActivationState(),
+        });
       }
 
       await warmUpAudioContext(audio.context);
@@ -530,10 +649,24 @@ async function unlockGameAudioFromGesture() {
         window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
         window.removeEventListener("click", unlockGameAudioFromGesture, true);
         audioUnlockInitialized = false;
+        setAudioDebug("unlocked", {
+          trigger,
+          userActivation: getAudioUserActivationState(),
+        });
         return true;
       }
+      updateAudioDebugStatus("not running after unlock", {
+        trigger,
+        reason: audio.context.state,
+        userActivation: getAudioUserActivationState(),
+      });
     } catch (error) {
       console.error("[audio] Gesture-driven audio unlock failed.", error);
+      updateAudioDebugStatus("unlock failed", {
+        trigger,
+        reason: error?.message || "error",
+        userActivation: getAudioUserActivationState(),
+      });
     } finally {
       audioUnlockPromise = null;
     }
@@ -550,7 +683,8 @@ function initializeAudioUnlock() {
   }
 
   audioUnlockInitialized = true;
-  logAudioDebug("Waiting for user gesture to unlock audio.");
+  configureAudioSession();
+  setAudioDebug("waiting for gesture", { userActivation: getAudioUserActivationState() });
   window.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
   window.addEventListener("keydown", unlockGameAudioFromGesture, true);
   window.addEventListener("touchstart", unlockGameAudioFromGesture, true);
@@ -620,8 +754,8 @@ function updateGameAudio(dt = 0) {
     setAudioParam(gameAudio.sleeperMix.gain, sleeperGain, 0.03);
     setAudioParam(gameAudio.sleeperFilter.frequency, 950 + speedNorm * 2600, 0.08);
     if (!audioDebugLogged && activeRun) {
-      logAudioDebug("Audio update running.", {
-        contextState: gameAudio.context.state,
+      setAudioDebug("update running", {
+        reason: gameAudio.context.state,
         speed: state.speed,
         throttle,
         brake,
