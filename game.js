@@ -1400,6 +1400,79 @@ function buildTerrainTrackSamples(totalLength) {
   return samples;
 }
 
+function terrainSampleBucketKey(bucketX, bucketY) {
+  return `${bucketX},${bucketY}`;
+}
+
+function buildTerrainTrackSampleGrid(samples, gridSize) {
+  const buckets = new Map();
+  samples.forEach((sample) => {
+    const bucketX = Math.floor(sample.x / gridSize);
+    const bucketY = Math.floor(sample.y / gridSize);
+    const key = terrainSampleBucketKey(bucketX, bucketY);
+    if (!buckets.has(key)) {
+      buckets.set(key, []);
+    }
+    buckets.get(key).push(sample);
+  });
+  return buckets;
+}
+
+function findNearestTerrainTrackSample(worldX, worldY) {
+  if (!route || !route.terrainTrackSamples || route.terrainTrackSamples.length === 0) {
+    return { nearest: null, nearestSquared: Infinity };
+  }
+
+  let nearest = null;
+  let nearestSquared = Infinity;
+  const grid = route.terrainTrackSampleGrid;
+  const gridSize = route.terrainTrackSampleGridSize;
+
+  if (grid && gridSize > 0) {
+    const centerBucketX = Math.floor(worldX / gridSize);
+    const centerBucketY = Math.floor(worldY / gridSize);
+
+    for (let radius = 0; radius <= 2; radius += 1) {
+      let scannedAny = false;
+      for (let y = centerBucketY - radius; y <= centerBucketY + radius; y += 1) {
+        for (let x = centerBucketX - radius; x <= centerBucketX + radius; x += 1) {
+          const key = terrainSampleBucketKey(x, y);
+          const bucket = grid.get(key);
+          if (!bucket) {
+            continue;
+          }
+          scannedAny = true;
+          for (const sample of bucket) {
+            const dx = sample.x - worldX;
+            const dy = sample.y - worldY;
+            const squared = dx * dx + dy * dy;
+            if (squared < nearestSquared) {
+              nearestSquared = squared;
+              nearest = sample;
+            }
+          }
+        }
+      }
+      if (scannedAny && nearest) {
+        return { nearest, nearestSquared };
+      }
+    }
+  }
+
+  // Fallback for very sparse regions or missing grid data.
+  for (const sample of route.terrainTrackSamples) {
+    const dx = sample.x - worldX;
+    const dy = sample.y - worldY;
+    const squared = dx * dx + dy * dy;
+    if (squared < nearestSquared) {
+      nearestSquared = squared;
+      nearest = sample;
+    }
+  }
+
+  return { nearest, nearestSquared };
+}
+
 function getVisualElevation(elevation) {
   return elevation * TUNING.visuals.terrainHeightExaggeration;
 }
@@ -1466,18 +1539,7 @@ function getTerrainHeightAtWorld(worldX, worldY) {
   let terrainHeight = lerp(top, bottom, fracY);
 
   if (route && route.terrainTrackSamples && route.terrainTrackSamples.length) {
-    let nearest = null;
-    let nearestSquared = Infinity;
-    route.terrainTrackSamples.forEach((sample) => {
-      const dx = sample.x - worldX;
-      const dy = sample.y - worldY;
-      const squared = dx * dx + dy * dy;
-      if (squared < nearestSquared) {
-        nearestSquared = squared;
-        nearest = sample;
-      }
-    });
-
+    const { nearest, nearestSquared } = findNearestTerrainTrackSample(worldX, worldY);
     if (nearest) {
       const distance = Math.sqrt(nearestSquared);
       const corridorBlend = 1 - smoothstep(16, 150, distance);
@@ -2001,6 +2063,11 @@ function generateScenery(stations, totalLength) {
 function createInitialState() {
   route = generateRoute();
   route.terrainTrackSamples = buildTerrainTrackSamples(route.totalLength);
+  route.terrainTrackSampleGridSize = Math.max(160, TUNING.visuals.terrainCellSize * 2);
+  route.terrainTrackSampleGrid = buildTerrainTrackSampleGrid(
+    route.terrainTrackSamples,
+    route.terrainTrackSampleGridSize,
+  );
   return {
     started: false,
     finished: false,
