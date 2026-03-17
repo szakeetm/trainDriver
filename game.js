@@ -215,7 +215,7 @@ const DEFAULT_TUNING = {
     powerCoastRate: 0.62, // Rate actual power reduces toward coasting when power is released.
     brakeReleaseToPowerRate: 0.26, // Rate brakes release when changing back from braking to power.
     brakeReleaseRate: 0.14, // Rate actual brake force eases off while staying on the brake side.
-    powerBuildRate: 0.6, // Rate actual power builds when requesting acceleration.
+    powerBuildRate: 0.48, // Rate actual power builds when requesting acceleration.
   },
   physics: {
     tractionForce: 1.45, // Base acceleration force at full applied power before fade-off.
@@ -240,7 +240,7 @@ const DEFAULT_TUNING = {
   visuals: {
     stopAssistMarkerMinPercent: 4, // Left clamp for the stop-assist front marker position.
     stopAssistMarkerMaxPercent: 96, // Right clamp for the stop-assist front marker position.
-    routePredictorWidth: 400, // Width in pixels of the lower-left route predictor panel.
+    routePredictorWidth: 360, // Width in pixels of the lower-left route predictor panel.
     routePredictorHeight: 172, // Height in pixels of the lower-left route predictor panel.
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
