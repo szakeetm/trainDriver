@@ -655,8 +655,8 @@ function updateGameAudio(dt = 0) {
 
     const rollingGain = activeRun
       ? (
-        speedNorm > 0.01
-          ? 0.018 + Math.pow(speedNorm, 1.08) * (0.14 + curveTightnessSmooth * 0.14)
+        speedNorm > 0.005
+          ? Math.pow(speedNorm, 1.12) * (0.22 + curveTightnessSmooth * 0.14)
           : 0
       )
       : 0;
