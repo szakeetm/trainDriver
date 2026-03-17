@@ -3070,44 +3070,22 @@ function drawTrain(width, height) {
 
 function drawHudOverlay(width, height) {
   const compactHud = width <= 820;
-
-  if (!compactHud) {
-    ctx.save();
-    ctx.fillStyle = "rgba(7, 17, 31, 0.55)";
-    ctx.beginPath();
-    ctx.roundRect(18, 18, 246, 122, 20);
-    ctx.fill();
-
-    ctx.fillStyle = "#dff2ff";
-    ctx.font = "700 13px Inter, sans-serif";
-    ctx.textAlign = "left";
-    const nextStation = route.stations[state.stationIndex];
-    const gap = nextStation ? Math.max(0, nextStation.distance - state.distance) : 0;
-    ctx.fillText(`Next stop: ${nextStation ? nextStation.name : "Done"}`, 34, 46);
-    ctx.font = "500 12px Inter, sans-serif";
-    ctx.fillStyle = "rgba(223, 242, 255, 0.78)";
-    ctx.fillText(`Distance ${Math.max(0, roundDisplayDistance(gap))} m`, 34, 68);
-    ctx.fillText(`Consist ${TRAIN_TOTAL_LENGTH.toFixed(0)} m`, 34, 88);
-    ctx.fillText(`Scenery ${getCurrentBiomeLabel()}`, 34, 108);
-    ctx.restore();
-  }
-
   drawRoutePredictor(width, height, compactHud);
 }
 
 function drawRoutePredictor(width, height, compactHud = false) {
   const upcomingEntries = getUpcomingRouteEntries();
-  const baseWidth = compactHud ? 282 : TUNING.visuals.routePredictorWidth;
+  const baseWidth = compactHud ? 236 : TUNING.visuals.routePredictorWidth;
   const baseHeight = compactHud ? 126 : TUNING.visuals.routePredictorHeight;
   const panelWidth = Math.min(baseWidth, width - 24);
   const panelHeight = Math.min(baseHeight, height - 24);
   const panelX = 12;
-  const panelY = height - panelHeight - 12;
+  const panelY = 12;
   const distColumnX = panelX + (compactHud ? 14 : 18);
   const markerColumnX = panelX + (compactHud ? 22 : 28);
   const distanceValueX = panelX + (compactHud ? 34 : 42);
-  const typeColumnX = panelX + (compactHud ? 88 : 118);
-  const actionColumnX = panelX + (compactHud ? 176 : 252);
+  const typeColumnX = panelX + (compactHud ? 80 : 118);
+  const actionColumnX = panelX + (compactHud ? 166 : 252);
   const titleY = panelY + (compactHud ? 21 : 28);
   const headerY = panelY + (compactHud ? 39 : 52);
   const rowStartY = panelY + (compactHud ? 58 : 80);
@@ -3119,7 +3097,7 @@ function drawRoutePredictor(width, height, compactHud = false) {
   const rowFont = compactHud ? "700 10px Inter, sans-serif" : "700 15px Inter, sans-serif";
 
   ctx.save();
-  ctx.fillStyle = "rgba(6, 16, 28, 0.58)";
+  ctx.fillStyle = compactHud ? "rgba(6, 16, 28, 0.42)" : "rgba(6, 16, 28, 0.58)";
   ctx.strokeStyle = "rgba(170, 222, 255, 0.16)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
