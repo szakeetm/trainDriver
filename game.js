@@ -253,8 +253,8 @@ const DEFAULT_TUNING = {
     isometricVerticalScale: 0.48, // Screen-space vertical squash of the isometric projection.
     isometricElevationScale: 1.55, // Extra screen-space lift per meter of elevation in the isometric projection.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
-    terrainClearWidthMin: 36, // Minimum width in pixels of the cleared corridor around the track.
-    terrainClearWidthScale: 7.6, // Cleared corridor width multiplier relative to zoom scale.
+    terrainClearWidthMin: 20, // Minimum width in pixels of the cleared corridor around the track.
+    terrainClearWidthScale: 4.2, // Cleared corridor width multiplier relative to zoom scale.
     backgroundGridStep: 48, // Vertical spacing in pixels between faint background scanlines.
     backgroundSpeedMaxFactor: 1.35, // Max normalized speed used by background motion effects.
     backgroundStreakThreshold: 0.12, // Minimum normalized speed before background streaks appear.
@@ -264,13 +264,13 @@ const DEFAULT_TUNING = {
     backgroundStreakBaseLength: 20, // Base length in pixels of each background streak.
     backgroundStreakLengthBySpeed: 42, // Extra streak length added as speed rises.
     trackSampleStep: 10, // Route sampling step in meters when drawing the track.
-    trackBedWidthMin: 7, // Minimum width in pixels of the dark track bed.
-    trackBedWidthScale: 1.25, // Track-bed width multiplier relative to zoom scale.
-    railWidthMin: 1.6, // Minimum width in pixels of each rail line.
-    railWidthScale: 0.34, // Rail width multiplier relative to zoom scale.
+    trackBedWidthMin: 4.5, // Minimum width in pixels of the dark track bed.
+    trackBedWidthScale: 0.72, // Track-bed width multiplier relative to zoom scale.
+    railWidthMin: 1.1, // Minimum width in pixels of each rail line.
+    railWidthScale: 0.2, // Rail width multiplier relative to zoom scale.
     sleeperStep: 2, // How many track samples to skip between sleeper lines.
-    sleeperWidthMin: 2.2, // Minimum width in pixels of sleeper strokes.
-    sleeperWidthScale: 0.24, // Sleeper width multiplier relative to zoom scale.
+    sleeperWidthMin: 1.4, // Minimum width in pixels of sleeper strokes.
+    sleeperWidthScale: 0.13, // Sleeper width multiplier relative to zoom scale.
     speedEffectThreshold: 0.16, // Minimum normalized speed before foreground speed streaks appear.
     speedEffectMaxFactor: 1.35, // Max normalized speed used by foreground speed streak intensity.
     speedEffectCount: 14, // Number of foreground speed streaks rendered per frame.
@@ -667,11 +667,12 @@ function getViewMetrics(width, height) {
     speedFactor,
   );
   const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
-  const projectedWidth = longitudinalSpan + lateralSpan;
-  const projectedHeight = (longitudinalSpan + lateralSpan) * isoVerticalScale;
-  const scale = Math.min(width / projectedWidth, height / projectedHeight) * zoomMultiplier;
+  const consistPadding = TRAIN_TOTAL_LENGTH * 0.62;
+  const projectedWidth = longitudinalSpan + lateralSpan + consistPadding;
+  const projectedHeight = (longitudinalSpan + lateralSpan + consistPadding * 0.75) * isoVerticalScale;
+  const scale = Math.min(width / projectedWidth, height / projectedHeight) * zoomMultiplier * 0.9;
   const requestedLeadDistance = TUNING.camera.leadDistanceMin + speedFactor * TUNING.camera.leadDistanceBySpeed;
-  const maxLeadDistance = Math.max(0, (height * 0.34 - TUNING.camera.trainScreenMargin) / Math.max(scale * isoVerticalScale, 1e-6));
+  const maxLeadDistance = Math.max(0, (height * 0.26 - TUNING.camera.trainScreenMargin) / Math.max(scale * isoVerticalScale, 1e-6));
   const leadDistance = Math.min(requestedLeadDistance, maxLeadDistance);
   const camera = {
     x: trainPose.x + Math.cos(trainPose.heading) * leadDistance,
@@ -2078,6 +2079,33 @@ function getProjectedAngle(heading) {
   return Math.atan2(projectedY, projectedX);
 }
 
+function shadeColor(color, amount) {
+  const base = color.trim();
+  if (base.startsWith("hsl")) {
+    const parts = base.match(/-?\d+(\.\d+)?/g);
+    if (!parts || parts.length < 3) {
+      return color;
+    }
+    const hue = Number(parts[0]);
+    const saturation = Number(parts[1]);
+    const lightness = clamp(Number(parts[2]) + amount, 8, 92);
+    return `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
+  }
+  if (base.startsWith("#")) {
+    const value = base.slice(1);
+    const expanded = value.length === 3
+      ? value.split("").map((char) => `${char}${char}`).join("")
+      : value;
+    if (expanded.length !== 6) {
+      return color;
+    }
+    const channels = [0, 2, 4].map((offset) => parseInt(expanded.slice(offset, offset + 2), 16));
+    const adjusted = channels.map((channel) => clamp(channel + amount * 2.5, 0, 255));
+    return `rgb(${adjusted.map((channel) => Math.round(channel)).join(", ")})`;
+  }
+  return color;
+}
+
 function drawBackground(width, height) {
   const view = getViewMetrics(width, height);
   const { camera, scale } = view;
@@ -2838,31 +2866,93 @@ function drawTrain(width, height) {
     const projectedAngle = getProjectedAngle(unit.renderHeading);
     const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
     const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
+    const bodyColor = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
+    const topColor = shadeColor(bodyColor, 12);
+    const sideColor = shadeColor(bodyColor, -18);
+    const endColor = shadeColor(bodyColor, -8);
+    const roofColor = shadeColor(unit.roofColor, 8);
+    const depthX = pixelWidth * 0.26;
+    const depthY = pixelWidth * 0.36;
+    const halfWidth = pixelWidth * 0.48;
+    const halfLength = pixelLength * 0.5;
+    const frontNose = unit.type === "locomotive" ? pixelLength * 0.08 : 0;
+    const base = [
+      { x: -halfWidth, y: -halfLength + frontNose },
+      { x: halfWidth, y: -halfLength + frontNose },
+      { x: halfWidth, y: halfLength },
+      { x: -halfWidth, y: halfLength },
+    ];
+    const top = base.map((point) => ({
+      x: point.x - depthX,
+      y: point.y - depthY,
+    }));
+    const roofInset = unit.type === "locomotive" ? 0.18 : 0.14;
+    const roofFrontBias = unit.type === "locomotive" ? pixelLength * 0.06 : pixelLength * 0.02;
+    const roof = [
+      { x: -halfWidth * (1 - roofInset), y: -halfLength * 0.34 + roofFrontBias },
+      { x: halfWidth * (1 - roofInset), y: -halfLength * 0.34 + roofFrontBias },
+      { x: halfWidth * (1 - roofInset), y: halfLength * 0.22 },
+      { x: -halfWidth * (1 - roofInset), y: halfLength * 0.22 },
+    ].map((point) => ({
+      x: point.x - depthX * 0.82,
+      y: point.y - depthY * 0.82,
+    }));
 
     ctx.save();
     ctx.translate(center.x, center.y);
     ctx.rotate(projectedAngle + Math.PI / 2);
     ctx.shadowColor = "rgba(0,0,0,0.28)";
     ctx.shadowBlur = 18;
-    ctx.fillStyle = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
-    ctx.strokeStyle = "rgba(255,255,255,0.78)";
-    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = "rgba(255,255,255,0.62)";
+    ctx.lineWidth = 1.25;
+
+    ctx.fillStyle = sideColor;
     ctx.beginPath();
-    ctx.roundRect(-pixelWidth / 2, -pixelLength / 2, pixelWidth, pixelLength, Math.max(6, pixelWidth * 0.35));
+    ctx.moveTo(base[1].x, base[1].y);
+    ctx.lineTo(base[2].x, base[2].y);
+    ctx.lineTo(top[2].x, top[2].y);
+    ctx.lineTo(top[1].x, top[1].y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = endColor;
+    ctx.beginPath();
+    ctx.moveTo(base[0].x, base[0].y);
+    ctx.lineTo(base[1].x, base[1].y);
+    ctx.lineTo(top[1].x, top[1].y);
+    ctx.lineTo(top[0].x, top[0].y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = topColor;
+    ctx.beginPath();
+    ctx.moveTo(top[0].x, top[0].y);
+    top.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = unit.roofColor;
-    ctx.fillRect(-pixelWidth * 0.28, -pixelLength * 0.32, pixelWidth * 0.56, pixelLength * 0.48);
+    ctx.fillStyle = roofColor;
+    ctx.beginPath();
+    ctx.moveTo(roof[0].x, roof[0].y);
+    roof.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
+    ctx.closePath();
+    ctx.fill();
 
     if (unit.type === "locomotive") {
       ctx.fillStyle = "rgba(255, 232, 160, 0.88)";
-      ctx.fillRect(-pixelWidth * 0.18, -pixelLength * 0.54, pixelWidth * 0.36, Math.max(5, pixelLength * 0.14));
+      ctx.beginPath();
+      ctx.roundRect(-pixelWidth * 0.15 - depthX * 0.7, -pixelLength * 0.47 - depthY * 0.7, pixelWidth * 0.3, Math.max(5, pixelLength * 0.12), 3);
+      ctx.fill();
       ctx.fillStyle = "rgba(7, 21, 36, 0.78)";
-      ctx.fillRect(-pixelWidth * 0.24, -pixelLength * 0.18, pixelWidth * 0.48, pixelLength * 0.18);
+      ctx.beginPath();
+      ctx.roundRect(-pixelWidth * 0.19 - depthX * 0.62, -pixelLength * 0.16 - depthY * 0.62, pixelWidth * 0.38, pixelLength * 0.16, 3);
+      ctx.fill();
     } else {
       ctx.fillStyle = "rgba(50, 73, 92, 0.45)";
-      ctx.fillRect(-pixelWidth * 0.16, -pixelLength * 0.42, pixelWidth * 0.32, pixelLength * 0.84);
+      ctx.beginPath();
+      ctx.roundRect(-pixelWidth * 0.12 - depthX * 0.58, -pixelLength * 0.28 - depthY * 0.58, pixelWidth * 0.24, pixelLength * 0.48, 3);
+      ctx.fill();
     }
 
     ctx.restore();
