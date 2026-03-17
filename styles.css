@@ -392,13 +392,6 @@ button {
   color: var(--muted);
 }
 
-.audio-debug {
-  margin-top: 4px;
-  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
-  line-height: 1.35;
-  white-space: pre-wrap;
-}
-
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.16em;

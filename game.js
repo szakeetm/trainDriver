@@ -31,7 +31,6 @@ const requestedMarker = document.getElementById("requestedMarker");
 const requestedLabel = document.getElementById("requestedLabel");
 const actualLabel = document.getElementById("actualLabel");
 const controlDelta = document.getElementById("controlDelta");
-const audioDebugStatus = document.getElementById("audioDebugStatus");
 const lineLimitSecondary = lineLimitKph.parentElement;
 const stationAssist = document.getElementById("stationAssist");
 const assistScale = document.getElementById("assistScale");
@@ -302,122 +301,9 @@ let lastFrame = performance.now();
 let isDroneInsetMinimized = true;
 let droneInsetRenderer = null;
 let gameAudio = null;
-let audioDebugLogged = false;
 let audioUnlockInitialized = false;
 let audioUnlockPromise = null;
-let audioEnvironmentDebugAttached = false;
-let audioSessionDebugAttached = false;
-const audioDebugHistory = [];
 const SILENT_WAV_DATA_URI = "data:audio/wav;base64,UklGRl4AAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YToAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
-
-function logAudioDebug(message, details = null) {
-  if (details == null) {
-    console.info(`[audio] ${message}`);
-    return;
-  }
-  console.info(`[audio] ${message}`, details);
-}
-
-function updateAudioDebugStatus(message, details = null) {
-  if (!audioDebugStatus) {
-    return;
-  }
-
-  const contextState = gameAudio?.context?.state || "none";
-  const session = navigator.audioSession || navigator.webkitAudioSession || null;
-  const bits = [`Audio: ${message}`, `ctx:${contextState}`];
-  const envBits = [
-    `vis:${document.visibilityState}`,
-    `focus:${typeof document.hasFocus === "function" ? (document.hasFocus() ? "yes" : "no") : "n/a"}`,
-  ];
-
-  if (session?.type) {
-    bits.push(`session:${session.type}`);
-  }
-  if (session?.state) {
-    bits.push(`sessionState:${session.state}`);
-  }
-
-  if (details && typeof details === "object") {
-    if (details.trigger) {
-      bits.push(`trigger:${details.trigger}`);
-    }
-    if (details.reason) {
-      bits.push(`reason:${details.reason}`);
-    }
-    if (details.userActivation) {
-      bits.push(`user:${details.userActivation}`);
-    }
-  }
-
-  const context = gameAudio?.context || null;
-  if (context) {
-    envBits.push(`t:${context.currentTime.toFixed(3)}`);
-    if (typeof context.baseLatency === "number") {
-      envBits.push(`base:${context.baseLatency.toFixed(3)}`);
-    }
-    if (typeof context.outputLatency === "number") {
-      envBits.push(`out:${context.outputLatency.toFixed(3)}`);
-    }
-  }
-
-  const historyLine = [bits.join(" | "), envBits.join(" | ")].join("\n");
-  audioDebugHistory.push(historyLine);
-  while (audioDebugHistory.length > 4) {
-    audioDebugHistory.shift();
-  }
-
-  audioDebugStatus.textContent = audioDebugHistory.join("\n\n");
-}
-
-function setAudioDebug(message, details = null) {
-  logAudioDebug(message, details);
-  updateAudioDebugStatus(message, details);
-}
-
-function getAudioUserActivationState() {
-  if (!navigator.userActivation) {
-    return "n/a";
-  }
-  if (navigator.userActivation.isActive) {
-    return "active";
-  }
-  if (navigator.userActivation.hasBeenActive) {
-    return "used";
-  }
-  return "idle";
-}
-
-function scheduleAudioStateProbe(reason, trigger = "probe", delayMs = 120) {
-  window.setTimeout(() => {
-    updateAudioDebugStatus("state probe", {
-      trigger,
-      reason,
-      userActivation: getAudioUserActivationState(),
-    });
-  }, delayMs);
-}
-
-function attachAudioEnvironmentDebug() {
-  if (audioEnvironmentDebugAttached) {
-    return;
-  }
-
-  audioEnvironmentDebugAttached = true;
-  const handleEvent = (event) => {
-    updateAudioDebugStatus("env event", {
-      trigger: event.type,
-      reason: gameAudio?.context?.state || "no-context",
-      userActivation: getAudioUserActivationState(),
-    });
-  };
-
-  document.addEventListener("visibilitychange", handleEvent, true);
-  window.addEventListener("focus", handleEvent, true);
-  window.addEventListener("blur", handleEvent, true);
-  window.addEventListener("pageshow", handleEvent, true);
-  window.addEventListener("pagehide", handleEvent, true);
-}
 
 async function primeHtmlAudioUnlock(trigger = "manual") {
   try {
@@ -432,18 +318,9 @@ async function primeHtmlAudioUnlock(trigger = "manual") {
     }
     audio.pause();
     audio.currentTime = 0;
-    setAudioDebug("html audio primed", {
-      trigger,
-      userActivation: getAudioUserActivationState(),
-    });
     return true;
   } catch (error) {
-    console.warn("[audio] HTML audio prime failed.", error);
-    updateAudioDebugStatus("html audio prime failed", {
-      trigger,
-      reason: error?.message || "error",
-      userActivation: getAudioUserActivationState(),
-    });
+    console.warn("[audio] HTML audio prime failed.", error, trigger);
     return false;
   }
 }
@@ -451,7 +328,6 @@ async function primeHtmlAudioUnlock(trigger = "manual") {
 function configureAudioSession() {
   const session = navigator.audioSession || navigator.webkitAudioSession || null;
   if (!session) {
-    setAudioDebug("no audioSession API", { userActivation: getAudioUserActivationState() });
     return;
   }
 
@@ -459,25 +335,8 @@ function configureAudioSession() {
     if (session.type !== "playback") {
       session.type = "playback";
     }
-    if (!audioSessionDebugAttached && typeof session.addEventListener === "function") {
-      session.addEventListener("statechange", () => {
-        updateAudioDebugStatus("audioSession change", {
-          reason: session.state || "unknown",
-          userActivation: getAudioUserActivationState(),
-        });
-      });
-      audioSessionDebugAttached = true;
-    }
-    setAudioDebug("audioSession ready", {
-      reason: session.state || "ok",
-      userActivation: getAudioUserActivationState(),
-    });
   } catch (error) {
     console.warn("[audio] Failed to configure audioSession.", error);
-    updateAudioDebugStatus("audioSession failed", {
-      reason: error?.message || "error",
-      userActivation: getAudioUserActivationState(),
-    });
   }
 }
 
@@ -513,22 +372,11 @@ function createNoiseBuffer(context, durationSeconds = 2) {
 function createGameAudio() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) {
-    setAudioDebug("Web Audio unavailable");
     return null;
   }
 
   configureAudioSession();
   const context = new AudioContextClass();
-  context.addEventListener("statechange", () => {
-    setAudioDebug("context statechange", {
-      reason: context.state,
-      userActivation: getAudioUserActivationState(),
-    });
-  });
-  setAudioDebug("Created audio context", {
-    reason: `${context.state} @ ${context.sampleRate}Hz`,
-    userActivation: getAudioUserActivationState(),
-  });
   const master = context.createGain();
   const mix = context.createGain();
   const engineMix = context.createGain();
@@ -644,14 +492,9 @@ function warmUpAudioContext(context) {
     gain.connect(context.destination);
     source.start(0);
     source.stop(0);
-    setAudioDebug("warmed up", { userActivation: getAudioUserActivationState() });
     return Promise.resolve(true);
   } catch (error) {
     console.warn("[audio] Audio warm-up failed.", error);
-    updateAudioDebugStatus("warm-up failed", {
-      reason: error?.message || "error",
-      userActivation: getAudioUserActivationState(),
-    });
     return Promise.resolve(false);
   }
 }
@@ -659,18 +502,10 @@ function warmUpAudioContext(context) {
 function ensureGameAudioReady() {
   try {
     if (!gameAudio) {
-      setAudioDebug("initializing", { userActivation: getAudioUserActivationState() });
       gameAudio = createGameAudio();
-      if (!gameAudio) {
-        setAudioDebug("init returned no graph");
-      }
     }
   } catch (error) {
     console.error("[audio] Audio initialization failed. Continuing without sound.", error);
-    updateAudioDebugStatus("init failed", {
-      reason: error?.message || "error",
-      userActivation: getAudioUserActivationState(),
-    });
     gameAudio = null;
   }
 
@@ -681,10 +516,6 @@ async function rebuildGameAudioInGesture(trigger = "manual") {
   if (gameAudio?.context) {
     try {
       await gameAudio.context.close();
-      setAudioDebug("closed suspended context", {
-        trigger,
-        userActivation: getAudioUserActivationState(),
-      });
     } catch (error) {
       console.warn("[audio] Failed to close suspended context.", error);
     }
@@ -699,19 +530,9 @@ async function rebuildGameAudioInGesture(trigger = "manual") {
   try {
     await primeHtmlAudioUnlock(trigger);
     await audio.context.resume();
-    setAudioDebug("rebuilt context resumed", {
-      trigger,
-      reason: audio.context.state,
-      userActivation: getAudioUserActivationState(),
-    });
     await warmUpAudioContext(audio.context);
   } catch (error) {
     console.error("[audio] Rebuilt context resume failed.", error);
-    updateAudioDebugStatus("rebuilt resume failed", {
-      trigger,
-      reason: error?.message || "error",
-      userActivation: getAudioUserActivationState(),
-    });
   }
 
   return audio;
@@ -722,12 +543,6 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
   const trigger = event?.type || "manual";
 
   if (audioUnlockPromise) {
-    updateAudioDebugStatus(forceRetry ? "unlock retry queued" : "unlock pending", {
-      trigger,
-      reason: gameAudio?.context?.state || "none",
-      userActivation: getAudioUserActivationState(),
-    });
-
     if (!forceRetry) {
       return audioUnlockPromise;
     }
@@ -739,55 +554,24 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
   }
 
   audioUnlockPromise = (async () => {
-    setAudioDebug("gesture seen", {
-      trigger,
-      userActivation: getAudioUserActivationState(),
-    });
     const audio = ensureGameAudioReady();
     if (!audio?.context) {
-      updateAudioDebugStatus("no context", {
-        trigger,
-        userActivation: getAudioUserActivationState(),
-      });
       return false;
     }
 
     try {
       if (audio.context.state !== "running") {
-        setAudioDebug("unlock attempting", {
-          trigger,
-          reason: audio.context.state,
-          userActivation: getAudioUserActivationState(),
-        });
         await primeHtmlAudioUnlock(trigger);
         await audio.context.resume();
-        setAudioDebug("unlock resume resolved", {
-          trigger,
-          reason: audio.context.state,
-          userActivation: getAudioUserActivationState(),
-        });
-        scheduleAudioStateProbe("after resume", trigger, 60);
-        scheduleAudioStateProbe("after resume", trigger, 240);
       }
 
       await warmUpAudioContext(audio.context);
-      scheduleAudioStateProbe("after warm-up", trigger, 60);
 
       if (audio.context.state !== "running") {
-        setAudioDebug("rebuild requested", {
-          trigger,
-          reason: audio.context.state,
-          userActivation: getAudioUserActivationState(),
-        });
         await rebuildGameAudioInGesture(trigger);
         if (gameAudio?.context?.state !== "running") {
           await primeHtmlAudioUnlock(`${trigger}-reprime`);
           await gameAudio?.context?.resume?.();
-          updateAudioDebugStatus("post-prime resume attempted", {
-            trigger,
-            reason: gameAudio?.context?.state || "none",
-            userActivation: getAudioUserActivationState(),
-          });
         }
       }
 
@@ -800,24 +584,10 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
         document.removeEventListener("mouseup", unlockGameAudioFromGesture, true);
         document.removeEventListener("click", unlockGameAudioFromGesture, true);
         audioUnlockInitialized = false;
-        setAudioDebug("unlocked", {
-          trigger,
-          userActivation: getAudioUserActivationState(),
-        });
         return true;
       }
-      updateAudioDebugStatus("not running after unlock", {
-        trigger,
-        reason: gameAudio?.context?.state || audio.context.state,
-        userActivation: getAudioUserActivationState(),
-      });
     } catch (error) {
       console.error("[audio] Gesture-driven audio unlock failed.", error);
-      updateAudioDebugStatus("unlock failed", {
-        trigger,
-        reason: error?.message || "error",
-        userActivation: getAudioUserActivationState(),
-      });
     } finally {
       audioUnlockPromise = null;
     }
@@ -834,9 +604,7 @@ function initializeAudioUnlock() {
   }
 
   audioUnlockInitialized = true;
-  attachAudioEnvironmentDebug();
   configureAudioSession();
-  setAudioDebug("waiting for gesture", { userActivation: getAudioUserActivationState() });
   window.addEventListener("keydown", unlockGameAudioFromGesture, true);
   window.addEventListener("touchend", unlockGameAudioFromGesture, true);
   window.addEventListener("mouseup", unlockGameAudioFromGesture, true);
@@ -906,17 +674,6 @@ function updateGameAudio(dt = 0) {
     const sleeperGain = sleeperBase * (0.28 + sleeperPulse * 1.8);
     setAudioParam(gameAudio.sleeperMix.gain, sleeperGain, 0.03);
     setAudioParam(gameAudio.sleeperFilter.frequency, 950 + speedNorm * 2600, 0.08);
-    if (!audioDebugLogged && activeRun) {
-      setAudioDebug("update running", {
-        reason: gameAudio.context.state,
-        speed: state.speed,
-        throttle,
-        brake,
-        curveRadius: Number.isFinite(curveRadius) ? curveRadius : null,
-        curveTightnessSmooth,
-      });
-      audioDebugLogged = true;
-    }
   } catch (error) {
     console.error("[audio] Audio update failed. Continuing without sound.", error);
     gameAudio = null;
@@ -1148,10 +905,6 @@ function syncAssistLegend() {
 
 function setButtonHold(button, key) {
   const engage = (event) => {
-    updateAudioDebugStatus("control pressed", {
-      trigger: event?.type || key,
-      userActivation: getAudioUserActivationState(),
-    });
     if (event) {
       event.preventDefault();
     }
@@ -1177,29 +930,17 @@ function setButtonHold(button, key) {
   button.addEventListener("lostpointercapture", release);
   button.addEventListener("mousedown", engage);
   button.addEventListener("mouseup", (event) => {
-    updateAudioDebugStatus("control mouseup", {
-      trigger: event?.type || key,
-      userActivation: getAudioUserActivationState(),
-    });
     unlockGameAudioFromGesture(event, { forceRetry: true });
     release();
   });
   button.addEventListener("mouseleave", release);
   button.addEventListener("touchstart", engage, { passive: false });
   button.addEventListener("touchend", (event) => {
-    updateAudioDebugStatus("control touchend", {
-      trigger: event?.type || key,
-      userActivation: getAudioUserActivationState(),
-    });
     unlockGameAudioFromGesture(event, { forceRetry: true });
   }, { passive: true });
   button.addEventListener("touchend", release, { passive: true });
   button.addEventListener("touchcancel", release, { passive: true });
   button.addEventListener("click", (event) => {
-    updateAudioDebugStatus("control click", {
-      trigger: event?.type || key,
-      userActivation: getAudioUserActivationState(),
-    });
     unlockGameAudioFromGesture(event, { forceRetry: true });
   });
 }
