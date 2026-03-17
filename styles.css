@@ -984,8 +984,12 @@ button {
     gap: 8px;
     position: static;
     top: auto;
+    width: 100%;
+    min-width: 0;
+    align-self: stretch;
     max-height: none;
     overflow: visible;
+    align-items: stretch;
     padding: 0 0 calc(env(safe-area-inset-bottom, 0px) + 8px);
   }
 
@@ -1082,8 +1086,12 @@ button {
     position: sticky;
     bottom: 8px;
     z-index: 6;
+    grid-column: 1 / -1;
     width: 100%;
+    margin: 0;
     justify-self: stretch;
+    align-self: stretch;
+    box-sizing: border-box;
     padding: 14px;
     background: rgba(6, 18, 31, 0.96);
     border-color: rgba(141, 214, 255, 0.18);

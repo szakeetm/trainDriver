@@ -303,6 +303,7 @@ let droneInsetRenderer = null;
 let gameAudio = null;
 let audioDebugLogged = false;
 let audioUnlockInitialized = false;
+let audioUnlockPromise = null;
 
 function logAudioDebug(message, details = null) {
   if (details == null) {
@@ -450,6 +451,29 @@ function createGameAudio() {
   };
 }
 
+function warmUpAudioContext(context) {
+  if (!context) {
+    return Promise.resolve(false);
+  }
+
+  try {
+    const buffer = context.createBuffer(1, 1, Math.max(22050, context.sampleRate || 44100));
+    const source = context.createBufferSource();
+    const gain = context.createGain();
+    gain.gain.value = 0;
+    source.buffer = buffer;
+    source.connect(gain);
+    gain.connect(context.destination);
+    source.start(0);
+    source.stop(0);
+    logAudioDebug("Warmed up audio context for mobile playback.");
+    return Promise.resolve(true);
+  } catch (error) {
+    console.warn("[audio] Audio warm-up failed.", error);
+    return Promise.resolve(false);
+  }
+}
+
 function ensureGameAudioReady() {
   try {
     if (!gameAudio) {
@@ -478,15 +502,46 @@ function ensureGameAudioReady() {
   return gameAudio;
 }
 
-function unlockGameAudioFromGesture() {
-  const audio = ensureGameAudioReady();
-  if (audio && audio.context && audio.context.state === "running") {
-    window.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
-    window.removeEventListener("keydown", unlockGameAudioFromGesture, true);
-    window.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
-    window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
-    audioUnlockInitialized = false;
+async function unlockGameAudioFromGesture() {
+  if (audioUnlockPromise) {
+    return audioUnlockPromise;
   }
+
+  audioUnlockPromise = (async () => {
+  const audio = ensureGameAudioReady();
+    if (!audio?.context) {
+      return false;
+    }
+
+    try {
+      if (audio.context.state !== "running") {
+        logAudioDebug("Attempting gesture-driven audio unlock.", { state: audio.context.state });
+        await audio.context.resume();
+        logAudioDebug("Audio context resumed from gesture.", { state: audio.context.state });
+      }
+
+      await warmUpAudioContext(audio.context);
+
+      if (audio.context.state === "running") {
+        window.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
+        window.removeEventListener("keydown", unlockGameAudioFromGesture, true);
+        window.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
+        window.removeEventListener("touchend", unlockGameAudioFromGesture, true);
+        window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
+        window.removeEventListener("click", unlockGameAudioFromGesture, true);
+        audioUnlockInitialized = false;
+        return true;
+      }
+    } catch (error) {
+      console.error("[audio] Gesture-driven audio unlock failed.", error);
+    } finally {
+      audioUnlockPromise = null;
+    }
+
+    return false;
+  })();
+
+  return audioUnlockPromise;
 }
 
 function initializeAudioUnlock() {
@@ -499,7 +554,9 @@ function initializeAudioUnlock() {
   window.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
   window.addEventListener("keydown", unlockGameAudioFromGesture, true);
   window.addEventListener("touchstart", unlockGameAudioFromGesture, true);
+  window.addEventListener("touchend", unlockGameAudioFromGesture, true);
   window.addEventListener("mousedown", unlockGameAudioFromGesture, true);
+  window.addEventListener("click", unlockGameAudioFromGesture, true);
 }
 
 function updateGameAudio(dt = 0) {
@@ -804,6 +861,7 @@ function syncAssistLegend() {
 
 function setButtonHold(button, key) {
   const engage = (event) => {
+    unlockGameAudioFromGesture();
     if (event) {
       event.preventDefault();
     }
@@ -3075,8 +3133,8 @@ function drawHudOverlay(width, height) {
 
 function drawRoutePredictor(width, height, compactHud = false) {
   const upcomingEntries = getUpcomingRouteEntries();
-  const baseWidth = compactHud ? 236 : TUNING.visuals.routePredictorWidth;
-  const baseHeight = compactHud ? 126 : TUNING.visuals.routePredictorHeight;
+  const baseWidth = compactHud ? 214 : TUNING.visuals.routePredictorWidth;
+  const baseHeight = compactHud ? 120 : TUNING.visuals.routePredictorHeight;
   const panelWidth = Math.min(baseWidth, width - 24);
   const panelHeight = Math.min(baseHeight, height - 24);
   const panelX = 12;
@@ -3084,17 +3142,17 @@ function drawRoutePredictor(width, height, compactHud = false) {
   const distColumnX = panelX + (compactHud ? 14 : 18);
   const markerColumnX = panelX + (compactHud ? 22 : 28);
   const distanceValueX = panelX + (compactHud ? 34 : 42);
-  const typeColumnX = panelX + (compactHud ? 80 : 118);
-  const actionColumnX = panelX + (compactHud ? 166 : 252);
+  const typeColumnX = panelX + (compactHud ? 72 : 118);
+  const actionColumnX = panelX + (compactHud ? 146 : 252);
   const titleY = panelY + (compactHud ? 21 : 28);
-  const headerY = panelY + (compactHud ? 39 : 52);
-  const rowStartY = panelY + (compactHud ? 58 : 80);
-  const rowStep = compactHud ? 15 : 22;
+  const headerY = panelY + (compactHud ? 37 : 52);
+  const rowStartY = panelY + (compactHud ? 54 : 80);
+  const rowStep = compactHud ? 14 : 22;
   const radius = compactHud ? 16 : 22;
   const titleFont = compactHud ? "700 12px Inter, sans-serif" : "700 16px Inter, sans-serif";
   const emptyFont = compactHud ? "600 11px Inter, sans-serif" : "600 14px Inter, sans-serif";
-  const headerFont = compactHud ? "600 9px Inter, sans-serif" : "600 11px Inter, sans-serif";
-  const rowFont = compactHud ? "700 10px Inter, sans-serif" : "700 15px Inter, sans-serif";
+  const headerFont = compactHud ? "600 8px Inter, sans-serif" : "600 11px Inter, sans-serif";
+  const rowFont = compactHud ? "700 9px Inter, sans-serif" : "700 15px Inter, sans-serif";
 
   ctx.save();
   ctx.fillStyle = compactHud ? "rgba(6, 16, 28, 0.42)" : "rgba(6, 16, 28, 0.58)";
