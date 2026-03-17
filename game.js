@@ -305,6 +305,8 @@ let gameAudio = null;
 let audioDebugLogged = false;
 let audioUnlockInitialized = false;
 let audioUnlockPromise = null;
+let audioEnvironmentDebugAttached = false;
+let audioSessionDebugAttached = false;
 
 function logAudioDebug(message, details = null) {
   if (details == null) {
@@ -322,6 +324,10 @@ function updateAudioDebugStatus(message, details = null) {
   const contextState = gameAudio?.context?.state || "none";
   const session = navigator.audioSession || navigator.webkitAudioSession || null;
   const bits = [`Audio: ${message}`, `ctx:${contextState}`];
+  const envBits = [
+    `vis:${document.visibilityState}`,
+    `focus:${typeof document.hasFocus === "function" ? (document.hasFocus() ? "yes" : "no") : "n/a"}`,
+  ];
 
   if (session?.type) {
     bits.push(`session:${session.type}`);
@@ -342,7 +348,18 @@ function updateAudioDebugStatus(message, details = null) {
     }
   }
 
-  audioDebugStatus.textContent = bits.join(" | ");
+  const context = gameAudio?.context || null;
+  if (context) {
+    envBits.push(`t:${context.currentTime.toFixed(3)}`);
+    if (typeof context.baseLatency === "number") {
+      envBits.push(`base:${context.baseLatency.toFixed(3)}`);
+    }
+    if (typeof context.outputLatency === "number") {
+      envBits.push(`out:${context.outputLatency.toFixed(3)}`);
+    }
+  }
+
+  audioDebugStatus.textContent = `${bits.join(" | ")}\n${envBits.join(" | ")}`;
 }
 
 function setAudioDebug(message, details = null) {
@@ -363,6 +380,37 @@ function getAudioUserActivationState() {
   return "idle";
 }
 
+function scheduleAudioStateProbe(reason, trigger = "probe", delayMs = 120) {
+  window.setTimeout(() => {
+    updateAudioDebugStatus("state probe", {
+      trigger,
+      reason,
+      userActivation: getAudioUserActivationState(),
+    });
+  }, delayMs);
+}
+
+function attachAudioEnvironmentDebug() {
+  if (audioEnvironmentDebugAttached) {
+    return;
+  }
+
+  audioEnvironmentDebugAttached = true;
+  const handleEvent = (event) => {
+    updateAudioDebugStatus("env event", {
+      trigger: event.type,
+      reason: gameAudio?.context?.state || "no-context",
+      userActivation: getAudioUserActivationState(),
+    });
+  };
+
+  document.addEventListener("visibilitychange", handleEvent, true);
+  window.addEventListener("focus", handleEvent, true);
+  window.addEventListener("blur", handleEvent, true);
+  window.addEventListener("pageshow", handleEvent, true);
+  window.addEventListener("pagehide", handleEvent, true);
+}
+
 function configureAudioSession() {
   const session = navigator.audioSession || navigator.webkitAudioSession || null;
   if (!session) {
@@ -373,6 +421,15 @@ function configureAudioSession() {
   try {
     if (session.type !== "playback") {
       session.type = "playback";
+    }
+    if (!audioSessionDebugAttached && typeof session.addEventListener === "function") {
+      session.addEventListener("statechange", () => {
+        updateAudioDebugStatus("audioSession change", {
+          reason: session.state || "unknown",
+          userActivation: getAudioUserActivationState(),
+        });
+      });
+      audioSessionDebugAttached = true;
     }
     setAudioDebug("audioSession ready", {
       reason: session.state || "ok",
@@ -655,9 +712,12 @@ async function unlockGameAudioFromGesture(event = null) {
           reason: audio.context.state,
           userActivation: getAudioUserActivationState(),
         });
+        scheduleAudioStateProbe("after resume", trigger, 60);
+        scheduleAudioStateProbe("after resume", trigger, 240);
       }
 
       await warmUpAudioContext(audio.context);
+      scheduleAudioStateProbe("after warm-up", trigger, 60);
 
       if (audio.context.state !== "running") {
         setAudioDebug("rebuild requested", {
@@ -714,6 +774,7 @@ function initializeAudioUnlock() {
   }
 
   audioUnlockInitialized = true;
+  attachAudioEnvironmentDebug();
   configureAudioSession();
   setAudioDebug("waiting for gesture", { userActivation: getAudioUserActivationState() });
   window.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
