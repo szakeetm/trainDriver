@@ -3305,11 +3305,8 @@ function drawTrain(width, height) {
     const sideColor = shadeColor(bodyColor, -18);
     const endColor = shadeColor(bodyColor, -8);
     const roofColor = shadeColor(unit.roofColor, 8);
-    const depthX = pixelWidth * 0.26;
-    const depthY = pixelWidth * 0.36;
     const halfWidth = pixelWidth * 0.48;
-    const roofLiftX = -depthX;
-    const roofLiftY = -depthY;
+    const bodyLiftY = Math.max(7, pixelWidth * 0.68);
     const frontInset = unit.type === "locomotive" ? pixelWidth * 0.16 : 0;
     const frontLeft = {
       x: frontScreen.x - normalX * (halfWidth - frontInset) + tangentX * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
@@ -3339,34 +3336,52 @@ function drawTrain(width, height) {
       ? [frontLeft, frontRight, midRight, rearRight, rearLeft, midLeft]
       : [frontLeft, frontRight, rearRight, rearLeft];
     const top = base.map((point) => ({
-      x: point.x + roofLiftX,
-      y: point.y + roofLiftY,
+      x: point.x,
+      y: point.y - bodyLiftY,
     }));
+    if (unit.type === "locomotive") {
+      top[0] = {
+        x: top[0].x + normalX * (halfWidth * 0.12) - tangentX * (pixelLength * 0.09),
+        y: top[0].y + normalY * (halfWidth * 0.12) - tangentY * (pixelLength * 0.09),
+      };
+      top[1] = {
+        x: top[1].x - normalX * (halfWidth * 0.12) - tangentX * (pixelLength * 0.09),
+        y: top[1].y - normalY * (halfWidth * 0.12) - tangentY * (pixelLength * 0.09),
+      };
+      top[2] = {
+        x: top[2].x - tangentX * (pixelLength * 0.04),
+        y: top[2].y - tangentY * (pixelLength * 0.04),
+      };
+      top[5] = {
+        x: top[5].x - tangentX * (pixelLength * 0.04),
+        y: top[5].y - tangentY * (pixelLength * 0.04),
+      };
+    }
     const roofFrontCenter = {
-      x: frontScreen.x - tangentX * pixelLength * 0.14,
-      y: frontScreen.y - tangentY * pixelLength * 0.14,
+      x: (top[0].x + top[1].x) * 0.5 - tangentX * pixelLength * 0.06,
+      y: (top[0].y + top[1].y) * 0.5 - tangentY * pixelLength * 0.06,
     };
     const roofRearCenter = {
-      x: rearScreen.x + tangentX * pixelLength * 0.24,
-      y: rearScreen.y + tangentY * pixelLength * 0.24,
+      x: (top[top.length - 1].x + top[top.length - 2].x) * 0.5 + tangentX * pixelLength * 0.18,
+      y: (top[top.length - 1].y + top[top.length - 2].y) * 0.5 + tangentY * pixelLength * 0.18,
     };
     const roofHalfWidth = halfWidth * (unit.type === "locomotive" ? 0.66 : 0.58);
     const roof = [
       {
-        x: roofFrontCenter.x - normalX * roofHalfWidth + roofLiftX * 0.82,
-        y: roofFrontCenter.y - normalY * roofHalfWidth + roofLiftY * 0.82,
+        x: roofFrontCenter.x - normalX * roofHalfWidth,
+        y: roofFrontCenter.y - normalY * roofHalfWidth,
       },
       {
-        x: roofFrontCenter.x + normalX * roofHalfWidth + roofLiftX * 0.82,
-        y: roofFrontCenter.y + normalY * roofHalfWidth + roofLiftY * 0.82,
+        x: roofFrontCenter.x + normalX * roofHalfWidth,
+        y: roofFrontCenter.y + normalY * roofHalfWidth,
       },
       {
-        x: roofRearCenter.x + normalX * roofHalfWidth + roofLiftX * 0.82,
-        y: roofRearCenter.y + normalY * roofHalfWidth + roofLiftY * 0.82,
+        x: roofRearCenter.x + normalX * roofHalfWidth,
+        y: roofRearCenter.y + normalY * roofHalfWidth,
       },
       {
-        x: roofRearCenter.x - normalX * roofHalfWidth + roofLiftX * 0.82,
-        y: roofRearCenter.y - normalY * roofHalfWidth + roofLiftY * 0.82,
+        x: roofRearCenter.x - normalX * roofHalfWidth,
+        y: roofRearCenter.y - normalY * roofHalfWidth,
       },
     ];
 
@@ -3434,8 +3449,8 @@ function drawTrain(width, height) {
     if (unit.type === "locomotive") {
       drawOrientedPanel(
         {
-          x: frontScreen.x + tangentX * (pixelLength * 0.04) + roofLiftX * 0.78,
-          y: frontScreen.y + tangentY * (pixelLength * 0.04) + roofLiftY * 0.78,
+          x: (roof[0].x + roof[1].x) * 0.5 + tangentX * (pixelLength * 0.04),
+          y: (roof[0].y + roof[1].y) * 0.5 + tangentY * (pixelLength * 0.04),
         },
         tangentX,
         tangentY,
@@ -3447,8 +3462,8 @@ function drawTrain(width, height) {
       );
       drawOrientedPanel(
         {
-          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5 + roofLiftX * 0.38,
-          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5 + roofLiftY * 0.38,
+          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5,
+          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5,
         },
         tangentX,
         tangentY,
@@ -3460,8 +3475,8 @@ function drawTrain(width, height) {
       );
       drawOrientedPanel(
         {
-          x: roofFrontCenter.x + tangentX * (pixelLength * 0.02) + roofLiftX * 0.56,
-          y: roofFrontCenter.y + tangentY * (pixelLength * 0.02) + roofLiftY * 0.56,
+          x: roofFrontCenter.x + tangentX * (pixelLength * 0.02),
+          y: roofFrontCenter.y + tangentY * (pixelLength * 0.02),
         },
         tangentX,
         tangentY,
@@ -3502,6 +3517,17 @@ function drawTrain(width, height) {
         0.42,
         0.58,
         "rgba(110, 134, 154, 0.42)",
+      );
+      const farSideFace = normalX + normalY > 0
+        ? [base[3], base[0], top[0], top[3]]
+        : [base[1], base[2], top[2], top[1]];
+      drawFaceBand(
+        farSideFace,
+        0.24,
+        0.76,
+        0.34,
+        0.56,
+        "rgba(230, 238, 246, 0.22)",
       );
     }
 
