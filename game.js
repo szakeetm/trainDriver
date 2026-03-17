@@ -2404,10 +2404,11 @@ function drawMountainCluster(unitScale, palette, snowCap = false, targetCtx = ct
   });
 }
 
-function drawCachedScenerySprite(targetCtx, sprite, x, y, rotation) {
+function drawCachedScenerySprite(targetCtx, sprite, x, y, rotation, drawScale = 1) {
   targetCtx.save();
   targetCtx.translate(x, y);
   targetCtx.rotate(rotation);
+  targetCtx.scale(drawScale, drawScale);
   targetCtx.drawImage(sprite.canvas, -sprite.anchorX, -sprite.anchorY);
   targetCtx.restore();
 }
@@ -2781,7 +2782,9 @@ function drawScenery(view, width, height) {
     };
 
     if (mountainFactor > 0.62 && deterministicRoll > 0.4 && item.kind !== "pond" && item.kind !== "billboard" && item.kind !== "windmill") {
-      const mountainScale = Math.round((unitScale * (0.9 + mountainFactor * 0.7)) * 10) / 10;
+      const mountainUnitScale = unitScale * (0.9 + mountainFactor * 0.7);
+      const mountainScale = Math.max(0.25, Math.round(mountainUnitScale * 4) / 4);
+      const mountainDrawScale = mountainUnitScale / mountainScale;
       const sprite = getScenerySprite(
         `mountain:${mountainScale}:${alpinePalette.top}:${alpinePalette.left}:${alpinePalette.right}:${mountainFactor > 0.78}:${deterministicRoll > 0.72}:${deterministicRoll < 0.58}`,
         (spriteCtx) => {
@@ -2801,11 +2804,12 @@ function drawScenery(view, width, height) {
         },
       );
       ctx.restore();
-      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation), mountainDrawScale);
       return;
     }
 
-    const spriteScale = Math.round(unitScale * 10) / 10;
+    const spriteScale = Math.max(0.25, Math.round(unitScale * 4) / 4);
+    const spriteDrawScale = unitScale / spriteScale;
     const spriteKeyBase = `${item.kind}:${spriteScale}:${item.tint > 0 ? 1 : 0}:${Math.round(mountainFactor * 10)}:${Math.round(deterministicRoll * 10)}`;
 
     if (item.kind === "tree") {
@@ -2822,7 +2826,7 @@ function drawScenery(view, width, height) {
         },
       );
       ctx.restore();
-      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation), spriteDrawScale);
       return;
     } else if (item.kind === "bush") {
       const sprite = getScenerySprite(
@@ -2832,7 +2836,7 @@ function drawScenery(view, width, height) {
         },
       );
       ctx.restore();
-      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation), spriteDrawScale);
       return;
     } else if (item.kind === "rock") {
       const sprite = getScenerySprite(
@@ -2846,7 +2850,7 @@ function drawScenery(view, width, height) {
         },
       );
       ctx.restore();
-      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation), spriteDrawScale);
       return;
     } else if (item.kind === "hut") {
       drawIsoPrism(Math.max(18, unitScale * 6.5), Math.max(14, unitScale * 5), Math.max(14, unitScale * 5.4), "#d0a16e", "#a77445", "#be8d60");
