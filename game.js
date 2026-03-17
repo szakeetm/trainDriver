@@ -307,6 +307,7 @@ let audioUnlockInitialized = false;
 let audioUnlockPromise = null;
 let audioEnvironmentDebugAttached = false;
 let audioSessionDebugAttached = false;
+const audioDebugHistory = [];
 
 function logAudioDebug(message, details = null) {
   if (details == null) {
@@ -359,7 +360,13 @@ function updateAudioDebugStatus(message, details = null) {
     }
   }
 
-  audioDebugStatus.textContent = `${bits.join(" | ")}\n${envBits.join(" | ")}`;
+  const historyLine = [bits.join(" | "), envBits.join(" | ")].join("\n");
+  audioDebugHistory.push(historyLine);
+  while (audioDebugHistory.length > 4) {
+    audioDebugHistory.shift();
+  }
+
+  audioDebugStatus.textContent = audioDebugHistory.join("\n\n");
 }
 
 function setAudioDebug(message, details = null) {
@@ -679,13 +686,28 @@ async function rebuildGameAudioInGesture(trigger = "manual") {
   return audio;
 }
 
-async function unlockGameAudioFromGesture(event = null) {
+async function unlockGameAudioFromGesture(event = null, options = {}) {
+  const { forceRetry = false } = options;
+  const trigger = event?.type || "manual";
+
   if (audioUnlockPromise) {
-    return audioUnlockPromise;
+    updateAudioDebugStatus(forceRetry ? "unlock retry queued" : "unlock pending", {
+      trigger,
+      reason: gameAudio?.context?.state || "none",
+      userActivation: getAudioUserActivationState(),
+    });
+
+    if (!forceRetry) {
+      return audioUnlockPromise;
+    }
+
+    await audioUnlockPromise;
+    if (gameAudio?.context?.state === "running") {
+      return true;
+    }
   }
 
   audioUnlockPromise = (async () => {
-    const trigger = event?.type || "manual";
     setAudioDebug("gesture seen", {
       trigger,
       userActivation: getAudioUserActivationState(),
@@ -729,15 +751,12 @@ async function unlockGameAudioFromGesture(event = null) {
       }
 
       if (gameAudio?.context?.state === "running") {
-        window.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
         window.removeEventListener("keydown", unlockGameAudioFromGesture, true);
-        window.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
         window.removeEventListener("touchend", unlockGameAudioFromGesture, true);
-        window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
+        window.removeEventListener("mouseup", unlockGameAudioFromGesture, true);
         window.removeEventListener("click", unlockGameAudioFromGesture, true);
-        document.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
-        document.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
         document.removeEventListener("touchend", unlockGameAudioFromGesture, true);
+        document.removeEventListener("mouseup", unlockGameAudioFromGesture, true);
         document.removeEventListener("click", unlockGameAudioFromGesture, true);
         audioUnlockInitialized = false;
         setAudioDebug("unlocked", {
@@ -777,15 +796,12 @@ function initializeAudioUnlock() {
   attachAudioEnvironmentDebug();
   configureAudioSession();
   setAudioDebug("waiting for gesture", { userActivation: getAudioUserActivationState() });
-  window.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
   window.addEventListener("keydown", unlockGameAudioFromGesture, true);
-  window.addEventListener("touchstart", unlockGameAudioFromGesture, true);
   window.addEventListener("touchend", unlockGameAudioFromGesture, true);
-  window.addEventListener("mousedown", unlockGameAudioFromGesture, true);
+  window.addEventListener("mouseup", unlockGameAudioFromGesture, true);
   window.addEventListener("click", unlockGameAudioFromGesture, true);
-  document.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
-  document.addEventListener("touchstart", unlockGameAudioFromGesture, true);
   document.addEventListener("touchend", unlockGameAudioFromGesture, true);
+  document.addEventListener("mouseup", unlockGameAudioFromGesture, true);
   document.addEventListener("click", unlockGameAudioFromGesture, true);
 }
 
@@ -1095,7 +1111,6 @@ function setButtonHold(button, key) {
       trigger: event?.type || key,
       userActivation: getAudioUserActivationState(),
     });
-    unlockGameAudioFromGesture(event);
     if (event) {
       event.preventDefault();
     }
@@ -1120,7 +1135,14 @@ function setButtonHold(button, key) {
   button.addEventListener("pointercancel", release);
   button.addEventListener("lostpointercapture", release);
   button.addEventListener("mousedown", engage);
-  button.addEventListener("mouseup", release);
+  button.addEventListener("mouseup", (event) => {
+    updateAudioDebugStatus("control mouseup", {
+      trigger: event?.type || key,
+      userActivation: getAudioUserActivationState(),
+    });
+    unlockGameAudioFromGesture(event, { forceRetry: true });
+    release();
+  });
   button.addEventListener("mouseleave", release);
   button.addEventListener("touchstart", engage, { passive: false });
   button.addEventListener("touchend", (event) => {
@@ -1128,8 +1150,7 @@ function setButtonHold(button, key) {
       trigger: event?.type || key,
       userActivation: getAudioUserActivationState(),
     });
-    unlockGameAudioFromGesture(event);
-    release();
+    unlockGameAudioFromGesture(event, { forceRetry: true });
   }, { passive: true });
   button.addEventListener("touchend", release, { passive: true });
   button.addEventListener("touchcancel", release, { passive: true });
@@ -1138,7 +1159,7 @@ function setButtonHold(button, key) {
       trigger: event?.type || key,
       userActivation: getAudioUserActivationState(),
     });
-    unlockGameAudioFromGesture(event);
+    unlockGameAudioFromGesture(event, { forceRetry: true });
   });
 }
 
