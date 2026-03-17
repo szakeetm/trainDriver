@@ -68,7 +68,7 @@ const DEFAULT_TUNING = {
   },
   train: {
     trackWidth: 4, // Distance between rails used for drawing the track.
-    couplerGap: 4, // Gap in meters between each vehicle in the consist.
+    couplerGap: 1.4, // Gap in meters between each vehicle in the consist.
     maxPowerKw: 5500, // Full traction output represented when the power controller reaches 100%.
     maxBrakePressureBar: 6.5, // Full brake pipe pressure reduction represented when braking reaches 100%.
     // Vehicle definitions, front to back.
@@ -594,12 +594,19 @@ function getTrainUnits() {
   return TRAIN_CONSIST.map((unit) => {
     const centerDistance = frontCursor - unit.length * 0.5;
     const rearDistance = frontCursor - unit.length;
+    const frontPose = evaluateRoute(frontCursor);
+    const centerPose = evaluateRoute(centerDistance);
+    const rearPose = evaluateRoute(rearDistance);
+    const heading = Math.atan2(frontPose.y - rearPose.y, frontPose.x - rearPose.x) || centerPose.heading;
     const result = {
       ...unit,
       centerDistance,
       frontDistance: frontCursor,
       rearDistance,
-      pose: evaluateRoute(centerDistance),
+      pose: centerPose,
+      frontPose,
+      rearPose,
+      heading,
     };
     frontCursor = rearDistance - COUPLER_GAP;
     return result;
@@ -615,18 +622,16 @@ function getRenderedTrainUnits() {
 
   return units.map((unit) => {
     if (!derailment) {
-      const rearPose = evaluateRoute(unit.rearDistance);
-      const frontPose = evaluateRoute(unit.frontDistance);
       return {
         ...unit,
         renderX: unit.pose.x,
         renderY: unit.pose.y,
         visualElevation: unit.pose.visualElevation,
-        renderHeading: unit.pose.heading,
-        rearX: rearPose.x,
-        rearY: rearPose.y,
-        frontX: frontPose.x,
-        frontY: frontPose.y,
+        renderHeading: unit.heading,
+        rearX: unit.rearPose.x,
+        rearY: unit.rearPose.y,
+        frontX: unit.frontPose.x,
+        frontY: unit.frontPose.y,
       };
     }
 
@@ -655,13 +660,22 @@ function getRenderedTrainUnits() {
 }
 
 function getViewMetrics(width, height) {
-  const trainPose = evaluateRoute(state.distance);
+  const trainUnits = getTrainUnits();
+  const leadUnit = trainUnits[0];
+  const rearUnit = trainUnits[trainUnits.length - 1];
+  const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
+  const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
+  const projectedTrackAngle = getProjectedAngle(trainPose.heading);
+  const verticalBias = clamp(-Math.sin(projectedTrackAngle), -1, 1);
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
-  const lookAhead = TUNING.camera.lookAheadMin + speedFactor * TUNING.camera.lookAheadBySpeed;
-  const rearDistance = Math.max(0, state.distance - TRAIN_TOTAL_LENGTH - COUPLER_GAP * Math.max(0, TRAIN_CONSIST.length - 1));
+  const lookAhead = TUNING.camera.lookAheadMin
+    + speedFactor * TUNING.camera.lookAheadBySpeed
+    + gradeFactor * 180;
+  const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
   const aheadDistance = Math.min(route.totalLength, state.distance + lookAhead);
-  const rearPose = evaluateRoute(rearDistance);
+  const rearPose = rearUnit.rearPose;
+  const viewStartPose = evaluateRoute(rearDistance);
   const aheadPose = evaluateRoute(aheadDistance);
   const lateralSpan = TUNING.camera.lateralSpanMin + speedFactor * TUNING.camera.lateralSpanBySpeed;
   const zoomMultiplier = lerp(
@@ -671,6 +685,7 @@ function getViewMetrics(width, height) {
   );
   const requestedLeadDistance = TUNING.camera.leadDistanceMin + speedFactor * TUNING.camera.leadDistanceBySpeed;
   const leadDistance = Math.min(requestedLeadDistance, Math.max(0, aheadDistance - state.distance));
+  const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
   const camera = {
     x: (rearPose.x * 0.34) + (aheadPose.x * 0.66),
     y: (rearPose.y * 0.34) + (aheadPose.y * 0.66),
@@ -680,9 +695,9 @@ function getViewMetrics(width, height) {
   for (let distance = rearDistance; distance <= aheadDistance; distance += sampleStep) {
     samplePoints.push(evaluateRoute(distance));
   }
-  samplePoints.push(rearPose, trainPose, aheadPose);
+  samplePoints.push(viewStartPose, rearPose, trainPose, aheadPose);
 
-  [rearPose, trainPose, aheadPose].forEach((pose) => {
+  [viewStartPose, rearPose, trainPose, aheadPose].forEach((pose) => {
     const normalX = -Math.sin(pose.heading);
     const normalY = Math.cos(pose.heading);
     samplePoints.push({
@@ -702,16 +717,23 @@ function getViewMetrics(width, height) {
   const maxProjX = Math.max(...projectedPoints.map((point) => point.x));
   const minProjY = Math.min(...projectedPoints.map((point) => point.y));
   const rearProj = projectIsometricPoint(rearPose, camera);
+  const trainProj = projectIsometricPoint(trainPose, camera);
+  const viewStartProj = projectIsometricPoint(viewStartPose, camera);
   const sideMargin = 48;
   const topMargin = 52;
   const bottomMargin = 40;
   let scale = Math.min(
     (width - sideMargin * 2) / Math.max(maxProjX - minProjX, 1e-6),
-    (height - topMargin - bottomMargin) / Math.max(rearProj.y - minProjY, 1e-6),
+    (height - topMargin - bottomMargin) / Math.max(viewStartProj.y - minProjY, 1e-6),
   ) * zoomMultiplier;
   scale *= 0.98;
   const anchorX = sideMargin - minProjX * scale;
-  const anchorY = height - bottomMargin - rearProj.y * scale;
+  const dynamicAnchorY = clamp(
+    0.54 - verticalBias * (0.07 + gradeFactor * 0.07),
+    0.42,
+    0.64,
+  );
+  const anchorY = height * dynamicAnchorY - trainProj.y * scale;
 
   return {
     camera,
@@ -720,7 +742,7 @@ function getViewMetrics(width, height) {
     scale,
     anchorX,
     anchorY,
-    startDistance: rearDistance,
+    startDistance: Math.max(0, rearDistance - rearRenderBuffer),
     endDistance: aheadDistance,
     leadDistance,
   };
@@ -969,11 +991,40 @@ function getVisualElevation(elevation) {
   return elevation * TUNING.visuals.terrainHeightExaggeration;
 }
 
-function getTerrainHeightAtWorld(worldX, worldY) {
+function getTerrainGridHeight(gridX, gridY) {
+  const key = `${gridX},${gridY}`;
+  if (route.terrainHeightCache.has(key)) {
+    return route.terrainHeightCache.get(key);
+  }
+
+  const cellSize = TUNING.visuals.terrainCellSize;
+  const worldX = gridX * cellSize;
+  const worldY = gridY * cellSize;
   const broad = (fbmNoise(worldX * 0.00038 + 13, worldY * 0.00038 - 7) - 0.5) * 34;
   const medium = (fbmNoise(worldX * 0.0014 - 11, worldY * 0.0014 + 19) - 0.5) * 10;
-  const fine = (hashNoise(worldX * 0.009, worldY * 0.009) - 0.5) * 1.8;
-  let terrainHeight = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
+  const fine = (hashNoise(gridX * 0.73 + 5, gridY * 0.69 - 9) - 0.5) * 2.4;
+  const height = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
+  route.terrainHeightCache.set(key, height);
+  return height;
+}
+
+function getTerrainHeightAtWorld(worldX, worldY) {
+  const cellSize = TUNING.visuals.terrainCellSize;
+  const cellX = Math.floor(worldX / cellSize);
+  const cellY = Math.floor(worldY / cellSize);
+  const fracX = (worldX - cellX * cellSize) / cellSize;
+  const fracY = (worldY - cellY * cellSize) / cellSize;
+  const top = lerp(
+    getTerrainGridHeight(cellX, cellY),
+    getTerrainGridHeight(cellX + 1, cellY),
+    fracX,
+  );
+  const bottom = lerp(
+    getTerrainGridHeight(cellX, cellY + 1),
+    getTerrainGridHeight(cellX + 1, cellY + 1),
+    fracX,
+  );
+  let terrainHeight = lerp(top, bottom, fracY);
 
   if (route && route.terrainTrackSamples && route.terrainTrackSamples.length) {
     let nearest = null;
@@ -1123,6 +1174,7 @@ function generateRoute() {
     gradientMarkers: buildGradientMarkers(elevationProfile),
     biomes: generateBiomes(totalLength),
     terrainCornerCache: new Map(),
+    terrainHeightCache: new Map(),
     terrainTileCache: new Map(),
     signals: generateSignals(segments, stations, totalLength),
     scenery: generateScenery(stations, totalLength),
@@ -1515,16 +1567,16 @@ function spawnDieselExhaustPuff(unit, intensity) {
   const heading = unit.renderHeading;
   const forwardX = Math.cos(heading);
   const forwardY = Math.sin(heading);
+  const sourceX = unit.renderX - forwardX * unit.length * 0.03;
+  const sourceY = unit.renderY - forwardY * unit.length * 0.03;
+  const sidewaysJitter = Math.random() * 0.18 - 0.09;
   const normalX = -Math.sin(heading);
   const normalY = Math.cos(heading);
-  const sourceX = unit.renderX + normalX * unit.width * 0.08 - forwardX * unit.length * 0.08;
-  const sourceY = unit.renderY + normalY * unit.width * 0.08 - forwardY * unit.length * 0.08;
-  const sidewaysJitter = Math.random() * 0.18 - 0.09;
 
   state.exhaustPuffs.push({
     x: sourceX,
     y: sourceY,
-    visualElevation: unit.visualElevation + 6,
+    visualElevation: unit.visualElevation + 7.5,
     driftX: 0.18 - forwardX * (0.12 + intensity * 0.14) + normalX * sidewaysJitter,
     driftY: -0.08 - forwardY * (0.12 + intensity * 0.14) + normalY * sidewaysJitter,
     verticalRise: 8 + intensity * 4 + Math.random() * 2,
@@ -2264,25 +2316,32 @@ function drawBackground(width, height) {
           ? mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.25)
           : bottomEdgeBase;
       }
+      const topLeftHeight = getTerrainGridHeight(cellGridX, cellGridY);
+      const topRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY);
+      const bottomLeftHeight = getTerrainGridHeight(cellGridX, cellGridY + 1);
+      const bottomRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY + 1);
+      const localMinHeight = Math.min(topLeftHeight, topRightHeight, bottomLeftHeight, bottomRightHeight);
+      const localMaxHeight = Math.max(topLeftHeight, topRightHeight, bottomLeftHeight, bottomRightHeight);
+      const relief = localMaxHeight - localMinHeight;
       const top = worldToScreenWithView({
         x: worldX + cellSize * 0.5,
         y: worldY,
-        visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY),
+        visualElevation: (topLeftHeight + topRightHeight) * 0.5,
       }, view, width);
       const right = worldToScreenWithView({
         x: worldX + cellSize,
         y: worldY + cellSize * 0.5,
-        visualElevation: getTerrainHeightAtWorld(worldX + cellSize, worldY + cellSize * 0.5),
+        visualElevation: (topRightHeight + bottomRightHeight) * 0.5,
       }, view, width);
       const bottom = worldToScreenWithView({
         x: worldX + cellSize * 0.5,
         y: worldY + cellSize,
-        visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize),
+        visualElevation: (bottomLeftHeight + bottomRightHeight) * 0.5,
       }, view, width);
       const left = worldToScreenWithView({
         x: worldX,
         y: worldY + cellSize * 0.5,
-        visualElevation: getTerrainHeightAtWorld(worldX, worldY + cellSize * 0.5),
+        visualElevation: (topLeftHeight + bottomLeftHeight) * 0.5,
       }, view, width);
       const center = worldToScreenWithView({
         x: worldX + cellSize * 0.5,
@@ -2305,6 +2364,40 @@ function drawBackground(width, height) {
       ctx.lineTo(left.x, left.y);
       ctx.closePath();
       ctx.fill();
+      ctx.strokeStyle = `rgba(255, 255, 255, ${(0.07 + relief * 0.008).toFixed(3)})`;
+      ctx.lineWidth = 1 + clamp(relief * 0.025, 0, 1.4);
+      ctx.stroke();
+
+      const slopeX = ((topRightHeight + bottomRightHeight) - (topLeftHeight + bottomLeftHeight)) * 0.5;
+      const slopeY = ((bottomLeftHeight + bottomRightHeight) - (topLeftHeight + topRightHeight)) * 0.5;
+      const light = clamp(0.52 + (-slopeX * 0.018) + (-slopeY * 0.014), 0.2, 0.82);
+      ctx.fillStyle = `rgba(255, 255, 255, ${(relief * 0.006 + light * 0.08).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(right.x, right.y);
+      ctx.lineTo(center.x, center.y);
+      ctx.lineTo(left.x, left.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = `rgba(16, 24, 18, ${(relief * 0.008 + (1 - light) * 0.09).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(left.x, left.y);
+      ctx.lineTo(center.x, center.y);
+      ctx.lineTo(right.x, right.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.closePath();
+      ctx.fill();
+
+      if (relief > 2.6) {
+        const contourAlpha = clamp(0.045 + relief * 0.004, 0.05, 0.11);
+        ctx.strokeStyle = `rgba(245, 248, 235, ${contourAlpha.toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(lerp(left.x, top.x, 0.35), lerp(left.y, top.y, 0.35));
+        ctx.lineTo(lerp(center.x, top.x, 0.22), lerp(center.y, top.y, 0.22));
+        ctx.lineTo(lerp(right.x, top.x, 0.35), lerp(right.y, top.y, 0.35));
+        ctx.stroke();
+      }
 
       const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale * 0.8;
       const detailColor = mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5);
@@ -2832,7 +2925,7 @@ function drawTrain(width, height) {
 
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.lineWidth = Math.max(2, scale * 1.2);
+  ctx.lineWidth = Math.max(TUNING.train.couplerLineWidthMin, scale * TUNING.train.couplerLineWidthScale);
   for (let index = 0; index < renderUnits.length - 1; index += 1) {
     const currentUnit = renderUnits[index];
     const nextUnit = renderUnits[index + 1];
@@ -2869,13 +2962,22 @@ function drawTrain(width, height) {
     const depthY = pixelWidth * 0.36;
     const halfWidth = pixelWidth * 0.48;
     const halfLength = pixelLength * 0.5;
-    const frontNose = unit.type === "locomotive" ? pixelLength * 0.08 : 0;
-    const base = [
-      { x: -halfWidth, y: -halfLength + frontNose },
-      { x: halfWidth, y: -halfLength + frontNose },
-      { x: halfWidth, y: halfLength },
-      { x: -halfWidth, y: halfLength },
-    ];
+    const frontNose = unit.type === "locomotive" ? pixelLength * 0.16 : 0;
+    const base = unit.type === "locomotive"
+      ? [
+        { x: -halfWidth * 0.72, y: -halfLength + frontNose },
+        { x: halfWidth * 0.72, y: -halfLength + frontNose },
+        { x: halfWidth, y: -halfLength * 0.16 },
+        { x: halfWidth, y: halfLength },
+        { x: -halfWidth, y: halfLength },
+        { x: -halfWidth, y: -halfLength * 0.16 },
+      ]
+      : [
+        { x: -halfWidth, y: -halfLength },
+        { x: halfWidth, y: -halfLength },
+        { x: halfWidth, y: halfLength },
+        { x: -halfWidth, y: halfLength },
+      ];
     const top = base.map((point) => ({
       x: point.x - depthX,
       y: point.y - depthY,
@@ -2894,7 +2996,7 @@ function drawTrain(width, height) {
 
     ctx.save();
     ctx.translate(center.x, center.y);
-    ctx.rotate(projectedAngle + Math.PI / 2);
+    ctx.rotate(projectedAngle);
     ctx.shadowColor = "rgba(0,0,0,0.28)";
     ctx.shadowBlur = 18;
     ctx.strokeStyle = "rgba(255,255,255,0.62)";
@@ -2902,10 +3004,10 @@ function drawTrain(width, height) {
 
     ctx.fillStyle = sideColor;
     ctx.beginPath();
-    ctx.moveTo(base[1].x, base[1].y);
-    ctx.lineTo(base[2].x, base[2].y);
+    ctx.moveTo(base[2].x, base[2].y);
+    ctx.lineTo(base[3].x, base[3].y);
+    ctx.lineTo(top[3].x, top[3].y);
     ctx.lineTo(top[2].x, top[2].y);
-    ctx.lineTo(top[1].x, top[1].y);
     ctx.closePath();
     ctx.fill();
 
@@ -2915,6 +3017,17 @@ function drawTrain(width, height) {
     ctx.lineTo(base[1].x, base[1].y);
     ctx.lineTo(top[1].x, top[1].y);
     ctx.lineTo(top[0].x, top[0].y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = shadeColor(bodyColor, -22);
+    ctx.beginPath();
+    const rearLeftIndex = unit.type === "locomotive" ? 4 : 3;
+    const rearRightIndex = unit.type === "locomotive" ? 3 : 2;
+    ctx.moveTo(base[rearLeftIndex].x, base[rearLeftIndex].y);
+    ctx.lineTo(base[rearRightIndex].x, base[rearRightIndex].y);
+    ctx.lineTo(top[rearRightIndex].x, top[rearRightIndex].y);
+    ctx.lineTo(top[rearLeftIndex].x, top[rearLeftIndex].y);
     ctx.closePath();
     ctx.fill();
 
@@ -2934,13 +3047,30 @@ function drawTrain(width, height) {
     ctx.fill();
 
     if (unit.type === "locomotive") {
+      ctx.fillStyle = shadeColor(bodyColor, -28);
+      ctx.beginPath();
+      ctx.moveTo(base[0].x, base[0].y);
+      ctx.lineTo(base[1].x, base[1].y);
+      ctx.lineTo(base[2].x, base[2].y);
+      ctx.lineTo(top[2].x, top[2].y);
+      ctx.lineTo(top[1].x, top[1].y);
+      ctx.lineTo(top[0].x, top[0].y);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (unit.type === "locomotive") {
       ctx.fillStyle = "rgba(255, 232, 160, 0.88)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.15 - depthX * 0.7, -pixelLength * 0.47 - depthY * 0.7, pixelWidth * 0.3, Math.max(5, pixelLength * 0.12), 3);
+      ctx.roundRect(-pixelWidth * 0.12 - depthX * 0.68, -pixelLength * 0.46 - depthY * 0.74, pixelWidth * 0.24, Math.max(5, pixelLength * 0.11), 3);
+      ctx.fill();
+      ctx.fillStyle = "rgba(22, 29, 38, 0.95)";
+      ctx.beginPath();
+      ctx.roundRect(-pixelWidth * 0.16 - depthX * 0.76, -pixelLength * 0.1 - depthY * 0.8, pixelWidth * 0.32, pixelLength * 0.2, 4);
       ctx.fill();
       ctx.fillStyle = "rgba(7, 21, 36, 0.78)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.19 - depthX * 0.62, -pixelLength * 0.16 - depthY * 0.62, pixelWidth * 0.38, pixelLength * 0.16, 3);
+      ctx.roundRect(-pixelWidth * 0.19 - depthX * 0.62, -pixelLength * 0.22 - depthY * 0.62, pixelWidth * 0.38, pixelLength * 0.16, 3);
       ctx.fill();
     } else {
       ctx.fillStyle = "rgba(50, 73, 92, 0.45)";
