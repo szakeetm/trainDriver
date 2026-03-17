@@ -526,7 +526,7 @@ function updateGameAudio(dt = 0) {
     setAudioParam(gameAudio.rollingMix.gain, rollingGain, 0.14);
     setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 1800 + curveTightnessSmooth * 900, 0.16);
 
-    const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.24 + brakeLoad * 0.9) * 0.42 : 0;
+    const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.24 + brakeLoad * 0.9) * 0.336 : 0;
     setAudioParam(gameAudio.brakeMix.gain, brakeGain, 0.05);
     setAudioParam(gameAudio.brakeFilter.frequency, 1200 + speedNorm * 2200 + brake * 800, 0.06);
 
@@ -3044,71 +3044,86 @@ function drawTrain(width, height) {
 }
 
 function drawHudOverlay(width, height) {
-  ctx.save();
-  ctx.fillStyle = "rgba(7, 17, 31, 0.55)";
-  ctx.beginPath();
-  ctx.roundRect(18, 18, 246, 122, 20);
-  ctx.fill();
+  const compactHud = width <= 820;
 
-  ctx.fillStyle = "#dff2ff";
-  ctx.font = "700 13px Inter, sans-serif";
-  ctx.textAlign = "left";
-  const nextStation = route.stations[state.stationIndex];
-  const gap = nextStation ? Math.max(0, nextStation.distance - state.distance) : 0;
-  ctx.fillText(`Next stop: ${nextStation ? nextStation.name : "Done"}`, 34, 46);
-  ctx.font = "500 12px Inter, sans-serif";
-  ctx.fillStyle = "rgba(223, 242, 255, 0.78)";
-  ctx.fillText(`Distance ${Math.max(0, roundDisplayDistance(gap))} m`, 34, 68);
-  ctx.fillText(`Consist ${TRAIN_TOTAL_LENGTH.toFixed(0)} m`, 34, 88);
-  ctx.fillText(`Scenery ${getCurrentBiomeLabel()}`, 34, 108);
-  ctx.restore();
+  if (!compactHud) {
+    ctx.save();
+    ctx.fillStyle = "rgba(7, 17, 31, 0.55)";
+    ctx.beginPath();
+    ctx.roundRect(18, 18, 246, 122, 20);
+    ctx.fill();
 
-  drawRoutePredictor(width, height);
+    ctx.fillStyle = "#dff2ff";
+    ctx.font = "700 13px Inter, sans-serif";
+    ctx.textAlign = "left";
+    const nextStation = route.stations[state.stationIndex];
+    const gap = nextStation ? Math.max(0, nextStation.distance - state.distance) : 0;
+    ctx.fillText(`Next stop: ${nextStation ? nextStation.name : "Done"}`, 34, 46);
+    ctx.font = "500 12px Inter, sans-serif";
+    ctx.fillStyle = "rgba(223, 242, 255, 0.78)";
+    ctx.fillText(`Distance ${Math.max(0, roundDisplayDistance(gap))} m`, 34, 68);
+    ctx.fillText(`Consist ${TRAIN_TOTAL_LENGTH.toFixed(0)} m`, 34, 88);
+    ctx.fillText(`Scenery ${getCurrentBiomeLabel()}`, 34, 108);
+    ctx.restore();
+  }
+
+  drawRoutePredictor(width, height, compactHud);
 }
 
-function drawRoutePredictor(width, height) {
+function drawRoutePredictor(width, height, compactHud = false) {
   const upcomingEntries = getUpcomingRouteEntries();
-  const panelWidth = Math.min(TUNING.visuals.routePredictorWidth, width - 36);
-  const panelHeight = Math.min(TUNING.visuals.routePredictorHeight, height - 36);
-  const panelX = 18;
-  const panelY = height - panelHeight - 18;
-  const distColumnX = panelX + 18;
-  const markerColumnX = panelX + 28;
-  const distanceValueX = panelX + 42;
-  const typeColumnX = panelX + 118;
-  const actionColumnX = panelX + 252;
+  const baseWidth = compactHud ? 282 : TUNING.visuals.routePredictorWidth;
+  const baseHeight = compactHud ? 126 : TUNING.visuals.routePredictorHeight;
+  const panelWidth = Math.min(baseWidth, width - 24);
+  const panelHeight = Math.min(baseHeight, height - 24);
+  const panelX = 12;
+  const panelY = height - panelHeight - 12;
+  const distColumnX = panelX + (compactHud ? 14 : 18);
+  const markerColumnX = panelX + (compactHud ? 22 : 28);
+  const distanceValueX = panelX + (compactHud ? 34 : 42);
+  const typeColumnX = panelX + (compactHud ? 88 : 118);
+  const actionColumnX = panelX + (compactHud ? 176 : 252);
+  const titleY = panelY + (compactHud ? 21 : 28);
+  const headerY = panelY + (compactHud ? 39 : 52);
+  const rowStartY = panelY + (compactHud ? 58 : 80);
+  const rowStep = compactHud ? 15 : 22;
+  const radius = compactHud ? 16 : 22;
+  const titleFont = compactHud ? "700 12px Inter, sans-serif" : "700 16px Inter, sans-serif";
+  const emptyFont = compactHud ? "600 11px Inter, sans-serif" : "600 14px Inter, sans-serif";
+  const headerFont = compactHud ? "600 9px Inter, sans-serif" : "600 11px Inter, sans-serif";
+  const rowFont = compactHud ? "700 10px Inter, sans-serif" : "700 15px Inter, sans-serif";
 
   ctx.save();
   ctx.fillStyle = "rgba(6, 16, 28, 0.58)";
   ctx.strokeStyle = "rgba(170, 222, 255, 0.16)";
   ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 22);
+  ctx.roundRect(panelX, panelY, panelWidth, panelHeight, radius);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = "#dff2ff";
-  ctx.font = "700 16px Inter, sans-serif";
+  ctx.font = titleFont;
   ctx.textAlign = "left";
-  ctx.fillText("Route ahead", panelX + 18, panelY + 28);
+  ctx.fillText("Route ahead", panelX + (compactHud ? 14 : 18), titleY);
 
   if (upcomingEntries.length === 0) {
     ctx.fillStyle = "rgba(223, 242, 255, 0.62)";
-    ctx.font = "600 14px Inter, sans-serif";
-    ctx.fillText(`No curve or signal in the next ${roundDisplayDistance(TUNING.route.upcomingCurveLookahead)} m`, panelX + 18, panelY + 62);
+    ctx.font = emptyFont;
+    ctx.fillText(`No curve or signal in the next ${roundDisplayDistance(TUNING.route.upcomingCurveLookahead)} m`, panelX + (compactHud ? 14 : 18), panelY + (compactHud ? 49 : 62));
     ctx.restore();
     return;
   }
 
   ctx.fillStyle = "rgba(223, 242, 255, 0.46)";
-  ctx.font = "600 11px Inter, sans-serif";
-  ctx.fillText("DIST", distColumnX, panelY + 52);
-  ctx.fillText("TYPE", typeColumnX, panelY + 52);
-  ctx.fillText("ACTION", actionColumnX, panelY + 52);
+  ctx.font = headerFont;
+  ctx.fillText("DIST", distColumnX, headerY);
+  ctx.fillText("TYPE", typeColumnX, headerY);
+  ctx.fillText("ACTION", actionColumnX, headerY);
 
-  ctx.font = "700 15px Inter, sans-serif";
+  ctx.font = rowFont;
   upcomingEntries.forEach((entry, index) => {
-    const rowY = panelY + 80 + index * 22;
+    const rowY = rowStartY + index * rowStep;
     const color = entry.type === "curve"
       ? "#ffbf52"
       : entry.aspect === "red"
