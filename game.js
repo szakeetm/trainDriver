@@ -2260,6 +2260,73 @@ function drawIsoPrism(width, depth, height, topColor, leftColor, rightColor, str
   ctx.stroke();
 }
 
+function drawConiferTree(unitScale, trunkColor, foliageBase) {
+  const trunkHeight = Math.max(10, unitScale * 7);
+  drawIsoPrism(
+    Math.max(4, unitScale * 1.3),
+    Math.max(4, unitScale * 1.1),
+    trunkHeight,
+    shadeColor(trunkColor, 8),
+    shadeColor(trunkColor, -14),
+    shadeColor(trunkColor, -4),
+  );
+  ctx.translate(0, -trunkHeight);
+  const tiers = [
+    { width: 18, depth: 14, height: 16, lift: 0 },
+    { width: 14, depth: 11, height: 13, lift: 8 },
+    { width: 10, depth: 8, height: 10, lift: 14 },
+  ];
+  tiers.forEach((tier) => {
+    ctx.save();
+    ctx.translate(0, -tier.lift);
+    drawIsoPrism(
+      Math.max(tier.width, unitScale * tier.width),
+      Math.max(tier.depth, unitScale * tier.depth),
+      Math.max(tier.height, unitScale * tier.height),
+      shadeColor(foliageBase, 16 - tier.lift * 0.2),
+      shadeColor(foliageBase, -22),
+      shadeColor(foliageBase, -8),
+      "rgba(255,255,255,0.18)",
+    );
+    ctx.restore();
+  });
+}
+
+function drawMountainCluster(unitScale, palette, snowCap = false) {
+  const peaks = [
+    { x: -unitScale * 5.4, y: 0, w: 18, d: 14, h: 26 },
+    { x: 0, y: -unitScale * 1.6, w: 24, d: 18, h: 34 },
+    { x: unitScale * 6.2, y: unitScale * 1.2, w: 16, d: 12, h: 22 },
+  ];
+
+  peaks.forEach((peak, index) => {
+    ctx.save();
+    ctx.translate(peak.x, peak.y);
+    drawIsoPrism(
+      Math.max(peak.w, unitScale * peak.w),
+      Math.max(peak.d, unitScale * peak.d),
+      Math.max(peak.h, unitScale * peak.h),
+      index === 1 ? palette.top : shadeColor(palette.top, -4),
+      index === 1 ? palette.left : shadeColor(palette.left, -6),
+      index === 1 ? palette.right : shadeColor(palette.right, -4),
+      "rgba(255,255,255,0.14)",
+    );
+    if (snowCap && peak.h >= 24) {
+      ctx.translate(0, -Math.max(peak.h, unitScale * peak.h) + Math.max(8, unitScale * 6));
+      drawIsoPrism(
+        Math.max(peak.w * 0.42, unitScale * peak.w * 0.42),
+        Math.max(peak.d * 0.36, unitScale * peak.d * 0.36),
+        Math.max(8, unitScale * 5.5),
+        "rgba(246, 247, 240, 0.96)",
+        "rgba(208, 214, 220, 0.94)",
+        "rgba(226, 230, 234, 0.94)",
+        "rgba(255,255,255,0.12)",
+      );
+    }
+    ctx.restore();
+  });
+}
+
 function drawBackground(width, height) {
   const view = getViewMetrics(width, height);
   const { camera, scale } = view;
@@ -2528,6 +2595,16 @@ function drawScenery(view, width, height) {
     }
 
     const point = getSceneryPoint(item);
+    const biomeBlend = getBiomeBlendAtDistance(item.distance);
+    const alpineBlend = biomeBlend.primary === "mountain" || biomeBlend.secondary === "mountain"
+      ? Math.max(0.45, biomeBlend.mix > 0.5 ? biomeBlend.mix : 1 - biomeBlend.mix)
+      : biomeBlend.primary === "canyon" || biomeBlend.secondary === "canyon"
+        ? 0.2
+        : 0;
+    const elevationFactor = clamp((point.visualElevation + 36) / 120, 0, 1);
+    const terrainAffinity = clamp(Math.abs(item.offset) / Math.max(TUNING.scenery.farOffsetMin, 1e-6), 0, 1);
+    const mountainFactor = clamp(Math.max(elevationFactor * 0.85, alpineBlend) * terrainAffinity, 0, 1);
+    const deterministicRoll = hashNoise(item.distance * 0.013, item.offset * 0.021);
     const screen = worldToScreenWithView(point, view, width);
 
     if (screen.y < -80 || screen.y > height + 80 || screen.x < -80 || screen.x > width + 80) {
@@ -2539,16 +2616,51 @@ function drawScenery(view, width, height) {
     ctx.rotate(getProjectedAngle(item.rotation));
 
     const unitScale = scale * item.size;
-    const foliage = item.tint > 0 ? "#4f8a52" : "#427446";
+    const foliage = mountainFactor > 0.52
+      ? (item.tint > 0 ? "#6fa85e" : "#4f7f48")
+      : item.tint > 0
+        ? "#4f8a52"
+        : "#427446";
+    const alpinePalette = {
+      top: mountainFactor > 0.72 ? "#d8c28e" : "#b9ae8b",
+      left: mountainFactor > 0.72 ? "#8a7351" : "#6f6552",
+      right: mountainFactor > 0.72 ? "#b18d58" : "#938060",
+    };
+
+    if (mountainFactor > 0.62 && deterministicRoll > 0.4 && item.kind !== "pond" && item.kind !== "billboard" && item.kind !== "windmill") {
+      drawMountainCluster(unitScale * (0.9 + mountainFactor * 0.7), alpinePalette, mountainFactor > 0.78);
+      if (deterministicRoll > 0.72) {
+        ctx.save();
+        ctx.translate(-unitScale * 7, unitScale * 3);
+        drawConiferTree(unitScale * 0.72, "#63442f", "#4c7b43");
+        ctx.restore();
+      }
+      if (deterministicRoll < 0.58) {
+        ctx.save();
+        ctx.translate(unitScale * 8, unitScale * 4);
+        drawConiferTree(unitScale * 0.64, "#63442f", "#567f48");
+        ctx.restore();
+      }
+      ctx.restore();
+      return;
+    }
 
     if (item.kind === "tree") {
-      drawIsoPrism(Math.max(6, unitScale * 2.2), Math.max(5, unitScale * 1.8), Math.max(10, unitScale * 8), "#6a4b38", "#523827", "#7a5843");
-      ctx.translate(0, -Math.max(10, unitScale * 8));
-      drawIsoPrism(Math.max(18, unitScale * 7.2), Math.max(14, unitScale * 5.8), Math.max(18, unitScale * 7.8), shadeColor(foliage, 10), shadeColor(foliage, -16), shadeColor(foliage, -6));
+      if (mountainFactor > 0.34 || deterministicRoll > 0.64) {
+        drawConiferTree(unitScale, "#694732", shadeColor(foliage, 4));
+      } else {
+        drawIsoPrism(Math.max(6, unitScale * 2.2), Math.max(5, unitScale * 1.8), Math.max(10, unitScale * 8), "#6a4b38", "#523827", "#7a5843");
+        ctx.translate(0, -Math.max(10, unitScale * 8));
+        drawIsoPrism(Math.max(18, unitScale * 7.2), Math.max(14, unitScale * 5.8), Math.max(18, unitScale * 7.8), shadeColor(foliage, 12), shadeColor(foliage, -16), shadeColor(foliage, -6));
+      }
     } else if (item.kind === "bush") {
       drawIsoPrism(Math.max(16, unitScale * 6.6), Math.max(12, unitScale * 5.2), Math.max(9, unitScale * 3.4), shadeColor(foliage, 10), shadeColor(foliage, -14), shadeColor(foliage, -6));
     } else if (item.kind === "rock") {
-      drawIsoPrism(Math.max(14, unitScale * 5.5), Math.max(10, unitScale * 4.2), Math.max(8, unitScale * 3), "#8b97a2", "#67727d", "#7a8792");
+      if (mountainFactor > 0.42) {
+        drawMountainCluster(unitScale * 0.66, alpinePalette, mountainFactor > 0.8);
+      } else {
+        drawIsoPrism(Math.max(14, unitScale * 5.5), Math.max(10, unitScale * 4.2), Math.max(8, unitScale * 3), "#8b97a2", "#67727d", "#7a8792");
+      }
     } else if (item.kind === "hut") {
       drawIsoPrism(Math.max(18, unitScale * 6.5), Math.max(14, unitScale * 5), Math.max(14, unitScale * 5.4), "#d0a16e", "#a77445", "#be8d60");
       ctx.translate(0, -Math.max(14, unitScale * 5.4));
