@@ -319,11 +319,16 @@ function setAudioParam(audioParam, value, smoothing = 0.08) {
   }
 
   try {
-    const now = audioParam.context.currentTime;
-    audioParam.setTargetAtTime(value, now, smoothing);
+    const context = gameAudio?.context || null;
+    if (context && typeof audioParam.setTargetAtTime === "function") {
+      const now = context.currentTime;
+      audioParam.setTargetAtTime(value, now, smoothing);
+      return;
+    }
+
+    audioParam.value = value;
   } catch (error) {
-    console.warn("Audio parameter update failed.", error);
-    gameAudio = null;
+    console.warn("[audio] Audio parameter update failed.", { value, smoothing, error });
   }
 }
 
@@ -354,7 +359,7 @@ function createGameAudio() {
   const sleeperMix = context.createGain();
 
   master.gain.value = 0;
-  mix.gain.value = 0.34;
+  mix.gain.value = 0.78;
   engineMix.gain.value = 0;
   rollingMix.gain.value = 0;
   brakeMix.gain.value = 0;
@@ -378,8 +383,8 @@ function createGameAudio() {
   engineLow.frequency.value = 34;
   engineHigh.frequency.value = 52;
   engineHigh.detune.value = 7;
-  engineLowGain.gain.value = 0.045;
-  engineHighGain.gain.value = 0.02;
+  engineLowGain.gain.value = 0.085;
+  engineHighGain.gain.value = 0.042;
   engineFilter.type = "lowpass";
   engineFilter.frequency.value = 260;
   engineFilter.Q.value = 0.8;
@@ -490,25 +495,25 @@ function updateGameAudio(dt = 0) {
     const accelNorm = clamp(Math.max(0, state.acceleration || 0) / Math.max(TUNING.physics.tractionForce, 1e-6), 0, 1);
     const brakeLoad = clamp(Math.max(0, -(state.acceleration || 0)) / Math.max(TUNING.physics.brakingForce, 1e-6), 0, 1);
 
-    const engineBase = activeRun ? 0.024 : 0;
-    const engineGain = engineBase + throttle * 0.085 + accelNorm * 0.035 + speedNorm * 0.02;
+    const engineBase = activeRun ? 0.05 : 0;
+    const engineGain = engineBase + throttle * 0.14 + accelNorm * 0.055 + speedNorm * 0.04;
     setAudioParam(gameAudio.engineMix.gain, engineGain, 0.12);
     setAudioParam(gameAudio.engineLow.frequency, 30 + throttle * 28 + speedNorm * 16, 0.08);
     setAudioParam(gameAudio.engineHigh.frequency, 52 + throttle * 44 + speedNorm * 26 + accelNorm * 10, 0.08);
     setAudioParam(gameAudio.engineFilter.frequency, 180 + throttle * 520 + speedNorm * 280 + accelNorm * 140, 0.12);
 
-    const rollingGain = activeRun ? (speedNorm > 0.01 ? 0.012 + Math.pow(speedNorm, 1.08) * 0.118 : 0) : 0;
+    const rollingGain = activeRun ? (speedNorm > 0.01 ? 0.03 + Math.pow(speedNorm, 1.08) * 0.22 : 0) : 0;
     setAudioParam(gameAudio.rollingMix.gain, rollingGain, 0.14);
     setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 2200, 0.12);
 
-    const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.2 + brakeLoad * 0.8) * 0.24 : 0;
+    const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.24 + brakeLoad * 0.9) * 0.42 : 0;
     setAudioParam(gameAudio.brakeMix.gain, brakeGain, 0.05);
     setAudioParam(gameAudio.brakeFilter.frequency, 1200 + speedNorm * 2200 + brake * 800, 0.06);
 
     const sleeperFrequency = clamp(state.speed / 0.72, 0, 90);
     gameAudio.sleeperPhase = (gameAudio.sleeperPhase + dt * sleeperFrequency * Math.PI * 2) % (Math.PI * 2);
     const sleeperPulse = Math.pow(Math.max(0, Math.sin(gameAudio.sleeperPhase)), 8);
-    const sleeperBase = activeRun ? clamp(state.speed / 36, 0, 1) * 0.03 : 0;
+    const sleeperBase = activeRun ? clamp(state.speed / 36, 0, 1) * 0.06 : 0;
     const sleeperGain = sleeperBase * (0.28 + sleeperPulse * 1.8);
     setAudioParam(gameAudio.sleeperMix.gain, sleeperGain, 0.03);
     setAudioParam(gameAudio.sleeperFilter.frequency, 950 + speedNorm * 2600, 0.08);
