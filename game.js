@@ -689,8 +689,8 @@ function getViewMetrics(width, height) {
   const anchorX = width * 0.5 - centerProj.x * scale;
   const anchorY = height * 0.5 - centerProj.y * scale;
   const trainLengthPixels = Math.hypot(frontProj.x - rearProj.x, frontProj.y - rearProj.y) * scale;
-  const rearRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH, 180);
-  const aheadRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH * 3.5, state.speed * 6, 520);
+  const rearRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH * 1.5, 270);
+  const aheadRenderBuffer = Math.max(TRAIN_TOTAL_LENGTH * 5.25, state.speed * 9, 780);
 
   return {
     camera,
@@ -2385,7 +2385,7 @@ function drawBackground(width, height) {
   ctx.fillRect(0, 0, width, height);
 
   const cellSize = TUNING.visuals.terrainCellSize;
-  const worldRadius = Math.max(width, height) * 1.7 / Math.max(scale, 1e-6);
+  const worldRadius = Math.max(width, height) * 2.55 / Math.max(scale, 1e-6);
   const startWorldX = Math.floor((camera.x - worldRadius - cellSize) / cellSize) * cellSize;
   const endWorldX = Math.ceil((camera.x + worldRadius + cellSize) / cellSize) * cellSize;
   const startWorldY = Math.floor((camera.y - worldRadius - cellSize) / cellSize) * cellSize;
@@ -2417,10 +2417,10 @@ function drawBackground(width, height) {
       const cellAverageHeight = getTerrainCellAverageHeight(cellGridX, cellGridY);
       const heightBand = Math.round(cellAverageHeight / 6);
       const bandMix = clamp((heightBand + 8) / 24, 0, 1);
-      const stylizedTop = mixPaletteColor(topEdgeBase, topEdgeAlt, 0.2 + bandMix * 0.2);
-      const stylizedBottom = mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.18 + bandMix * 0.24);
-      const topColor = mixPaletteColor(stylizedTop, topEdgeDetail, tileStyle.toneSeed * 0.08);
-      const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeDetail, tileStyle.biomeSeed * 0.08);
+      const stylizedTop = mixPaletteColor(topEdgeBase, topEdgeDetail, 0.08 + bandMix * 0.08);
+      const stylizedBottom = mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.1 + bandMix * 0.1);
+      const topColor = mixPaletteColor(stylizedTop, topEdgeAlt, tileStyle.toneSeed * 0.025);
+      const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeAlt, tileStyle.biomeSeed * 0.03);
       const topLeftHeight = getTerrainGridHeight(cellGridX, cellGridY);
       const topRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY);
       const bottomLeftHeight = getTerrainGridHeight(cellGridX, cellGridY + 1);
@@ -3357,13 +3357,15 @@ function drawTrain(width, height) {
         y: top[5].y - tangentY * (pixelLength * 0.04),
       };
     }
+    const roofRearLeftIndex = unit.type === "locomotive" ? 4 : 3;
+    const roofRearRightIndex = unit.type === "locomotive" ? 3 : 2;
     const roofFrontCenter = {
       x: (top[0].x + top[1].x) * 0.5 - tangentX * pixelLength * 0.06,
       y: (top[0].y + top[1].y) * 0.5 - tangentY * pixelLength * 0.06,
     };
     const roofRearCenter = {
-      x: (top[top.length - 1].x + top[top.length - 2].x) * 0.5 + tangentX * pixelLength * 0.18,
-      y: (top[top.length - 1].y + top[top.length - 2].y) * 0.5 + tangentY * pixelLength * 0.18,
+      x: (top[roofRearLeftIndex].x + top[roofRearRightIndex].x) * 0.5 + tangentX * pixelLength * 0.1,
+      y: (top[roofRearLeftIndex].y + top[roofRearRightIndex].y) * 0.5 + tangentY * pixelLength * 0.1,
     };
     const roofHalfWidth = halfWidth * (unit.type === "locomotive" ? 0.66 : 0.58);
     const roof = [
@@ -3447,8 +3449,8 @@ function drawTrain(width, height) {
     }
 
     if (unit.type === "locomotive") {
-      const windshieldCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.2);
-      const roofPodCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.54);
+      const windshieldCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.28);
+      const roofPodCenter = interpolatePoint(roofFrontCenter, roofRearCenter, 0.58);
       drawFaceBand(
         frontFace,
         0.38,
@@ -3463,8 +3465,8 @@ function drawTrain(width, height) {
         tangentY,
         normalX,
         normalY,
-        pixelLength * 0.12,
-        pixelWidth * 0.28,
+        pixelLength * 0.1,
+        pixelWidth * 0.24,
         "rgba(7, 21, 36, 0.82)",
       );
       drawOrientedPanel(
@@ -3473,8 +3475,8 @@ function drawTrain(width, height) {
         tangentY,
         normalX,
         normalY,
-        pixelLength * 0.2,
-        pixelWidth * 0.26,
+        pixelLength * 0.18,
+        pixelWidth * 0.22,
         "rgba(22, 29, 38, 0.95)",
       );
       drawOrientedPanel(
