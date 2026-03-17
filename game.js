@@ -1343,23 +1343,61 @@ function createTerrainTileStyle(cellGridX, cellGridY) {
     topRightKey: `${cellGridX + 1},${cellGridY}`,
     bottomLeftKey: `${cellGridX},${cellGridY + 1}`,
     bottomRightKey: `${cellGridX + 1},${cellGridY + 1}`,
-    biomeSeed: hashNoise(cellGridX * 0.7, cellGridY * 0.7),
-    toneSeed: hashNoise(cellGridX * 1.9 + 4, cellGridY * 1.7 + 9),
   };
 }
 
+function getTerrainCornerSeed(cornerGridX, cornerGridY) {
+  const key = `${cornerGridX},${cornerGridY}`;
+  if (route.terrainCornerCache.has(key)) {
+    return route.terrainCornerCache.get(key);
+  }
+
+  const seed = {
+    biomeSeed: fbmNoise(cornerGridX * 0.11 + 4.3, cornerGridY * 0.11 - 7.7),
+    toneSeed: fbmNoise(cornerGridX * 0.23 - 2.1, cornerGridY * 0.23 + 9.4),
+    detailSeed: fbmNoise(cornerGridX * 0.17 + 13.2, cornerGridY * 0.17 + 1.8),
+  };
+  route.terrainCornerCache.set(key, seed);
+  return seed;
+}
+
 function getTerrainCornerStyle(cornerGridX, cornerGridY) {
+  const seed = getTerrainCornerSeed(cornerGridX, cornerGridY);
   const biomeBlend = getBiomeBlendAtDistance(state.distance);
   const primaryPalette = getBiomePalette(biomeBlend.primary);
   const secondaryPalette = getBiomePalette(biomeBlend.secondary);
-  const baseColor = mixPaletteColor(primaryPalette.base, secondaryPalette.base, biomeBlend.mix);
-  const altColor = mixPaletteColor(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix);
-  const detailColor = mixPaletteColor(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix);
+  const baseColorBase = mixPaletteColor(primaryPalette.base, secondaryPalette.base, biomeBlend.mix);
+  const altColorBase = mixPaletteColor(primaryPalette.alt, secondaryPalette.alt, biomeBlend.mix);
+  const detailColorBase = mixPaletteColor(primaryPalette.detail, secondaryPalette.detail, biomeBlend.mix);
+  const cornerHeight = getTerrainGridHeight(cornerGridX, cornerGridY);
+  const cornerHeightMix = clamp(
+    (cornerHeight + TUNING.route.elevationMaxAbs)
+      / Math.max(1, TUNING.route.elevationMaxAbs * 2),
+    0,
+    1,
+  );
+  const baseColor = mixPaletteColor(
+    baseColorBase,
+    detailColorBase,
+    0.03 + seed.toneSeed * 0.04 + cornerHeightMix * 0.03,
+  );
+  const altColor = mixPaletteColor(
+    altColorBase,
+    baseColorBase,
+    0.1 + seed.biomeSeed * 0.12 + cornerHeightMix * 0.04,
+  );
+  const detailColor = mixPaletteColor(
+    detailColorBase,
+    altColorBase,
+    seed.detailSeed * 0.08,
+  );
 
   return {
     baseColor,
     altColor,
     detailColor,
+    biomeSeed: seed.biomeSeed,
+    toneSeed: seed.toneSeed,
     riverMix: biomeBlend.primary === "river"
       ? Math.max(0.45, 1 - biomeBlend.mix * 0.4)
       : biomeBlend.secondary === "river"
@@ -2415,14 +2453,16 @@ function drawBackground(width, height) {
       const bottomEdgeAlt = mixPaletteColor(bottomLeft.altColor, bottomRight.altColor, 0.5);
       const topEdgeDetail = mixPaletteColor(topLeft.detailColor, topRight.detailColor, 0.5);
       const bottomEdgeDetail = mixPaletteColor(bottomLeft.detailColor, bottomRight.detailColor, 0.5);
+      const biomeSeed = (topLeft.biomeSeed + topRight.biomeSeed + bottomLeft.biomeSeed + bottomRight.biomeSeed) * 0.25;
+      const toneSeed = (topLeft.toneSeed + topRight.toneSeed + bottomLeft.toneSeed + bottomRight.toneSeed) * 0.25;
 
       const cellAverageHeight = getTerrainCellAverageHeight(cellGridX, cellGridY);
       const heightBand = Math.round(cellAverageHeight / 6);
       const bandMix = clamp((heightBand + 8) / 24, 0, 1);
       const stylizedTop = mixPaletteColor(topEdgeBase, topEdgeDetail, 0.08 + bandMix * 0.08);
       const stylizedBottom = mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.1 + bandMix * 0.1);
-      const topColor = mixPaletteColor(stylizedTop, topEdgeAlt, tileStyle.toneSeed * 0.025);
-      const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeAlt, tileStyle.biomeSeed * 0.03);
+      const topColor = mixPaletteColor(stylizedTop, topEdgeAlt, toneSeed * 0.025);
+      const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeAlt, biomeSeed * 0.03);
       const topLeftHeight = getTerrainGridHeight(cellGridX, cellGridY);
       const topRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY);
       const bottomLeftHeight = getTerrainGridHeight(cellGridX, cellGridY + 1);
@@ -2512,8 +2552,8 @@ function drawBackground(width, height) {
         Math.round(topColor[0]), Math.round(topColor[1]), Math.round(topColor[2]), Math.round(topColor[3] * 100),
         Math.round(bottomColor[0]), Math.round(bottomColor[1]), Math.round(bottomColor[2]), Math.round(bottomColor[3] * 100),
         Math.round(detailColor[0]), Math.round(detailColor[1]), Math.round(detailColor[2]),
-        Math.round(tileStyle.biomeSeed * 4),
-        Math.round(tileStyle.toneSeed * 4),
+        Math.round(biomeSeed * 4),
+        Math.round(toneSeed * 4),
         Math.round(riverMix * 4),
       ].join(":");
       const terrainTexture = getTerrainTextureSprite(textureKey, (textureCtx, spriteWidth, spriteHeight) => {
@@ -2546,7 +2586,7 @@ function drawBackground(width, height) {
         for (let ovalIndex = 0; ovalIndex < ovalCount; ovalIndex += 1) {
           const px = [0.24, 0.54, 0.8][ovalIndex] * spriteWidth;
           const py = [0.26, 0.54, 0.78][ovalIndex] * spriteHeight;
-          const rx = 10 + hashNoise(ovalIndex + 17, tileStyle.biomeSeed * 37) * 10;
+          const rx = 10 + hashNoise(ovalIndex + 17, biomeSeed * 37) * 10;
           const ry = rx * 0.55;
           const angle = [0.28, -0.32, 0.18][ovalIndex];
           textureCtx.beginPath();
@@ -2558,7 +2598,7 @@ function drawBackground(width, height) {
           textureCtx.fillStyle = `rgba(84, 154, 194, ${(0.08 + riverMix * 0.14).toFixed(3)})`;
           textureCtx.beginPath();
           textureCtx.ellipse(
-            spriteWidth * (0.32 + tileStyle.biomeSeed * 0.36),
+            spriteWidth * (0.32 + biomeSeed * 0.36),
             spriteHeight * 0.52,
             spriteWidth * 0.18,
             spriteHeight * 0.08,
