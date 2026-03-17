@@ -648,6 +648,10 @@ async function unlockGameAudioFromGesture(event = null) {
         window.removeEventListener("touchend", unlockGameAudioFromGesture, true);
         window.removeEventListener("mousedown", unlockGameAudioFromGesture, true);
         window.removeEventListener("click", unlockGameAudioFromGesture, true);
+        document.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
+        document.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
+        document.removeEventListener("touchend", unlockGameAudioFromGesture, true);
+        document.removeEventListener("click", unlockGameAudioFromGesture, true);
         audioUnlockInitialized = false;
         setAudioDebug("unlocked", {
           trigger,
@@ -691,6 +695,10 @@ function initializeAudioUnlock() {
   window.addEventListener("touchend", unlockGameAudioFromGesture, true);
   window.addEventListener("mousedown", unlockGameAudioFromGesture, true);
   window.addEventListener("click", unlockGameAudioFromGesture, true);
+  document.addEventListener("pointerdown", unlockGameAudioFromGesture, true);
+  document.addEventListener("touchstart", unlockGameAudioFromGesture, true);
+  document.addEventListener("touchend", unlockGameAudioFromGesture, true);
+  document.addEventListener("click", unlockGameAudioFromGesture, true);
 }
 
 function updateGameAudio(dt = 0) {
@@ -995,7 +1003,11 @@ function syncAssistLegend() {
 
 function setButtonHold(button, key) {
   const engage = (event) => {
-    unlockGameAudioFromGesture();
+    updateAudioDebugStatus("control pressed", {
+      trigger: event?.type || key,
+      userActivation: getAudioUserActivationState(),
+    });
+    unlockGameAudioFromGesture(event);
     if (event) {
       event.preventDefault();
     }
@@ -1023,8 +1035,23 @@ function setButtonHold(button, key) {
   button.addEventListener("mouseup", release);
   button.addEventListener("mouseleave", release);
   button.addEventListener("touchstart", engage, { passive: false });
+  button.addEventListener("touchend", (event) => {
+    updateAudioDebugStatus("control touchend", {
+      trigger: event?.type || key,
+      userActivation: getAudioUserActivationState(),
+    });
+    unlockGameAudioFromGesture(event);
+    release();
+  }, { passive: true });
   button.addEventListener("touchend", release, { passive: true });
   button.addEventListener("touchcancel", release, { passive: true });
+  button.addEventListener("click", (event) => {
+    updateAudioDebugStatus("control click", {
+      trigger: event?.type || key,
+      userActivation: getAudioUserActivationState(),
+    });
+    unlockGameAudioFromGesture(event);
+  });
 }
 
 setButtonHold(accelerateButton, "accelerate");
