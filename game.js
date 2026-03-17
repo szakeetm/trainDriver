@@ -571,27 +571,6 @@ function ensureGameAudioReady() {
         setAudioDebug("init returned no graph");
       }
     }
-
-    if (gameAudio && gameAudio.context.state !== "running") {
-      setAudioDebug("resume requested", {
-        reason: gameAudio.context.state,
-        userActivation: getAudioUserActivationState(),
-      });
-      gameAudio.context.resume()
-        .then(() => {
-          setAudioDebug("resume resolved", {
-            reason: gameAudio?.context?.state || "unknown",
-            userActivation: getAudioUserActivationState(),
-          });
-        })
-        .catch((error) => {
-          console.error("[audio] Audio context resume rejected.", error);
-          updateAudioDebugStatus("resume rejected", {
-            reason: error?.message || "error",
-            userActivation: getAudioUserActivationState(),
-          });
-        });
-    }
   } catch (error) {
     console.error("[audio] Audio initialization failed. Continuing without sound.", error);
     updateAudioDebugStatus("init failed", {
@@ -602,6 +581,45 @@ function ensureGameAudioReady() {
   }
 
   return gameAudio;
+}
+
+async function rebuildGameAudioInGesture(trigger = "manual") {
+  if (gameAudio?.context) {
+    try {
+      await gameAudio.context.close();
+      setAudioDebug("closed suspended context", {
+        trigger,
+        userActivation: getAudioUserActivationState(),
+      });
+    } catch (error) {
+      console.warn("[audio] Failed to close suspended context.", error);
+    }
+  }
+
+  gameAudio = null;
+  const audio = ensureGameAudioReady();
+  if (!audio?.context) {
+    return null;
+  }
+
+  try {
+    await audio.context.resume();
+    setAudioDebug("rebuilt context resumed", {
+      trigger,
+      reason: audio.context.state,
+      userActivation: getAudioUserActivationState(),
+    });
+    await warmUpAudioContext(audio.context);
+  } catch (error) {
+    console.error("[audio] Rebuilt context resume failed.", error);
+    updateAudioDebugStatus("rebuilt resume failed", {
+      trigger,
+      reason: error?.message || "error",
+      userActivation: getAudioUserActivationState(),
+    });
+  }
+
+  return audio;
 }
 
 async function unlockGameAudioFromGesture(event = null) {
@@ -641,7 +659,16 @@ async function unlockGameAudioFromGesture(event = null) {
 
       await warmUpAudioContext(audio.context);
 
-      if (audio.context.state === "running") {
+      if (audio.context.state !== "running") {
+        setAudioDebug("rebuild requested", {
+          trigger,
+          reason: audio.context.state,
+          userActivation: getAudioUserActivationState(),
+        });
+        await rebuildGameAudioInGesture(trigger);
+      }
+
+      if (gameAudio?.context?.state === "running") {
         window.removeEventListener("pointerdown", unlockGameAudioFromGesture, true);
         window.removeEventListener("keydown", unlockGameAudioFromGesture, true);
         window.removeEventListener("touchstart", unlockGameAudioFromGesture, true);
@@ -661,7 +688,7 @@ async function unlockGameAudioFromGesture(event = null) {
       }
       updateAudioDebugStatus("not running after unlock", {
         trigger,
-        reason: audio.context.state,
+        reason: gameAudio?.context?.state || audio.context.state,
         userActivation: getAudioUserActivationState(),
       });
     } catch (error) {
