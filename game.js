@@ -286,7 +286,7 @@ const DEFAULT_TUNING = {
   },
 };
 
-let TUNING = DEFAULT_TUNING;
+let TUNING = cloneConfigValue(DEFAULT_TUNING);
 let MAX_LINE_SPEED = 0;
 let STATION_WINDOW = 0;
 let STATION_PASS_MARGIN = 0;
@@ -323,30 +323,6 @@ function cloneConfigValue(value) {
   }
 
   return value;
-}
-
-function mergeConfig(base, overrides) {
-  const result = cloneConfigValue(base);
-
-  if (!overrides || typeof overrides !== "object") {
-    return result;
-  }
-
-  Object.entries(overrides).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      result[key] = cloneConfigValue(value);
-      return;
-    }
-
-    if (value && typeof value === "object" && result[key] && typeof result[key] === "object" && !Array.isArray(result[key])) {
-      result[key] = mergeConfig(result[key], value);
-      return;
-    }
-
-    result[key] = value;
-  });
-
-  return result;
 }
 
 function formatHslColor(hue, saturation, lightness) {
@@ -387,8 +363,8 @@ function buildRandomizedConsist(consist) {
   });
 }
 
-function applyTuning(configOverrides = null) {
-  TUNING = configOverrides ? mergeConfig(DEFAULT_TUNING, configOverrides) : cloneConfigValue(DEFAULT_TUNING);
+function applyTuning() {
+  TUNING = cloneConfigValue(DEFAULT_TUNING);
 
   MAX_LINE_SPEED = TUNING.limits.maxLineSpeed;
   STATION_WINDOW = TUNING.stations.stopWindow;
@@ -407,21 +383,6 @@ function applyTuning(configOverrides = null) {
     0,
   );
   TOTAL_STATIONS = TUNING.stations.total;
-}
-
-async function loadTuningConfig() {
-  try {
-    const response = await fetch("./tuning.json", { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-
-    const configOverrides = await response.json();
-    applyTuning(configOverrides);
-  } catch (error) {
-    console.warn("Using built-in tuning defaults.", error);
-    applyTuning();
-  }
 }
 
 function clamp(value, min, max) {
@@ -3773,12 +3734,12 @@ function startRun() {
 startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
 
-async function initializeGame() {
+function initializeGame() {
   document.body.classList.add("cover-active");
   statusText.textContent = "Loading settings";
-  subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
+  subStatus.textContent = "Applying built-in game tuning.";
 
-  await loadTuningConfig();
+  applyTuning();
 
   state = createInitialState();
   syncAssistLegend();
