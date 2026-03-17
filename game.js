@@ -1,5 +1,23 @@
 const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
+const hudCanvas = document.getElementById("hudCanvas");
+const gl = canvas.getContext("webgl2", {
+  alpha: false,
+  antialias: true,
+  premultipliedAlpha: true,
+});
+const usingWebGL = Boolean(gl);
+const legacyCanvas = usingWebGL ? document.createElement("canvas") : canvas;
+const ctx = legacyCanvas.getContext("2d");
+const hudCtx = hudCanvas.getContext("2d");
+
+if (!ctx || !hudCtx) {
+  throw new Error("Train Driver could not initialize required canvas contexts.");
+}
+
+if (!usingWebGL) {
+  // Keep overlays visible on platforms without WebGL2 by reusing the base canvas path.
+  hudCanvas.style.display = "none";
+}
 
 const appShell = document.getElementById("appShell");
 const introCard = document.getElementById("coverScreen");
@@ -553,12 +571,306 @@ window.addEventListener("blur", () => {
   keys.brake = false;
 });
 
+function compileGlShader(glContext, type, source) {
+  const shader = glContext.createShader(type);
+  if (!shader) {
+    throw new Error("Failed to create WebGL shader.");
+  }
+  glContext.shaderSource(shader, source);
+  glContext.compileShader(shader);
+  if (!glContext.getShaderParameter(shader, glContext.COMPILE_STATUS)) {
+    const info = glContext.getShaderInfoLog(shader) || "Unknown shader compile error";
+    glContext.deleteShader(shader);
+    throw new Error(`Shader compile error: ${info}`);
+  }
+  return shader;
+}
+
+function createGlProgram(glContext, vertexSource, fragmentSource) {
+  const vertexShader = compileGlShader(glContext, glContext.VERTEX_SHADER, vertexSource);
+  const fragmentShader = compileGlShader(glContext, glContext.FRAGMENT_SHADER, fragmentSource);
+  const program = glContext.createProgram();
+  if (!program) {
+    throw new Error("Failed to create WebGL program.");
+  }
+  glContext.attachShader(program, vertexShader);
+  glContext.attachShader(program, fragmentShader);
+  glContext.linkProgram(program);
+  glContext.deleteShader(vertexShader);
+  glContext.deleteShader(fragmentShader);
+  if (!glContext.getProgramParameter(program, glContext.LINK_STATUS)) {
+    const info = glContext.getProgramInfoLog(program) || "Unknown program link error";
+    glContext.deleteProgram(program);
+    throw new Error(`Program link error: ${info}`);
+  }
+  return program;
+}
+
+function createWebglBlitRenderer(glContext) {
+  const vertexSource = `#version 300 es
+    in vec2 aPosition;
+    in vec2 aUv;
+    out vec2 vUv;
+    void main() {
+      vUv = aUv;
+      gl_Position = vec4(aPosition, 0.0, 1.0);
+    }
+  `;
+  const fragmentSource = `#version 300 es
+    precision mediump float;
+    in vec2 vUv;
+    uniform sampler2D uScene;
+    out vec4 outColor;
+    void main() {
+      outColor = texture(uScene, vUv);
+    }
+  `;
+
+  const program = createGlProgram(glContext, vertexSource, fragmentSource);
+  const vao = glContext.createVertexArray();
+  const vbo = glContext.createBuffer();
+  const sceneTexture = glContext.createTexture();
+  if (!vao || !vbo || !sceneTexture) {
+    throw new Error("Failed to create WebGL blit resources.");
+  }
+
+  const vertices = new Float32Array([
+    -1, -1, 0, 1,
+    1, -1, 1, 1,
+    -1, 1, 0, 0,
+    -1, 1, 0, 0,
+    1, -1, 1, 1,
+    1, 1, 1, 0,
+  ]);
+
+  glContext.bindVertexArray(vao);
+  glContext.bindBuffer(glContext.ARRAY_BUFFER, vbo);
+  glContext.bufferData(glContext.ARRAY_BUFFER, vertices, glContext.STATIC_DRAW);
+
+  const positionLoc = glContext.getAttribLocation(program, "aPosition");
+  const uvLoc = glContext.getAttribLocation(program, "aUv");
+  glContext.enableVertexAttribArray(positionLoc);
+  glContext.vertexAttribPointer(positionLoc, 2, glContext.FLOAT, false, 16, 0);
+  glContext.enableVertexAttribArray(uvLoc);
+  glContext.vertexAttribPointer(uvLoc, 2, glContext.FLOAT, false, 16, 8);
+
+  glContext.bindTexture(glContext.TEXTURE_2D, sceneTexture);
+  glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MIN_FILTER, glContext.LINEAR);
+  glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_MAG_FILTER, glContext.LINEAR);
+  glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_S, glContext.CLAMP_TO_EDGE);
+  glContext.texParameteri(glContext.TEXTURE_2D, glContext.TEXTURE_WRAP_T, glContext.CLAMP_TO_EDGE);
+  glContext.bindTexture(glContext.TEXTURE_2D, null);
+
+  const textureLoc = glContext.getUniformLocation(program, "uScene");
+
+  glContext.bindVertexArray(null);
+  glContext.bindBuffer(glContext.ARRAY_BUFFER, null);
+
+  return {
+    resize(width, height) {
+      glContext.viewport(0, 0, width, height);
+    },
+    draw(sourceCanvas) {
+      glContext.useProgram(program);
+      glContext.bindVertexArray(vao);
+      glContext.activeTexture(glContext.TEXTURE0);
+      glContext.bindTexture(glContext.TEXTURE_2D, sceneTexture);
+      glContext.pixelStorei(glContext.UNPACK_FLIP_Y_WEBGL, false);
+      glContext.texImage2D(glContext.TEXTURE_2D, 0, glContext.RGBA, glContext.RGBA, glContext.UNSIGNED_BYTE, sourceCanvas);
+      glContext.uniform1i(textureLoc, 0);
+      glContext.disable(glContext.DEPTH_TEST);
+      glContext.disable(glContext.CULL_FACE);
+      glContext.enable(glContext.BLEND);
+      glContext.blendFunc(glContext.SRC_ALPHA, glContext.ONE_MINUS_SRC_ALPHA);
+      glContext.drawArrays(glContext.TRIANGLES, 0, 6);
+      glContext.bindVertexArray(null);
+      glContext.bindTexture(glContext.TEXTURE_2D, null);
+      glContext.useProgram(null);
+    },
+  };
+}
+
+function createWebglTerrainRenderer(glContext) {
+  const vertexSource = `#version 300 es
+    in vec2 aPosition;
+    in vec4 aColor;
+    uniform vec2 uResolution;
+    out vec4 vColor;
+    void main() {
+      vec2 clip = (aPosition / uResolution) * 2.0 - 1.0;
+      gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+      vColor = aColor;
+    }
+  `;
+
+  const fragmentSource = `#version 300 es
+    precision mediump float;
+    in vec4 vColor;
+    out vec4 outColor;
+    void main() {
+      outColor = vColor;
+    }
+  `;
+
+  const program = createGlProgram(glContext, vertexSource, fragmentSource);
+  const vao = glContext.createVertexArray();
+  const vbo = glContext.createBuffer();
+  if (!vao || !vbo) {
+    throw new Error("Failed to create WebGL terrain resources.");
+  }
+
+  glContext.bindVertexArray(vao);
+  glContext.bindBuffer(glContext.ARRAY_BUFFER, vbo);
+  const initialCapacityVertices = 262144;
+  glContext.bufferData(glContext.ARRAY_BUFFER, initialCapacityVertices * 24, glContext.DYNAMIC_DRAW);
+  const positionLoc = glContext.getAttribLocation(program, "aPosition");
+  const colorLoc = glContext.getAttribLocation(program, "aColor");
+  glContext.enableVertexAttribArray(positionLoc);
+  glContext.vertexAttribPointer(positionLoc, 2, glContext.FLOAT, false, 24, 0);
+  glContext.enableVertexAttribArray(colorLoc);
+  glContext.vertexAttribPointer(colorLoc, 4, glContext.FLOAT, false, 24, 8);
+  glContext.bindVertexArray(null);
+  glContext.bindBuffer(glContext.ARRAY_BUFFER, null);
+
+  const resolutionLoc = glContext.getUniformLocation(program, "uResolution");
+  let vertexData = new Float32Array(initialCapacityVertices * 6);
+  let vertexCount = 0;
+
+  function ensureCapacity(extraVertices) {
+    const requiredVertices = vertexCount + extraVertices;
+    if (requiredVertices <= vertexData.length / 6) {
+      return;
+    }
+    let newVertexCapacity = vertexData.length / 6;
+    while (newVertexCapacity < requiredVertices) {
+      newVertexCapacity *= 2;
+    }
+    const next = new Float32Array(newVertexCapacity * 6);
+    next.set(vertexData);
+    vertexData = next;
+  }
+
+  function pushVertex(x, y, r, g, b, a) {
+    ensureCapacity(1);
+    const base = vertexCount * 6;
+    vertexData[base] = x;
+    vertexData[base + 1] = y;
+    vertexData[base + 2] = r;
+    vertexData[base + 3] = g;
+    vertexData[base + 4] = b;
+    vertexData[base + 5] = a;
+    vertexCount += 1;
+  }
+
+  function pushSolidTriangle(a, b, c, color) {
+    pushVertex(a.x, a.y, color[0], color[1], color[2], color[3]);
+    pushVertex(b.x, b.y, color[0], color[1], color[2], color[3]);
+    pushVertex(c.x, c.y, color[0], color[1], color[2], color[3]);
+  }
+
+  function pushSolidQuad(a, b, c, d, color) {
+    pushSolidTriangle(a, b, c, color);
+    pushSolidTriangle(a, c, d, color);
+  }
+
+  function pushGradientQuad(topLeft, topRight, bottomRight, bottomLeft, cTL, cTR, cBR, cBL) {
+    pushVertex(topLeft.x, topLeft.y, cTL[0], cTL[1], cTL[2], cTL[3]);
+    pushVertex(topRight.x, topRight.y, cTR[0], cTR[1], cTR[2], cTR[3]);
+    pushVertex(bottomRight.x, bottomRight.y, cBR[0], cBR[1], cBR[2], cBR[3]);
+
+    pushVertex(topLeft.x, topLeft.y, cTL[0], cTL[1], cTL[2], cTL[3]);
+    pushVertex(bottomRight.x, bottomRight.y, cBR[0], cBR[1], cBR[2], cBR[3]);
+    pushVertex(bottomLeft.x, bottomLeft.y, cBL[0], cBL[1], cBL[2], cBL[3]);
+  }
+
+  function pushLine(start, end, lineWidth, color) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1e-6) {
+      return;
+    }
+    const nx = -dy / length;
+    const ny = dx / length;
+    const half = lineWidth * 0.5;
+    const a = { x: start.x + nx * half, y: start.y + ny * half };
+    const b = { x: start.x - nx * half, y: start.y - ny * half };
+    const c = { x: end.x - nx * half, y: end.y - ny * half };
+    const d = { x: end.x + nx * half, y: end.y + ny * half };
+    pushSolidQuad(a, b, c, d, color);
+  }
+
+  return {
+    beginFrame(width, height) {
+      vertexCount = 0;
+      glContext.viewport(0, 0, canvas.width, canvas.height);
+      glContext.disable(glContext.DEPTH_TEST);
+      glContext.disable(glContext.CULL_FACE);
+      glContext.disable(glContext.BLEND);
+      glContext.clearColor(0.02, 0.05, 0.09, 1);
+      glContext.clear(glContext.COLOR_BUFFER_BIT);
+      glContext.useProgram(program);
+      glContext.uniform2f(resolutionLoc, width, height);
+      glContext.bindVertexArray(vao);
+      glContext.bindBuffer(glContext.ARRAY_BUFFER, vbo);
+    },
+    pushSolidQuad,
+    pushGradientQuad,
+    pushLine,
+    flush() {
+      if (vertexCount <= 0) {
+        glContext.bindVertexArray(null);
+        glContext.bindBuffer(glContext.ARRAY_BUFFER, null);
+        glContext.useProgram(null);
+        return;
+      }
+
+      const used = vertexData.subarray(0, vertexCount * 6);
+      glContext.bufferData(glContext.ARRAY_BUFFER, used, glContext.DYNAMIC_DRAW);
+      glContext.drawArrays(glContext.TRIANGLES, 0, vertexCount);
+      glContext.bindVertexArray(null);
+      glContext.bindBuffer(glContext.ARRAY_BUFFER, null);
+      glContext.useProgram(null);
+    },
+  };
+}
+
+const webglBlitRenderer = usingWebGL ? createWebglBlitRenderer(gl) : null;
+const webglTerrainRenderer = usingWebGL ? createWebglTerrainRenderer(gl) : null;
+
+function getOverlayCtx() {
+  return usingWebGL ? hudCtx : ctx;
+}
+
+function toGlColor(color, alphaBoost = 0) {
+  const alpha = clamp((color[3] ?? 1) + alphaBoost, 0, 1);
+  return [
+    clamp(color[0] / 255, 0, 1),
+    clamp(color[1] / 255, 0, 1),
+    clamp(color[2] / 255, 0, 1),
+    alpha,
+  ];
+}
+
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
+  const pixelWidth = Math.round(rect.width * dpr);
+  const pixelHeight = Math.round(rect.height * dpr);
+
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
+  legacyCanvas.width = pixelWidth;
+  legacyCanvas.height = pixelHeight;
+  hudCanvas.width = pixelWidth;
+  hudCanvas.height = pixelHeight;
+
+  if (usingWebGL) {
+    webglBlitRenderer.resize(pixelWidth, pixelHeight);
+  }
+
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  hudCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -2412,6 +2724,108 @@ function getTerrainTextureSprite(key, drawFn) {
 }
 
 function drawBackground(width, height) {
+  if (usingWebGL) {
+    const view = getViewMetrics(width, height);
+    const { camera, scale } = view;
+    webglTerrainRenderer.beginFrame(width, height);
+    webglTerrainRenderer.pushGradientQuad(
+      { x: 0, y: 0 },
+      { x: width, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height },
+      [166 / 255, 197 / 255, 125 / 255, 1],
+      [166 / 255, 197 / 255, 125 / 255, 1],
+      [118 / 255, 151 / 255, 96 / 255, 1],
+      [118 / 255, 151 / 255, 96 / 255, 1],
+    );
+
+    const cellSize = TUNING.visuals.terrainCellSize;
+    const worldRadius = Math.max(width, height) * 2.55 / Math.max(scale, 1e-6);
+    const startWorldX = Math.floor((camera.x - worldRadius - cellSize) / cellSize) * cellSize;
+    const endWorldX = Math.ceil((camera.x + worldRadius + cellSize) / cellSize) * cellSize;
+    const startWorldY = Math.floor((camera.y - worldRadius - cellSize) / cellSize) * cellSize;
+    const endWorldY = Math.ceil((camera.y + worldRadius + cellSize) / cellSize) * cellSize;
+
+    for (let worldY = startWorldY; worldY <= endWorldY; worldY += cellSize) {
+      for (let worldX = startWorldX; worldX <= endWorldX; worldX += cellSize) {
+        const cellGridX = Math.floor(worldX / cellSize);
+        const cellGridY = Math.floor(worldY / cellSize);
+
+        const topLeft = getTerrainCornerStyle(cellGridX, cellGridY);
+        const topRight = getTerrainCornerStyle(cellGridX + 1, cellGridY);
+        const bottomLeft = getTerrainCornerStyle(cellGridX, cellGridY + 1);
+        const bottomRight = getTerrainCornerStyle(cellGridX + 1, cellGridY + 1);
+
+        const topEdgeBase = mixPaletteColor(topLeft.baseColor, topRight.baseColor, 0.5);
+        const bottomEdgeBase = mixPaletteColor(bottomLeft.baseColor, bottomRight.baseColor, 0.5);
+        const topEdgeAlt = mixPaletteColor(topLeft.altColor, topRight.altColor, 0.5);
+        const bottomEdgeAlt = mixPaletteColor(bottomLeft.altColor, bottomRight.altColor, 0.5);
+        const topEdgeDetail = mixPaletteColor(topLeft.detailColor, topRight.detailColor, 0.5);
+        const bottomEdgeDetail = mixPaletteColor(bottomLeft.detailColor, bottomRight.detailColor, 0.5);
+        const biomeSeed = (topLeft.biomeSeed + topRight.biomeSeed + bottomLeft.biomeSeed + bottomRight.biomeSeed) * 0.25;
+        const toneSeed = (topLeft.toneSeed + topRight.toneSeed + bottomLeft.toneSeed + bottomRight.toneSeed) * 0.25;
+
+        const cellAverageHeight = getTerrainCellAverageHeight(cellGridX, cellGridY);
+        const heightBand = Math.round(cellAverageHeight / 6);
+        const bandMix = clamp((heightBand + 8) / 24, 0, 1);
+        const stylizedTop = mixPaletteColor(topEdgeBase, topEdgeDetail, 0.08 + bandMix * 0.08);
+        const stylizedBottom = mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.1 + bandMix * 0.1);
+        const topColor = mixPaletteColor(stylizedTop, topEdgeAlt, toneSeed * 0.025);
+        const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeAlt, biomeSeed * 0.03);
+
+        const topLeftHeight = getTerrainGridHeight(cellGridX, cellGridY);
+        const topRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY);
+        const bottomLeftHeight = getTerrainGridHeight(cellGridX, cellGridY + 1);
+        const bottomRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY + 1);
+        const localMinHeight = Math.min(topLeftHeight, topRightHeight, bottomLeftHeight, bottomRightHeight);
+        const localMaxHeight = Math.max(topLeftHeight, topRightHeight, bottomLeftHeight, bottomRightHeight);
+        const relief = localMaxHeight - localMinHeight;
+
+        const top = worldToScreenWithView({
+          x: worldX + cellSize * 0.5,
+          y: worldY,
+          visualElevation: (topLeftHeight + topRightHeight) * 0.5,
+        }, view, width);
+        const right = worldToScreenWithView({
+          x: worldX + cellSize,
+          y: worldY + cellSize * 0.5,
+          visualElevation: (topRightHeight + bottomRightHeight) * 0.5,
+        }, view, width);
+        const bottom = worldToScreenWithView({
+          x: worldX + cellSize * 0.5,
+          y: worldY + cellSize,
+          visualElevation: (bottomLeftHeight + bottomRightHeight) * 0.5,
+        }, view, width);
+        const left = worldToScreenWithView({
+          x: worldX,
+          y: worldY + cellSize * 0.5,
+          visualElevation: (topLeftHeight + bottomLeftHeight) * 0.5,
+        }, view, width);
+        const center = worldToScreenWithView({
+          x: worldX + cellSize * 0.5,
+          y: worldY + cellSize * 0.5,
+          visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize * 0.5),
+        }, view, width);
+
+        if (center.x < -cellSize * scale * 2 || center.x > width + cellSize * scale * 2 || center.y < -cellSize * scale * 2 || center.y > height + cellSize * scale * 2) {
+          continue;
+        }
+
+        const fillColor = toGlColor(mixPaletteColor(topColor, bottomColor, 0.5), 0.42);
+        webglTerrainRenderer.pushSolidQuad(top, right, bottom, left, fillColor);
+
+        const outline = [1, 1, 1, clamp(0.06 + relief * 0.006, 0.04, 0.12)];
+        webglTerrainRenderer.pushLine(top, right, 1, outline);
+        webglTerrainRenderer.pushLine(right, bottom, 1, outline);
+        webglTerrainRenderer.pushLine(bottom, left, 1, outline);
+        webglTerrainRenderer.pushLine(left, top, 1, outline);
+      }
+    }
+
+    webglTerrainRenderer.flush();
+    return;
+  }
+
   const view = getViewMetrics(width, height);
   const { camera, scale } = view;
   const speedFactor = state ? clamp(state.speed / MAX_LINE_SPEED, 0, TUNING.visuals.backgroundSpeedMaxFactor) : 0;
@@ -3620,6 +4034,7 @@ function drawTrain(width, height) {
 }
 
 function drawHudOverlay(width, height) {
+  const ctx = getOverlayCtx();
   ctx.save();
   ctx.fillStyle = "rgba(7, 17, 31, 0.55)";
   ctx.beginPath();
@@ -3643,6 +4058,7 @@ function drawHudOverlay(width, height) {
 }
 
 function drawCameraDebugOverlay(width, height) {
+  const ctx = getOverlayCtx();
   if (!showCameraDebugOverlay) {
     return;
   }
@@ -3774,6 +4190,7 @@ function drawCameraDebugOverlay(width, height) {
 }
 
 function drawRoutePredictor(width, height) {
+  const ctx = getOverlayCtx();
   const upcomingEntries = getUpcomingRouteEntries();
   const panelWidth = Math.min(TUNING.visuals.routePredictorWidth, width - 36);
   const panelHeight = Math.min(TUNING.visuals.routePredictorHeight, height - 36);
@@ -3891,11 +4308,21 @@ function render() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
 
+  if (usingWebGL) {
+    ctx.clearRect(0, 0, width, height);
+  }
+
   drawBackground(width, height);
   drawTrack(width, height);
   drawTrain(width, height);
-  drawCameraDebugOverlay(width, height);
   drawSpeedEffects(width, height);
+
+  if (usingWebGL) {
+    webglBlitRenderer.draw(legacyCanvas);
+    hudCtx.clearRect(0, 0, width, height);
+  }
+
+  drawCameraDebugOverlay(width, height);
   drawHudOverlay(width, height);
 }
 
