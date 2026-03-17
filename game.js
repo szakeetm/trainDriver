@@ -635,9 +635,10 @@ function getViewMetrics(width, height) {
   const rearUnit = trainUnits[trainUnits.length - 1];
   const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
-  const cameraSpeedFactor = smoothstep(6, 60, state.speed);
-  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 2.9);
   const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
+  const cameraSpeedFactor = smoothstep(10, 72, state.speed);
+  const zoomSpeedFactor = Math.pow(cameraSpeedFactor, 3.6);
+  const zoomGradeFactor = gradeFactor * cameraSpeedFactor;
   const lookBehind = TUNING.camera.lookBehindMin + cameraSpeedFactor * TUNING.camera.lookBehindBySpeed;
   const minimumCenterLookAhead = TRAIN_TOTAL_LENGTH * lerp(
     TUNING.camera.minimumCenterLookAheadStoppedFactor,
@@ -648,29 +649,31 @@ function getViewMetrics(width, height) {
   const centerTargetDistance = Math.min(route.totalLength, state.distance + centerLookAheadDistance);
   const lookAhead = lerp(TUNING.camera.lookAheadStopped, TUNING.camera.lookAheadMin, cameraSpeedFactor)
     + zoomSpeedFactor * TUNING.camera.lookAheadBySpeed * 0.18
-    + gradeFactor * 80;
+    + zoomGradeFactor * 80;
   const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
-  const aheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead, centerTargetDistance));
+  const fitAheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead * 0.68, centerTargetDistance));
+  const aheadDistance = Math.min(route.totalLength, Math.max(state.distance + lookAhead, fitAheadDistance));
   const rearPose = rearUnit.rearPose;
   const viewStartPose = evaluateRoute(rearDistance);
   const centerTargetPose = evaluateRoute(centerTargetDistance);
+  const fitAheadPose = evaluateRoute(fitAheadDistance);
   const aheadPose = evaluateRoute(aheadDistance);
   const lateralSpan = TUNING.camera.lateralSpanMin + zoomSpeedFactor * TUNING.camera.lateralSpanBySpeed * 0.18;
   const leadDistance = centerTargetDistance - state.distance;
   const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
   const aheadRenderBuffer = TUNING.camera.renderAheadBufferMin + cameraSpeedFactor * TUNING.camera.renderAheadBufferBySpeed;
   const camera = {
-    x: (rearPose.x * 0.18) + (centerTargetPose.x * 0.62) + (aheadPose.x * 0.2),
-    y: (rearPose.y * 0.18) + (centerTargetPose.y * 0.62) + (aheadPose.y * 0.2),
+    x: (rearPose.x * 0.18) + (centerTargetPose.x * 0.62) + (fitAheadPose.x * 0.2),
+    y: (rearPose.y * 0.18) + (centerTargetPose.y * 0.62) + (fitAheadPose.y * 0.2),
   };
   const samplePoints = [];
   const sampleStep = 80;
-  for (let distance = rearDistance; distance <= aheadDistance; distance += sampleStep) {
+  for (let distance = rearDistance; distance <= fitAheadDistance; distance += sampleStep) {
     samplePoints.push(evaluateRoute(distance));
   }
-  samplePoints.push(viewStartPose, rearPose, trainPose, centerTargetPose, aheadPose);
+  samplePoints.push(viewStartPose, rearPose, trainPose, centerTargetPose, fitAheadPose);
 
-  [viewStartPose, rearPose, trainPose, centerTargetPose, aheadPose].forEach((pose) => {
+  [viewStartPose, rearPose, trainPose, centerTargetPose, fitAheadPose].forEach((pose) => {
     const normalX = -Math.sin(pose.heading);
     const normalY = Math.cos(pose.heading);
     samplePoints.push({
