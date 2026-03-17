@@ -37,6 +37,7 @@ const assistDistanceText = document.getElementById("assistDistanceText");
 const assistFrontMarker = document.getElementById("assistFrontMarker");
 const assistLegendMin = document.getElementById("assistLegendMin");
 const assistLegendMax = document.getElementById("assistLegendMax");
+const cameraDebugToggle = document.getElementById("cameraDebugToggle");
 
 const DEFAULT_TUNING = {
   limits: {
@@ -319,6 +320,7 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
+let showCameraDebugOverlay = false;
 
 function cloneConfigValue(value) {
   if (Array.isArray(value)) {
@@ -3546,6 +3548,9 @@ function drawHudOverlay(width, height) {
 }
 
 function drawCameraDebugOverlay(width, height) {
+  if (!showCameraDebugOverlay) {
+    return;
+  }
   const view = getViewMetrics(width, height);
   const debug = view.debug;
   if (!debug) {
@@ -3858,6 +3863,9 @@ function startRun() {
 
 startButton.addEventListener("click", startRun);
 restartButton.addEventListener("click", startRun);
+cameraDebugToggle.addEventListener("change", () => {
+  showCameraDebugOverlay = cameraDebugToggle.checked;
+});
 
 function initializeGame() {
   document.body.classList.add("cover-active");
@@ -3867,6 +3875,8 @@ function initializeGame() {
   applyTuning();
 
   state = createInitialState();
+  showCameraDebugOverlay = false;
+  cameraDebugToggle.checked = false;
   syncAssistLegend();
   updateUi();
   lastFrame = performance.now();
