@@ -3,11 +3,6 @@ const ctx = canvas.getContext("2d");
 
 const appShell = document.getElementById("appShell");
 const introCard = document.getElementById("coverScreen");
-const droneInset = document.getElementById("droneInset");
-const droneInsetMount = document.getElementById("droneInsetMount");
-const droneInsetStatus = document.getElementById("droneInsetStatus");
-const droneInsetToggle = document.getElementById("droneInsetToggle");
-const droneInsetResizeHandle = document.getElementById("droneInsetResizeHandle");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -81,21 +76,21 @@ const DEFAULT_TUNING = {
       {
         type: "locomotive", // Vehicle role used for rendering details.
         length: 24, // Vehicle length in meters along the track.
-        width: 10, // Vehicle body width in meters for top-down rendering.
+        width: 10, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#53c8ff", // Main fill color of the vehicle body.
         roofColor: "rgba(255,255,255,0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for top-down rendering.
+        width: 9, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#8da4bc", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for top-down rendering.
+        width: 9, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#9fb7cf", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
@@ -254,6 +249,9 @@ const DEFAULT_TUNING = {
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
     gradientMarkerMinGrade: 0.008, // Minimum absolute grade before a warning marker is shown.
     gradientMarkerSpacingMin: 220, // Minimum spacing in meters between successive gradient markers.
+    terrainHeightExaggeration: 2.7, // Multiplier applied to rendered terrain and track heights so elevation reads clearly in the isometric view.
+    isometricVerticalScale: 0.48, // Screen-space vertical squash of the isometric projection.
+    isometricElevationScale: 1.55, // Extra screen-space lift per meter of elevation in the isometric projection.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
     terrainClearWidthMin: 36, // Minimum width in pixels of the cleared corridor around the track.
     terrainClearWidthScale: 7.6, // Cleared corridor width multiplier relative to zoom scale.
@@ -311,8 +309,6 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
-let isDroneInsetMinimized = true;
-let droneInsetRenderer = null;
 
 function cloneConfigValue(value) {
   if (Array.isArray(value)) {
@@ -588,10 +584,6 @@ function resizeCanvas() {
   canvas.width = Math.round(rect.width * dpr);
   canvas.height = Math.round(rect.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-  if (droneInsetRenderer) {
-    droneInsetRenderer.resize();
-  }
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -629,7 +621,7 @@ function getRenderedTrainUnits() {
         ...unit,
         renderX: unit.pose.x,
         renderY: unit.pose.y,
-        renderElevation: unit.pose.elevation,
+        visualElevation: unit.pose.visualElevation,
         renderHeading: unit.pose.heading,
         rearX: rearPose.x,
         rearY: rearPose.y,
@@ -652,184 +644,13 @@ function getRenderedTrainUnits() {
       ...unit,
       renderX,
       renderY,
-      renderElevation: unit.pose && unit.pose.elevation != null ? unit.pose.elevation : 0,
+      visualElevation: unit.pose && unit.pose.visualElevation != null ? unit.pose.visualElevation : 0,
       renderHeading,
       rearX: renderX - Math.cos(renderHeading) * unit.length * 0.5,
       rearY: renderY - Math.sin(renderHeading) * unit.length * 0.5,
       frontX: renderX + Math.cos(renderHeading) * unit.length * 0.5,
       frontY: renderY + Math.sin(renderHeading) * unit.length * 0.5,
     };
-  });
-}
-
-function initializeDroneInsetRenderer() {
-  if (!window.TrainDriver3DInsetRenderer || !droneInsetMount) {
-    if (droneInsetStatus) {
-      droneInsetStatus.textContent = "3D unavailable";
-    }
-    return;
-  }
-
-  try {
-    droneInsetRenderer = new window.TrainDriver3DInsetRenderer({
-      container: droneInsetMount,
-      statusElement: droneInsetStatus,
-    });
-  } catch (error) {
-    console.error("3D inset renderer could not start.", error);
-    droneInsetRenderer = null;
-    if (droneInsetStatus) {
-      droneInsetStatus.textContent = "3D error";
-    }
-  }
-}
-
-function setDroneInsetMinimized(minimized) {
-  if (!droneInset || !droneInsetToggle) {
-    return;
-  }
-
-  if (minimized) {
-    droneInset.dataset.restoreWidth = droneInset.style.width || "";
-    droneInset.dataset.restoreHeight = droneInset.style.height || "";
-    droneInset.style.width = "272px";
-    droneInset.style.height = "auto";
-  } else {
-    droneInset.style.width = droneInset.dataset.restoreWidth || "";
-    droneInset.style.height = droneInset.dataset.restoreHeight || "";
-  }
-
-  isDroneInsetMinimized = minimized;
-  droneInset.classList.toggle("is-minimized", minimized);
-  droneInsetToggle.textContent = minimized ? "Expand" : "Minimize";
-  droneInsetToggle.setAttribute("aria-expanded", minimized ? "false" : "true");
-
-  if (!minimized && droneInsetRenderer) {
-    droneInsetRenderer.resize();
-  }
-}
-
-function initializeDroneInsetToggle() {
-  if (!droneInsetToggle) {
-    return;
-  }
-
-  setDroneInsetMinimized(true);
-
-  droneInsetToggle.addEventListener("click", () => {
-    setDroneInsetMinimized(!isDroneInsetMinimized);
-  });
-}
-
-function initializeDroneInsetResizeHandle() {
-  if (!droneInset || !droneInsetResizeHandle) {
-    return;
-  }
-
-  let resizeSession = null;
-
-  const stopResize = () => {
-    if (!resizeSession) {
-      return;
-    }
-
-    resizeSession = null;
-    document.body.style.userSelect = "";
-  };
-
-  const handlePointerMove = (event) => {
-    if (!resizeSession) {
-      return;
-    }
-
-    const nextWidth = clamp(
-      resizeSession.startWidth + (resizeSession.startX - event.clientX),
-      resizeSession.minWidth,
-      resizeSession.maxWidth,
-    );
-    const nextHeight = clamp(
-      resizeSession.startHeight + (resizeSession.startY - event.clientY),
-      resizeSession.minHeight,
-      resizeSession.maxHeight,
-    );
-
-    droneInset.style.width = `${nextWidth}px`;
-    droneInset.style.height = `${nextHeight}px`;
-    resizeCanvas();
-  };
-
-  droneInsetResizeHandle.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) {
-      return;
-    }
-
-    const parentRect = droneInset.parentElement
-      ? droneInset.parentElement.getBoundingClientRect()
-      : { width: window.innerWidth, height: window.innerHeight };
-    const insetRect = droneInset.getBoundingClientRect();
-    const computedStyle = window.getComputedStyle(droneInset);
-    const minWidth = parseFloat(computedStyle.minWidth) || 192;
-    const minHeight = parseFloat(computedStyle.minHeight) || 108;
-    const insetBottom = parseFloat(computedStyle.bottom) || 0;
-    const insetRight = parseFloat(computedStyle.right) || 0;
-    const maxWidth = Math.max(minWidth, parentRect.width - insetRight - 12);
-    const maxHeight = Math.max(minHeight, parentRect.height - insetBottom - 12);
-
-    resizeSession = {
-      startX: event.clientX,
-      startY: event.clientY,
-      startWidth: insetRect.width,
-      startHeight: insetRect.height,
-      minWidth,
-      minHeight,
-      maxWidth,
-      maxHeight,
-    };
-
-    document.body.style.userSelect = "none";
-    droneInsetResizeHandle.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  });
-
-  droneInsetResizeHandle.addEventListener("pointermove", handlePointerMove);
-  droneInsetResizeHandle.addEventListener("pointerup", stopResize);
-  droneInsetResizeHandle.addEventListener("pointercancel", stopResize);
-  droneInsetResizeHandle.addEventListener("lostpointercapture", stopResize);
-}
-
-function syncDroneInsetRoute() {
-  if (!droneInsetRenderer || !route) {
-    return;
-  }
-
-  droneInsetRenderer.setRoute({
-    route,
-    trackWidth: TRACK_WIDTH,
-    trainConsist: TRAIN_CONSIST,
-    tuning: TUNING,
-    sampleRoute: evaluateRoute,
-    getSceneryPoint,
-    getTerrainHeight: getTerrainHeightAtWorld,
-  });
-}
-
-function renderDroneInset() {
-  if (!droneInsetRenderer || !route || !state || appShell.classList.contains("hidden") || isDroneInsetMinimized) {
-    return;
-  }
-
-  droneInsetRenderer.renderFrame({
-    trainPose: evaluateRoute(state.distance),
-    renderedUnits: getRenderedTrainUnits(),
-    trainLength: TRAIN_TOTAL_LENGTH,
-    activeStationIndex: state.stationIndex,
-    overspeedTimer: state.overspeedTimer,
-    derailment: state.derailment,
-    maxLineSpeed: MAX_LINE_SPEED,
-    powerOutput: Math.max(0, state.actualControl),
-    acceleration: Math.max(0, state.acceleration || 0),
-    speed: state.speed,
-    biomeBlend: getBiomeBlendAtDistance(),
   });
 }
 
@@ -845,9 +666,12 @@ function getViewMetrics(width, height) {
     TUNING.camera.movingZoomMultiplier,
     speedFactor,
   );
-  const scale = Math.min(width / lateralSpan, height / longitudinalSpan) * zoomMultiplier;
+  const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
+  const projectedWidth = longitudinalSpan + lateralSpan;
+  const projectedHeight = (longitudinalSpan + lateralSpan) * isoVerticalScale;
+  const scale = Math.min(width / projectedWidth, height / projectedHeight) * zoomMultiplier;
   const requestedLeadDistance = TUNING.camera.leadDistanceMin + speedFactor * TUNING.camera.leadDistanceBySpeed;
-  const maxLeadDistance = Math.max(0, (height * 0.5 - TUNING.camera.trainScreenMargin) / Math.max(scale, 1e-6));
+  const maxLeadDistance = Math.max(0, (height * 0.34 - TUNING.camera.trainScreenMargin) / Math.max(scale * isoVerticalScale, 1e-6));
   const leadDistance = Math.min(requestedLeadDistance, maxLeadDistance);
   const camera = {
     x: trainPose.x + Math.cos(trainPose.heading) * leadDistance,
@@ -858,7 +682,8 @@ function getViewMetrics(width, height) {
     camera,
     trainPose,
     scale,
-    anchorY: height * TUNING.camera.anchorY,
+    anchorX: width * 0.5,
+    anchorY: height * 0.58,
     startDistance: Math.max(0, state.distance - lookBehind),
     endDistance: Math.min(route.totalLength, state.distance + lookAhead),
   };
@@ -877,6 +702,7 @@ function evaluateSegment(segment, distanceIntoSegment) {
       curvature: 0,
       speedLimit: segment.speedLimit,
       elevation: elevationInfo.elevation,
+      visualElevation: getVisualElevation(elevationInfo.elevation),
       grade: elevationInfo.grade,
       elevationSegment: elevationInfo.segment,
       segment,
@@ -892,6 +718,7 @@ function evaluateSegment(segment, distanceIntoSegment) {
     curvature: k,
     speedLimit: segment.speedLimit,
     elevation: elevationInfo.elevation,
+    visualElevation: getVisualElevation(elevationInfo.elevation),
     grade: elevationInfo.grade,
     elevationSegment: elevationInfo.segment,
     segment,
@@ -911,6 +738,7 @@ function evaluateRoute(distance) {
       curvature: 0,
       speedLimit: firstSegment.speedLimit,
       elevation: elevationInfo.elevation,
+      visualElevation: getVisualElevation(elevationInfo.elevation),
       grade: elevationInfo.grade,
       elevationSegment: elevationInfo.segment,
       segment: firstSegment,
@@ -1083,6 +911,7 @@ function buildTerrainTrackSamples(totalLength) {
       x: point.x,
       y: point.y,
       elevation: point.elevation,
+      visualElevation: getVisualElevation(point.elevation),
     });
   }
   const lastPoint = evaluateRoute(totalLength);
@@ -1093,16 +922,21 @@ function buildTerrainTrackSamples(totalLength) {
       x: lastPoint.x,
       y: lastPoint.y,
       elevation: lastPoint.elevation,
+      visualElevation: getVisualElevation(lastPoint.elevation),
     });
   }
   return samples;
+}
+
+function getVisualElevation(elevation) {
+  return elevation * TUNING.visuals.terrainHeightExaggeration;
 }
 
 function getTerrainHeightAtWorld(worldX, worldY) {
   const broad = (fbmNoise(worldX * 0.00038 + 13, worldY * 0.00038 - 7) - 0.5) * 34;
   const medium = (fbmNoise(worldX * 0.0014 - 11, worldY * 0.0014 + 19) - 0.5) * 10;
   const fine = (hashNoise(worldX * 0.009, worldY * 0.009) - 0.5) * 1.8;
-  let terrainHeight = broad + medium + fine;
+  let terrainHeight = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
 
   if (route && route.terrainTrackSamples && route.terrainTrackSamples.length) {
     let nearest = null;
@@ -1119,8 +953,8 @@ function getTerrainHeightAtWorld(worldX, worldY) {
 
     if (nearest) {
       const distance = Math.sqrt(nearestSquared);
-      const corridorBlend = 1 - smoothstep(18, 120, distance);
-      terrainHeight = lerp(terrainHeight, nearest.elevation - 0.35, corridorBlend);
+      const corridorBlend = 1 - smoothstep(16, 150, distance);
+      terrainHeight = lerp(terrainHeight, nearest.visualElevation - 1.6, corridorBlend);
     }
   }
 
@@ -1653,8 +1487,10 @@ function spawnDieselExhaustPuff(unit, intensity) {
   state.exhaustPuffs.push({
     x: sourceX,
     y: sourceY,
+    visualElevation: unit.visualElevation + 6,
     driftX: 0.18 - forwardX * (0.12 + intensity * 0.14) + normalX * sidewaysJitter,
     driftY: -0.08 - forwardY * (0.12 + intensity * 0.14) + normalY * sidewaysJitter,
+    verticalRise: 8 + intensity * 4 + Math.random() * 2,
     age: 0,
     life: 1.5 + Math.random() * 0.6,
     radius: 1.15 + Math.random() * 0.5 + intensity * 0.42,
@@ -1693,6 +1529,7 @@ function updateDieselExhaust(dt) {
 
     puff.x += puff.driftX * dt;
     puff.y += puff.driftY * dt;
+    puff.visualElevation += puff.verticalRise * dt;
     return true;
   });
 }
@@ -2223,16 +2060,27 @@ function updateMarker(element, value) {
   element.style.left = `${50 + value * 50}%`;
 }
 
-function worldToScreen(point, camera, scale, width, height) {
+function worldToScreenWithView(point, view, width) {
+  const isoVerticalScale = TUNING.visuals.isometricVerticalScale;
+  const elevationScale = TUNING.visuals.isometricElevationScale;
+  const elevation = point.visualElevation != null ? point.visualElevation : point.elevation || 0;
+  const dx = point.x - view.camera.x;
+  const dy = point.y - view.camera.y;
   return {
-    x: width * 0.5 + (point.x - camera.x) * scale,
-    y: height * 0.5 + (point.y - camera.y) * scale,
+    x: view.anchorX + (dx - dy) * view.scale,
+    y: view.anchorY + (dx + dy) * view.scale * isoVerticalScale - elevation * view.scale * elevationScale,
   };
+}
+
+function getProjectedAngle(heading) {
+  const projectedX = Math.cos(heading) - Math.sin(heading);
+  const projectedY = (Math.cos(heading) + Math.sin(heading)) * TUNING.visuals.isometricVerticalScale;
+  return Math.atan2(projectedY, projectedX);
 }
 
 function drawBackground(width, height) {
   const view = getViewMetrics(width, height);
-  const { camera, scale, anchorY } = view;
+  const { camera, scale } = view;
   const speedFactor = state ? clamp(state.speed / MAX_LINE_SPEED, 0, TUNING.visuals.backgroundSpeedMaxFactor) : 0;
   const boostedSpeedFactor = Math.pow(speedFactor, 0.72);
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
@@ -2244,14 +2092,11 @@ function drawBackground(width, height) {
   ctx.fillRect(0, 0, width, height);
 
   const cellSize = TUNING.visuals.terrainCellSize;
-  const leftWorld = camera.x - width * 0.5 / scale;
-  const rightWorld = camera.x + width * 0.5 / scale;
-  const topWorld = camera.y - anchorY / scale;
-  const bottomWorld = camera.y + (height - anchorY) / scale;
-  const startWorldX = Math.floor((leftWorld - cellSize) / cellSize) * cellSize;
-  const endWorldX = Math.ceil((rightWorld + cellSize) / cellSize) * cellSize;
-  const startWorldY = Math.floor((topWorld - cellSize) / cellSize) * cellSize;
-  const endWorldY = Math.ceil((bottomWorld + cellSize) / cellSize) * cellSize;
+  const worldRadius = Math.max(width, height) / Math.max(scale, 1e-6);
+  const startWorldX = Math.floor((camera.x - worldRadius - cellSize) / cellSize) * cellSize;
+  const endWorldX = Math.ceil((camera.x + worldRadius + cellSize) / cellSize) * cellSize;
+  const startWorldY = Math.floor((camera.y - worldRadius - cellSize) / cellSize) * cellSize;
+  const endWorldY = Math.ceil((camera.y + worldRadius + cellSize) / cellSize) * cellSize;
 
   for (let worldY = startWorldY; worldY <= endWorldY; worldY += cellSize) {
     for (let worldX = startWorldX; worldX <= endWorldX; worldX += cellSize) {
@@ -2300,22 +2145,55 @@ function drawBackground(width, height) {
           ? mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.25)
           : bottomEdgeBase;
       }
-      const screenX = width * 0.5 + (worldX - camera.x) * scale;
-      const screenY = anchorY + (worldY - camera.y) * scale;
-      const pixelSize = cellSize * scale;
-      const tileGradient = ctx.createLinearGradient(0, screenY, 0, screenY + pixelSize);
+      const top = worldToScreenWithView({
+        x: worldX + cellSize * 0.5,
+        y: worldY,
+        visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY),
+      }, view, width);
+      const right = worldToScreenWithView({
+        x: worldX + cellSize,
+        y: worldY + cellSize * 0.5,
+        visualElevation: getTerrainHeightAtWorld(worldX + cellSize, worldY + cellSize * 0.5),
+      }, view, width);
+      const bottom = worldToScreenWithView({
+        x: worldX + cellSize * 0.5,
+        y: worldY + cellSize,
+        visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize),
+      }, view, width);
+      const left = worldToScreenWithView({
+        x: worldX,
+        y: worldY + cellSize * 0.5,
+        visualElevation: getTerrainHeightAtWorld(worldX, worldY + cellSize * 0.5),
+      }, view, width);
+      const center = worldToScreenWithView({
+        x: worldX + cellSize * 0.5,
+        y: worldY + cellSize * 0.5,
+        visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize * 0.5),
+      }, view, width);
+
+      if (center.x < -cellSize * scale * 2 || center.x > width + cellSize * scale * 2 || center.y < -cellSize * scale * 2 || center.y > height + cellSize * scale * 2) {
+        continue;
+      }
+
+      const tileGradient = ctx.createLinearGradient(0, top.y, 0, bottom.y);
       tileGradient.addColorStop(0, paletteColorToCss(topColor));
       tileGradient.addColorStop(1, paletteColorToCss(bottomColor));
       ctx.fillStyle = tileGradient;
-      ctx.fillRect(screenX, screenY, pixelSize + 1, pixelSize + 1);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(right.x, right.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.lineTo(left.x, left.y);
+      ctx.closePath();
+      ctx.fill();
 
-      const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale;
+      const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale * 0.8;
       const detailColor = mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5);
       ctx.fillStyle = paletteColorToCss(detailColor);
       ctx.beginPath();
       ctx.ellipse(
-        screenX + hashNoise(cellGridX + 2, cellGridY + 5) * pixelSize,
-        screenY + hashNoise(cellGridX + 8, cellGridY + 11) * pixelSize,
+        center.x + (hashNoise(cellGridX + 2, cellGridY + 5) - 0.5) * cellSize * scale * 0.8,
+        center.y + (hashNoise(cellGridX + 8, cellGridY + 11) - 0.5) * cellSize * scale * 0.35,
         tuftSize,
         tuftSize * 0.6,
         hashNoise(cellGridX + 12, cellGridY + 15) * Math.PI,
@@ -2327,10 +2205,11 @@ function drawBackground(width, height) {
       const riverMix = lerp(topLeft.riverMix, bottomRight.riverMix, 0.5);
       if (riverMix > 0) {
         const waterMix = riverMix;
-        const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36;
-        const riverCenter = screenX + pixelSize * 0.5 + ribbon * scale;
+        const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36 * scale;
         ctx.fillStyle = `rgba(84, 154, 194, ${(0.08 + waterMix * 0.14).toFixed(3)})`;
-        ctx.fillRect(riverCenter - pixelSize * 0.18, screenY - 1, pixelSize * 0.36, pixelSize + 2);
+        ctx.beginPath();
+        ctx.ellipse(center.x + ribbon, center.y, cellSize * scale * 0.18, cellSize * scale * 0.08, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }
@@ -2378,17 +2257,18 @@ function getSceneryPoint(item) {
   const normalY = Math.cos(point.heading);
   const worldX = point.x + normalX * item.offset;
   const worldY = point.y + normalY * item.offset;
+  const visualElevation = getTerrainHeightAtWorld(worldX, worldY);
 
   return {
     x: worldX,
     y: worldY,
-    elevation: getTerrainHeightAtWorld(worldX, worldY),
+    elevation: visualElevation / Math.max(TUNING.visuals.terrainHeightExaggeration, 1e-6),
+    visualElevation,
   };
 }
 
 function drawScenery(view, width, height) {
-  const { camera, scale } = view;
-  const animationTime = state.elapsed;
+  const { scale } = view;
 
   route.scenery.forEach((item) => {
     if (item.distance < view.startDistance - 60 || item.distance > view.endDistance + 60) {
@@ -2396,10 +2276,7 @@ function drawScenery(view, width, height) {
     }
 
     const point = getSceneryPoint(item);
-    const screen = {
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    };
+    const screen = worldToScreenWithView(point, view, width);
 
     if (screen.y < -80 || screen.y > height + 80 || screen.x < -80 || screen.x > width + 80) {
       return;
@@ -2570,7 +2447,7 @@ function drawScenery(view, width, height) {
 
 function drawTrack(width, height) {
   const view = getViewMetrics(width, height);
-  const { camera, scale, startDistance, endDistance } = view;
+  const { scale, startDistance, endDistance } = view;
 
   drawScenery(view, width, height);
 
@@ -2586,21 +2463,20 @@ function drawTrack(width, height) {
     const point = evaluateRoute(sample);
     const normalX = -Math.sin(point.heading);
     const normalY = Math.cos(point.heading);
-    centerPoints.push({
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    });
+    centerPoints.push(worldToScreenWithView(point, view, width));
     leftRail.push(
-      {
-        x: width * 0.5 + (point.x + normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-        y: view.anchorY + (point.y + normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-      },
+      worldToScreenWithView({
+        x: point.x + normalX * TRACK_WIDTH * 0.5,
+        y: point.y + normalY * TRACK_WIDTH * 0.5,
+        visualElevation: point.visualElevation,
+      }, view, width),
     );
     rightRail.push(
-      {
-        x: width * 0.5 + (point.x - normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-        y: view.anchorY + (point.y - normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-      },
+      worldToScreenWithView({
+        x: point.x - normalX * TRACK_WIDTH * 0.5,
+        y: point.y - normalY * TRACK_WIDTH * 0.5,
+        visualElevation: point.visualElevation,
+      }, view, width),
     );
   }
 
@@ -2663,14 +2539,16 @@ function drawTrack(width, height) {
     const point = evaluateRoute(sample);
     const normalX = -Math.sin(point.heading);
     const normalY = Math.cos(point.heading);
-    const leftPoint = {
-      x: width * 0.5 + (point.x + normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-      y: view.anchorY + (point.y + normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-    };
-    const rightPoint = {
-      x: width * 0.5 + (point.x - normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-      y: view.anchorY + (point.y - normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-    };
+    const leftPoint = worldToScreenWithView({
+      x: point.x + normalX * TRACK_WIDTH * 0.5,
+      y: point.y + normalY * TRACK_WIDTH * 0.5,
+      visualElevation: point.visualElevation,
+    }, view, width);
+    const rightPoint = worldToScreenWithView({
+      x: point.x - normalX * TRACK_WIDTH * 0.5,
+      y: point.y - normalY * TRACK_WIDTH * 0.5,
+      visualElevation: point.visualElevation,
+    }, view, width);
     ctx.beginPath();
     ctx.moveTo(leftPoint.x, leftPoint.y);
     ctx.lineTo(rightPoint.x, rightPoint.y);
@@ -2681,13 +2559,10 @@ function drawTrack(width, height) {
 }
 
 function drawRouteMarkers(view, width, height) {
-  const { camera, scale } = view;
+  const { scale } = view;
   route.stations.slice(1).forEach((station, index) => {
     const point = evaluateRoute(station.distance);
-    const screen = {
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    };
+    const screen = worldToScreenWithView(point, view, width);
     if (screen.y < -50 || screen.y > height + 50) {
       return;
     }
@@ -2708,10 +2583,11 @@ function drawRouteMarkers(view, width, height) {
     const stationVisual = station.visual || createStationVisual();
     const labelTrackOffset = buildingTrackOffset;
     const labelSideOffset = stationVisual.buildingSide === -1 ? -(buildingOffset + buildingDepth + 12) : buildingOffset + buildingDepth + 12;
+    const projectedAngle = getProjectedAngle(point.heading);
 
     ctx.save();
     ctx.translate(screen.x, screen.y);
-    ctx.rotate(point.heading);
+    ctx.rotate(projectedAngle);
 
     ctx.fillStyle = isActive ? "rgba(224, 232, 238, 0.92)" : "rgba(205, 214, 220, 0.84)";
     ctx.strokeStyle = isActive ? "rgba(248, 252, 255, 0.9)" : "rgba(228, 236, 242, 0.68)";
@@ -2760,8 +2636,8 @@ function drawRouteMarkers(view, width, height) {
     ctx.stroke();
     ctx.restore();
 
-    const labelX = screen.x + Math.cos(point.heading) * labelTrackOffset - Math.sin(point.heading) * labelSideOffset;
-    const labelY = screen.y + Math.sin(point.heading) * labelTrackOffset + Math.cos(point.heading) * labelSideOffset;
+    const labelX = screen.x + Math.cos(projectedAngle) * labelTrackOffset - Math.sin(projectedAngle) * labelSideOffset;
+    const labelY = screen.y + Math.sin(projectedAngle) * labelTrackOffset + Math.cos(projectedAngle) * labelSideOffset;
     ctx.fillStyle = "#101010";
     ctx.font = "600 12px Inter, sans-serif";
     ctx.textAlign = stationVisual.buildingSide > 0 ? "left" : "right";
@@ -2782,10 +2658,11 @@ function drawRouteMarkers(view, width, height) {
       x: signPoint.x - normalX * (TRACK_WIDTH * 0.9 + 14),
       y: signPoint.y - normalY * (TRACK_WIDTH * 0.9 + 14),
     };
-    const screen = {
-      x: width * 0.5 + (markerPoint.x - camera.x) * scale,
-      y: view.anchorY + (markerPoint.y - camera.y) * scale,
-    };
+    const screen = worldToScreenWithView({
+      x: markerPoint.x,
+      y: markerPoint.y,
+      visualElevation: signPoint.visualElevation,
+    }, view, width);
     if (screen.y < -40 || screen.y > height + 40 || screen.x < -40 || screen.x > width + 40) {
       return;
     }
@@ -2811,10 +2688,11 @@ function drawRouteMarkers(view, width, height) {
       x: signPoint.x + normalX * (TRACK_WIDTH * 0.9 + 14),
       y: signPoint.y + normalY * (TRACK_WIDTH * 0.9 + 14),
     };
-    const screen = {
-      x: width * 0.5 + (markerPoint.x - camera.x) * scale,
-      y: view.anchorY + (markerPoint.y - camera.y) * scale,
-    };
+    const screen = worldToScreenWithView({
+      x: markerPoint.x,
+      y: markerPoint.y,
+      visualElevation: signPoint.visualElevation,
+    }, view, width);
     if (screen.y < -44 || screen.y > height + 44 || screen.x < -44 || screen.x > width + 44) {
       return;
     }
@@ -2843,10 +2721,11 @@ function drawRouteMarkers(view, width, height) {
       x: basePoint.x + normalX * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
       y: basePoint.y + normalY * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
     };
-    const screen = {
-      x: width * 0.5 + (signalPoint.x - camera.x) * scale,
-      y: view.anchorY + (signalPoint.y - camera.y) * scale,
-    };
+    const screen = worldToScreenWithView({
+      x: signalPoint.x,
+      y: signalPoint.y,
+      visualElevation: basePoint.visualElevation,
+    }, view, width);
     if (screen.y < -60 || screen.y > height + 60 || screen.x < -60 || screen.x > width + 60) {
       return;
     }
@@ -2892,10 +2771,7 @@ function drawRouteMarkers(view, width, height) {
       const stopZone = getRedStopZone(signal);
       const stopCircleDistance = stopZone.centerDistance;
       const stopCirclePoint = evaluateRoute(stopCircleDistance);
-      const stopCircleScreen = {
-        x: width * 0.5 + (stopCirclePoint.x - camera.x) * scale,
-        y: view.anchorY + (stopCirclePoint.y - camera.y) * scale,
-      };
+      const stopCircleScreen = worldToScreenWithView(stopCirclePoint, view, width);
       const stopCircleRadius = Math.max(9, stopZone.radius * scale);
       ctx.fillStyle = "rgba(255, 106, 98, 0.1)";
       ctx.strokeStyle = "rgba(255, 146, 136, 0.7)";
@@ -2928,7 +2804,7 @@ function drawRouteMarkers(view, width, height) {
 
 function drawTrain(width, height) {
   const view = getViewMetrics(width, height);
-  const { camera, scale } = view;
+  const { scale } = view;
   const derailment = state.derailment;
   const renderUnits = getRenderedTrainUnits();
 
@@ -2939,19 +2815,13 @@ function drawTrain(width, height) {
     const currentUnit = renderUnits[index];
     const nextUnit = renderUnits[index + 1];
     const currentRear = derailment
-      ? { x: currentUnit.rearX, y: currentUnit.rearY }
+      ? { x: currentUnit.rearX, y: currentUnit.rearY, visualElevation: currentUnit.visualElevation }
       : evaluateRoute(currentUnit.rearDistance);
     const nextFront = derailment
-      ? { x: nextUnit.frontX, y: nextUnit.frontY }
+      ? { x: nextUnit.frontX, y: nextUnit.frontY, visualElevation: nextUnit.visualElevation }
       : evaluateRoute(nextUnit.frontDistance);
-    const rearScreen = {
-      x: width * 0.5 + (currentRear.x - camera.x) * scale,
-      y: view.anchorY + (currentRear.y - camera.y) * scale,
-    };
-    const frontScreen = {
-      x: width * 0.5 + (nextFront.x - camera.x) * scale,
-      y: view.anchorY + (nextFront.y - camera.y) * scale,
-    };
+    const rearScreen = worldToScreenWithView(currentRear, view, width);
+    const frontScreen = worldToScreenWithView(nextFront, view, width);
     ctx.beginPath();
     ctx.moveTo(rearScreen.x, rearScreen.y);
     ctx.lineTo(frontScreen.x, frontScreen.y);
@@ -2960,16 +2830,18 @@ function drawTrain(width, height) {
   ctx.restore();
 
   renderUnits.slice().reverse().forEach((unit) => {
-    const center = {
-      x: width * 0.5 + (unit.renderX - camera.x) * scale,
-      y: view.anchorY + (unit.renderY - camera.y) * scale,
-    };
+    const center = worldToScreenWithView({
+      x: unit.renderX,
+      y: unit.renderY,
+      visualElevation: unit.visualElevation,
+    }, view, width);
+    const projectedAngle = getProjectedAngle(unit.renderHeading);
     const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
     const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
 
     ctx.save();
     ctx.translate(center.x, center.y);
-    ctx.rotate(unit.renderHeading + Math.PI / 2);
+    ctx.rotate(projectedAngle + Math.PI / 2);
     ctx.shadowColor = "rgba(0,0,0,0.28)";
     ctx.shadowBlur = 18;
     ctx.fillStyle = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
@@ -3006,8 +2878,13 @@ function drawTrain(width, height) {
       return;
     }
 
-    const screenX = width * 0.5 + (puff.x - camera.x) * scale;
-    const screenY = view.anchorY + (puff.y - camera.y) * scale;
+    const puffScreen = worldToScreenWithView({
+      x: puff.x,
+      y: puff.y,
+      visualElevation: puff.visualElevation,
+    }, view, width);
+    const screenX = puffScreen.x;
+    const screenY = puffScreen.y;
     if (screenX < -radius || screenX > width + radius || screenY < -radius || screenY > height + radius) {
       return;
     }
@@ -3167,7 +3044,6 @@ function render() {
   drawTrain(width, height);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
-  renderDroneInset();
 }
 
 function update(dt) {
@@ -3218,7 +3094,6 @@ function startRun() {
 
   appShell.classList.remove("hidden");
   state = createInitialState();
-  syncDroneInsetRoute();
   state.started = true;
   introCard.classList.add("hidden");
   finishCard.classList.add("hidden");
@@ -3237,14 +3112,9 @@ async function initializeGame() {
   statusText.textContent = "Loading settings";
   subStatus.textContent = "Reading tuning.json on startup. Built-in defaults stay available as fallback.";
 
-  initializeDroneInsetResizeHandle();
-  initializeDroneInsetRenderer();
-  initializeDroneInsetToggle();
-
   await loadTuningConfig();
 
   state = createInitialState();
-  syncDroneInsetRoute();
   syncAssistLegend();
   updateUi();
   lastFrame = performance.now();

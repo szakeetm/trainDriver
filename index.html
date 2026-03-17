@@ -34,18 +34,7 @@
     <div class="app-shell hidden" id="appShell">
       <main class="game-panel">
         <div class="canvas-wrap">
-          <canvas id="gameCanvas" aria-label="Top down train driving game"></canvas>
-          <section class="drone-inset is-minimized" id="droneInset" aria-label="3D drone view">
-            <div class="drone-inset__header">
-              <div class="drone-inset__title-group">
-                <p class="eyebrow">3D view (beta)</p>
-                <span class="drone-inset__status" id="droneInsetStatus">Drone follow</span>
-              </div>
-              <button type="button" class="drone-inset__toggle" id="droneInsetToggle" aria-expanded="false" aria-controls="droneInsetMount">Expand</button>
-            </div>
-            <div class="drone-inset__mount" id="droneInsetMount"></div>
-            <div class="drone-inset__resize-handle" id="droneInsetResizeHandle" aria-hidden="true"></div>
-          </section>
+          <canvas id="gameCanvas" aria-label="Isometric train driving game"></canvas>
           <div class="station-assist hidden" id="stationAssist" aria-live="polite">
             <p class="eyebrow">Stop assist</p>
             <h3 id="assistStationTitle">Next station</h3>
@@ -149,8 +138,6 @@
       </aside>
     </div>
 
-    <script src="three.min.js"></script>
-    <script src="renderer3d.js"></script>
     <script src="game.js"></script>
   </body>
 </html>

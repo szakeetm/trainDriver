@@ -197,6 +197,9 @@
   },
   "visuals": {
     "gradientMarkerMinGrade": 0.008,
-    "gradientMarkerSpacingMin": 220
+    "gradientMarkerSpacingMin": 220,
+    "terrainHeightExaggeration": 2.7,
+    "isometricVerticalScale": 0.48,
+    "isometricElevationScale": 1.55
   }
 }
