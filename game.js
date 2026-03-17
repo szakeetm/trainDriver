@@ -68,7 +68,7 @@ const DEFAULT_TUNING = {
   },
   train: {
     trackWidth: 4, // Distance between rails used for drawing the track.
-    couplerGap: 1.4, // Gap in meters between each vehicle in the consist.
+    couplerGap: 1.8, // Gap in meters between each vehicle in the consist.
     maxPowerKw: 5500, // Full traction output represented when the power controller reaches 100%.
     maxBrakePressureBar: 6.5, // Full brake pipe pressure reduction represented when braking reaches 100%.
     // Vehicle definitions, front to back.
@@ -257,8 +257,8 @@ const DEFAULT_TUNING = {
     gradientMarkerMinGrade: 0.008, // Minimum absolute grade before a warning marker is shown.
     gradientMarkerSpacingMin: 220, // Minimum spacing in meters between successive gradient markers.
     terrainHeightExaggeration: 2.7, // Multiplier applied to rendered terrain and track heights so elevation reads clearly in the isometric view.
-    isometricVerticalScale: 0.48, // Screen-space vertical squash of the isometric projection.
-    isometricElevationScale: 1.55, // Extra screen-space lift per meter of elevation in the isometric projection.
+    isometricVerticalScale: 0.56, // Screen-space vertical squash of the isometric projection.
+    isometricElevationScale: 1.45, // Extra screen-space lift per meter of elevation in the isometric projection.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
     terrainNeighborHeightMaxDelta: 6, // Maximum allowed height difference between neighboring terrain gridpoints.
     terrainClearWidthMin: 20, // Minimum width in pixels of the cleared corridor around the track.
@@ -635,8 +635,12 @@ function getViewMetrics(width, height) {
   const trainPose = leadUnit.pose;
   const rearPose = rearUnit.rearPose;
   const frontPose = leadUnit.frontPose;
-  const targetAheadDistance = Math.max(TRAIN_TOTAL_LENGTH * 2, state.speed * 5);
+  const lengthTargetDistance = TRAIN_TOTAL_LENGTH;
+  const speedTargetDistance = state.speed * 5;
+  const targetAheadDistance = Math.max(lengthTargetDistance, speedTargetDistance);
   const centerTargetDistance = Math.min(route.totalLength, state.distance + targetAheadDistance);
+  const lengthTargetPose = evaluateRoute(Math.min(route.totalLength, state.distance + lengthTargetDistance));
+  const speedTargetPose = evaluateRoute(Math.min(route.totalLength, state.distance + speedTargetDistance));
   const centerTargetPose = evaluateRoute(centerTargetDistance);
   const camera = {
     x: centerTargetPose.x,
@@ -687,6 +691,16 @@ function getViewMetrics(width, height) {
     endDistance: Math.min(route.totalLength, centerTargetDistance + aheadRenderBuffer),
     leadDistance: centerTargetDistance - state.distance,
     trainLengthPixels,
+    debug: {
+      frontPose,
+      centerTargetPose,
+      lengthTargetPose,
+      speedTargetPose,
+      lengthTargetDistance,
+      speedTargetDistance,
+      chosenTargetDistance: targetAheadDistance,
+      chosenSource: speedTargetDistance > lengthTargetDistance ? "speed" : "length",
+    },
   };
 }
 
@@ -3529,6 +3543,133 @@ function drawHudOverlay(width, height) {
   drawRoutePredictor(width, height);
 }
 
+function drawCameraDebugOverlay(width, height) {
+  const view = getViewMetrics(width, height);
+  const debug = view.debug;
+  if (!debug) {
+    return;
+  }
+
+  function drawWorldGuide(fromPose, toPose, color, label, emphasized = false) {
+    const fromScreen = worldToScreenWithView(fromPose, view, width);
+    const toScreen = worldToScreenWithView(toPose, view, width);
+    const dx = toScreen.x - fromScreen.x;
+    const dy = toScreen.y - fromScreen.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const dirX = dx / length;
+    const dirY = dy / length;
+    const normalX = -dirY;
+    const normalY = dirX;
+    const arrowSize = emphasized ? 13 : 10;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = emphasized ? 3 : 2;
+    ctx.globalAlpha = emphasized ? 0.95 : 0.82;
+    ctx.beginPath();
+    ctx.moveTo(fromScreen.x, fromScreen.y);
+    ctx.lineTo(toScreen.x, toScreen.y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(toScreen.x, toScreen.y);
+    ctx.lineTo(toScreen.x - dirX * arrowSize + normalX * arrowSize * 0.48, toScreen.y - dirY * arrowSize + normalY * arrowSize * 0.48);
+    ctx.lineTo(toScreen.x - dirX * arrowSize - normalX * arrowSize * 0.48, toScreen.y - dirY * arrowSize - normalY * arrowSize * 0.48);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(toScreen.x, toScreen.y, emphasized ? 6 : 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(8, 14, 22, 0.9)";
+    ctx.beginPath();
+    ctx.roundRect(toScreen.x + 10, toScreen.y - 16, 24, 16, 6);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.font = "700 10px Inter, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(label, toScreen.x + 22, toScreen.y - 4.5);
+    ctx.restore();
+  }
+
+  function drawPoseOrientation(pose, color) {
+    const screen = worldToScreenWithView(pose, view, width);
+    const projectedAngle = getProjectedAngle(pose.heading);
+    const dirX = Math.cos(projectedAngle);
+    const dirY = Math.sin(projectedAngle);
+    const arrowLength = 22;
+    const arrowWidth = 6;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(screen.x, screen.y);
+    ctx.lineTo(screen.x + dirX * arrowLength, screen.y + dirY * arrowLength);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(screen.x + dirX * arrowLength, screen.y + dirY * arrowLength);
+    ctx.lineTo(
+      screen.x + dirX * (arrowLength - 8) - dirY * arrowWidth,
+      screen.y + dirY * (arrowLength - 8) + dirX * arrowWidth,
+    );
+    ctx.lineTo(
+      screen.x + dirX * (arrowLength - 8) + dirY * arrowWidth,
+      screen.y + dirY * (arrowLength - 8) - dirX * arrowWidth,
+    );
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  drawWorldGuide(debug.frontPose, debug.lengthTargetPose, "rgba(255, 191, 82, 0.95)", "L");
+  drawWorldGuide(debug.frontPose, debug.speedTargetPose, "rgba(114, 212, 255, 0.95)", "S");
+  drawWorldGuide(debug.frontPose, debug.centerTargetPose, "rgba(255, 255, 255, 0.98)", "C", true);
+  drawPoseOrientation(debug.frontPose, "rgba(255, 140, 140, 0.95)");
+  drawPoseOrientation(debug.lengthTargetPose, "rgba(255, 191, 82, 0.95)");
+  drawPoseOrientation(debug.speedTargetPose, "rgba(114, 212, 255, 0.95)");
+  drawPoseOrientation(debug.centerTargetPose, "rgba(255, 255, 255, 0.98)");
+
+  const panelX = width - 312;
+  const panelY = 18;
+  const panelWidth = 286;
+  const panelHeight = 124;
+  ctx.save();
+  ctx.fillStyle = "rgba(6, 16, 28, 0.72)";
+  ctx.strokeStyle = "rgba(170, 222, 255, 0.18)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.roundRect(panelX, panelY, panelWidth, panelHeight, 18);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#dff2ff";
+  ctx.font = "700 14px Inter, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("Camera debug", panelX + 16, panelY + 24);
+
+  const rows = [
+    { label: "Train px", value: `${view.trainLengthPixels.toFixed(1)} px`, color: "rgba(255,255,255,0.92)" },
+    { label: "Length", value: `${debug.lengthTargetDistance.toFixed(1)} m`, color: "rgba(255, 191, 82, 0.95)" },
+    { label: "Speed", value: `${debug.speedTargetDistance.toFixed(1)} m`, color: "rgba(114, 212, 255, 0.95)" },
+    { label: "Chosen", value: `${debug.chosenTargetDistance.toFixed(1)} m (${debug.chosenSource})`, color: "rgba(255,255,255,0.98)" },
+  ];
+  rows.forEach((row, index) => {
+    const y = panelY + 48 + index * 18;
+    ctx.fillStyle = row.color;
+    ctx.fillRect(panelX + 16, y - 8, 8, 8);
+    ctx.fillStyle = "rgba(223, 242, 255, 0.82)";
+    ctx.font = "600 12px Inter, sans-serif";
+    ctx.fillText(row.label, panelX + 32, y);
+    ctx.fillStyle = "#f5fbff";
+    ctx.font = "700 12px Inter, sans-serif";
+    ctx.fillText(row.value, panelX + 102, y);
+  });
+  ctx.restore();
+}
+
 function drawRoutePredictor(width, height) {
   const upcomingEntries = getUpcomingRouteEntries();
   const panelWidth = Math.min(TUNING.visuals.routePredictorWidth, width - 36);
@@ -3650,6 +3791,7 @@ function render() {
   drawBackground(width, height);
   drawTrack(width, height);
   drawTrain(width, height);
+  drawCameraDebugOverlay(width, height);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
 }
