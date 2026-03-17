@@ -489,6 +489,18 @@ function updateGameAudio(dt = 0) {
     const masterLevel = activeRun || moving ? 1 : 0;
     setAudioParam(gameAudio.master.gain, masterLevel, 0.2);
 
+    const routeInfo = route ? evaluateRoute(state.distance) : null;
+    const curvature = Math.abs(routeInfo?.curvature || 0);
+    const curveRadius = curvature > 1e-6 ? 1 / curvature : Infinity;
+    const curveTightness = Number.isFinite(curveRadius)
+      ? clamp(
+        (TUNING.route.broadCurveRadiusMax - curveRadius)
+          / Math.max(TUNING.route.broadCurveRadiusMax - TUNING.route.sharpCurveRadiusMin, 1e-6),
+        0,
+        1,
+      )
+      : 0;
+
     const speedNorm = clamp(state.speed / Math.max(TUNING.physics.speedCap, 1e-6), 0, 1);
     const throttle = clamp(Math.max(0, state.actualControl), 0, 1);
     const brake = clamp(Math.max(0, -state.actualControl), 0, 1);
@@ -502,9 +514,15 @@ function updateGameAudio(dt = 0) {
     setAudioParam(gameAudio.engineHigh.frequency, 52 + throttle * 44 + speedNorm * 26 + accelNorm * 10, 0.08);
     setAudioParam(gameAudio.engineFilter.frequency, 180 + throttle * 520 + speedNorm * 280 + accelNorm * 140, 0.12);
 
-    const rollingGain = activeRun ? (speedNorm > 0.01 ? 0.03 + Math.pow(speedNorm, 1.08) * 0.22 : 0) : 0;
+    const rollingGain = activeRun
+      ? (
+        speedNorm > 0.01
+          ? 0.018 + Math.pow(speedNorm, 1.08) * (0.14 + curveTightness * 0.14)
+          : 0
+      )
+      : 0;
     setAudioParam(gameAudio.rollingMix.gain, rollingGain, 0.14);
-    setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 2200, 0.12);
+    setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 1800 + curveTightness * 900, 0.12);
 
     const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.24 + brakeLoad * 0.9) * 0.42 : 0;
     setAudioParam(gameAudio.brakeMix.gain, brakeGain, 0.05);
@@ -523,6 +541,7 @@ function updateGameAudio(dt = 0) {
         speed: state.speed,
         throttle,
         brake,
+        curveRadius: Number.isFinite(curveRadius) ? curveRadius : null,
       });
       audioDebugLogged = true;
     }
