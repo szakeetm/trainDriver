@@ -380,8 +380,8 @@ function createGameAudio() {
 
   engineLow.type = "sawtooth";
   engineHigh.type = "triangle";
-  engineLow.frequency.value = 34;
-  engineHigh.frequency.value = 52;
+  engineLow.frequency.value = 24;
+  engineHigh.frequency.value = 40;
   engineHigh.detune.value = 7;
   engineLowGain.gain.value = 0.085;
   engineHighGain.gain.value = 0.042;
@@ -447,6 +447,7 @@ function createGameAudio() {
     sleeperFilter,
     sleeperMix,
     sleeperPhase: 0,
+    curveTightnessSmoothed: 0,
   };
 }
 
@@ -500,6 +501,9 @@ function updateGameAudio(dt = 0) {
         1,
       )
       : 0;
+    const curveBlend = 1 - Math.exp(-dt / 0.28);
+    gameAudio.curveTightnessSmoothed += (curveTightness - gameAudio.curveTightnessSmoothed) * curveBlend;
+    const curveTightnessSmooth = gameAudio.curveTightnessSmoothed;
 
     const speedNorm = clamp(state.speed / Math.max(TUNING.physics.speedCap, 1e-6), 0, 1);
     const throttle = clamp(Math.max(0, state.actualControl), 0, 1);
@@ -510,19 +514,19 @@ function updateGameAudio(dt = 0) {
     const engineBase = activeRun ? 0.05 : 0;
     const engineGain = engineBase + throttle * 0.14 + accelNorm * 0.055 + speedNorm * 0.04;
     setAudioParam(gameAudio.engineMix.gain, engineGain, 0.12);
-    setAudioParam(gameAudio.engineLow.frequency, 30 + throttle * 28 + speedNorm * 16, 0.08);
-    setAudioParam(gameAudio.engineHigh.frequency, 52 + throttle * 44 + speedNorm * 26 + accelNorm * 10, 0.08);
-    setAudioParam(gameAudio.engineFilter.frequency, 180 + throttle * 520 + speedNorm * 280 + accelNorm * 140, 0.12);
+    setAudioParam(gameAudio.engineLow.frequency, 22 + throttle * 20 + speedNorm * 12, 0.1);
+    setAudioParam(gameAudio.engineHigh.frequency, 36 + throttle * 34 + speedNorm * 20 + accelNorm * 8, 0.1);
+    setAudioParam(gameAudio.engineFilter.frequency, 150 + throttle * 420 + speedNorm * 220 + accelNorm * 120, 0.14);
 
     const rollingGain = activeRun
       ? (
         speedNorm > 0.01
-          ? 0.018 + Math.pow(speedNorm, 1.08) * (0.14 + curveTightness * 0.14)
+          ? 0.018 + Math.pow(speedNorm, 1.08) * (0.14 + curveTightnessSmooth * 0.14)
           : 0
       )
       : 0;
     setAudioParam(gameAudio.rollingMix.gain, rollingGain, 0.14);
-    setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 1800 + curveTightness * 900, 0.12);
+    setAudioParam(gameAudio.rollingFilter.frequency, 180 + speedNorm * 1800 + curveTightnessSmooth * 900, 0.16);
 
     const brakeGain = activeRun ? brake * clamp(state.speed / 28, 0, 1) * (0.24 + brakeLoad * 0.9) * 0.42 : 0;
     setAudioParam(gameAudio.brakeMix.gain, brakeGain, 0.05);
@@ -542,6 +546,7 @@ function updateGameAudio(dt = 0) {
         throttle,
         brake,
         curveRadius: Number.isFinite(curveRadius) ? curveRadius : null,
+        curveTightnessSmooth,
       });
       audioDebugLogged = true;
     }
