@@ -103,15 +103,15 @@ const DEFAULT_TUNING = {
   camera: {
     lookBehindMin: 150, // Distance in meters kept visible behind the train at zero speed.
     lookBehindBySpeed: 360, // Extra behind distance added as speed rises.
-    lookAheadMin: 420, // Distance in meters kept visible ahead of the train at zero speed.
-    lookAheadBySpeed: 1280, // Extra forward look-ahead added as speed rises.
+    lookAheadMin: 620, // Distance in meters kept visible ahead of the train at zero speed.
+    lookAheadBySpeed: 1760, // Extra forward look-ahead added as speed rises.
     leadDistanceMin: 90, // Minimum distance in meters that the camera focus point leads the train along the route.
     leadDistanceBySpeed: 520, // Extra forward lead distance added as speed rises so the view looks into the curve.
     trainScreenMargin: 96, // Minimum screen-space margin in pixels kept around the train when the camera leads ahead.
     lateralSpanMin: 10, // Base side-to-side world span used for zoom when stopped.
-    lateralSpanBySpeed: 280, // Extra side-to-side world span added as speed rises.
-    stoppedZoomMultiplier: 3, // Extra zoom applied at zero speed after span-based scaling is computed.
-    movingZoomMultiplier: 1.85, // Zoom multiplier once the train is up to speed, keeping more speed sensation at high velocity.
+    lateralSpanBySpeed: 340, // Extra side-to-side world span added as speed rises.
+    stoppedZoomMultiplier: 2.55, // Extra zoom applied at zero speed after span-based scaling is computed.
+    movingZoomMultiplier: 1.56, // Zoom multiplier once the train is up to speed, keeping more speed sensation at high velocity.
     anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
   },
   route: {
@@ -671,7 +671,7 @@ function getViewMetrics(width, height) {
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
   const lookAhead = TUNING.camera.lookAheadMin
     + speedFactor * TUNING.camera.lookAheadBySpeed
-    + gradeFactor * 180;
+    + gradeFactor * 280;
   const rearDistance = Math.max(0, rearUnit.rearDistance - lookBehind);
   const aheadDistance = Math.min(route.totalLength, state.distance + lookAhead);
   const rearPose = rearUnit.rearPose;
@@ -687,8 +687,8 @@ function getViewMetrics(width, height) {
   const leadDistance = Math.min(requestedLeadDistance, Math.max(0, aheadDistance - state.distance));
   const rearRenderBuffer = Math.max(140, lookBehind * 0.6);
   const camera = {
-    x: (rearPose.x * 0.34) + (aheadPose.x * 0.66),
-    y: (rearPose.y * 0.34) + (aheadPose.y * 0.66),
+    x: (rearPose.x * 0.24) + (aheadPose.x * 0.76),
+    y: (rearPose.y * 0.24) + (aheadPose.y * 0.76),
   };
   const samplePoints = [];
   const sampleStep = 80;
@@ -729,9 +729,9 @@ function getViewMetrics(width, height) {
   scale *= 0.98;
   const anchorX = sideMargin - minProjX * scale;
   const dynamicAnchorY = clamp(
-    0.54 - verticalBias * (0.07 + gradeFactor * 0.07),
-    0.42,
-    0.64,
+    0.58 - verticalBias * (0.1 + gradeFactor * 0.08),
+    0.4,
+    0.68,
   );
   const anchorY = height * dynamicAnchorY - trainProj.y * scale;
 
@@ -1002,10 +1002,21 @@ function getTerrainGridHeight(gridX, gridY) {
   const worldY = gridY * cellSize;
   const broad = (fbmNoise(worldX * 0.00038 + 13, worldY * 0.00038 - 7) - 0.5) * 34;
   const medium = (fbmNoise(worldX * 0.0014 - 11, worldY * 0.0014 + 19) - 0.5) * 10;
-  const fine = (hashNoise(gridX * 0.73 + 5, gridY * 0.69 - 9) - 0.5) * 2.4;
-  const height = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
+  const fine = (hashNoise(gridX * 0.73 + 5, gridY * 0.69 - 9) - 0.5) * 0.8;
+  const rawHeight = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
+  const terraceStep = 6;
+  const height = Math.round(rawHeight / terraceStep) * terraceStep;
   route.terrainHeightCache.set(key, height);
   return height;
+}
+
+function getTerrainCellAverageHeight(cellGridX, cellGridY) {
+  return (
+    getTerrainGridHeight(cellGridX, cellGridY)
+    + getTerrainGridHeight(cellGridX + 1, cellGridY)
+    + getTerrainGridHeight(cellGridX, cellGridY + 1)
+    + getTerrainGridHeight(cellGridX + 1, cellGridY + 1)
+  ) * 0.25;
 }
 
 function getTerrainHeightAtWorld(worldX, worldY) {
@@ -2263,7 +2274,7 @@ function drawBackground(width, height) {
   ctx.fillRect(0, 0, width, height);
 
   const cellSize = TUNING.visuals.terrainCellSize;
-  const worldRadius = Math.max(width, height) / Math.max(scale, 1e-6);
+  const worldRadius = Math.max(width, height) * 1.7 / Math.max(scale, 1e-6);
   const startWorldX = Math.floor((camera.x - worldRadius - cellSize) / cellSize) * cellSize;
   const endWorldX = Math.ceil((camera.x + worldRadius + cellSize) / cellSize) * cellSize;
   const startWorldY = Math.floor((camera.y - worldRadius - cellSize) / cellSize) * cellSize;
@@ -2292,30 +2303,13 @@ function drawBackground(width, height) {
       const topEdgeDetail = mixPaletteColor(topLeft.detailColor, topRight.detailColor, 0.5);
       const bottomEdgeDetail = mixPaletteColor(bottomLeft.detailColor, bottomRight.detailColor, 0.5);
 
-      let topColor = topEdgeBase;
-      let bottomColor = bottomEdgeBase;
-      if (tileStyle.biomeSeed > 0.72) {
-        topColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(topEdgeBase, topEdgeAlt, 0.55)
-          : topEdgeAlt;
-        bottomColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(bottomEdgeBase, bottomEdgeAlt, 0.55)
-          : bottomEdgeAlt;
-      } else if (tileStyle.biomeSeed > 0.44) {
-        topColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(topEdgeAlt, topEdgeDetail, 0.35)
-          : topEdgeAlt;
-        bottomColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(bottomEdgeAlt, bottomEdgeDetail, 0.35)
-          : bottomEdgeAlt;
-      } else {
-        topColor = tileStyle.toneSeed > 0.45
-          ? mixPaletteColor(topEdgeBase, topEdgeDetail, 0.25)
-          : topEdgeBase;
-        bottomColor = tileStyle.toneSeed > 0.45
-          ? mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.25)
-          : bottomEdgeBase;
-      }
+      const cellAverageHeight = getTerrainCellAverageHeight(cellGridX, cellGridY);
+      const heightBand = Math.round(cellAverageHeight / 6);
+      const bandMix = clamp((heightBand + 8) / 24, 0, 1);
+      const stylizedTop = mixPaletteColor(topEdgeBase, topEdgeAlt, 0.2 + bandMix * 0.2);
+      const stylizedBottom = mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.18 + bandMix * 0.24);
+      const topColor = mixPaletteColor(stylizedTop, topEdgeDetail, tileStyle.toneSeed * 0.08);
+      const bottomColor = mixPaletteColor(stylizedBottom, bottomEdgeDetail, tileStyle.biomeSeed * 0.08);
       const topLeftHeight = getTerrainGridHeight(cellGridX, cellGridY);
       const topRightHeight = getTerrainGridHeight(cellGridX + 1, cellGridY);
       const bottomLeftHeight = getTerrainGridHeight(cellGridX, cellGridY + 1);
@@ -2348,9 +2342,55 @@ function drawBackground(width, height) {
         y: worldY + cellSize * 0.5,
         visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize * 0.5),
       }, view, width);
+      const rightNeighborHeight = getTerrainCellAverageHeight(cellGridX + 1, cellGridY);
+      const bottomNeighborHeight = getTerrainCellAverageHeight(cellGridX, cellGridY + 1);
 
       if (center.x < -cellSize * scale * 2 || center.x > width + cellSize * scale * 2 || center.y < -cellSize * scale * 2 || center.y > height + cellSize * scale * 2) {
         continue;
+      }
+
+      if (cellAverageHeight > rightNeighborHeight + 0.5) {
+        const rightDrop = cellAverageHeight - rightNeighborHeight;
+        const rightBottom = worldToScreenWithView({
+          x: worldX + cellSize,
+          y: worldY + cellSize * 0.5,
+          visualElevation: (topRightHeight + bottomRightHeight) * 0.5 - rightDrop,
+        }, view, width);
+        const lowerCenter = worldToScreenWithView({
+          x: worldX + cellSize * 0.5,
+          y: worldY + cellSize * 0.5,
+          visualElevation: getTerrainHeightAtWorld(worldX + cellSize * 0.5, worldY + cellSize * 0.5) - rightDrop,
+        }, view, width);
+        ctx.fillStyle = `rgba(74, 88, 55, ${clamp(0.2 + rightDrop * 0.018, 0.2, 0.42).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.moveTo(right.x, right.y);
+        ctx.lineTo(bottom.x, bottom.y);
+        ctx.lineTo(lowerCenter.x, lowerCenter.y);
+        ctx.lineTo(rightBottom.x, rightBottom.y);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      if (cellAverageHeight > bottomNeighborHeight + 0.5) {
+        const bottomDrop = cellAverageHeight - bottomNeighborHeight;
+        const lowerLeft = worldToScreenWithView({
+          x: worldX,
+          y: worldY + cellSize * 0.5,
+          visualElevation: (topLeftHeight + bottomLeftHeight) * 0.5 - bottomDrop,
+        }, view, width);
+        const lowerRight = worldToScreenWithView({
+          x: worldX + cellSize,
+          y: worldY + cellSize * 0.5,
+          visualElevation: (topRightHeight + bottomRightHeight) * 0.5 - bottomDrop,
+        }, view, width);
+        ctx.fillStyle = `rgba(98, 109, 63, ${clamp(0.18 + bottomDrop * 0.016, 0.18, 0.38).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.moveTo(left.x, left.y);
+        ctx.lineTo(bottom.x, bottom.y);
+        ctx.lineTo(lowerRight.x, lowerRight.y);
+        ctx.lineTo(lowerLeft.x, lowerLeft.y);
+        ctx.closePath();
+        ctx.fill();
       }
 
       const tileGradient = ctx.createLinearGradient(0, top.y, 0, bottom.y);
@@ -2996,7 +3036,7 @@ function drawTrain(width, height) {
 
     ctx.save();
     ctx.translate(center.x, center.y);
-    ctx.rotate(projectedAngle);
+    ctx.rotate(projectedAngle + Math.PI / 2);
     ctx.shadowColor = "rgba(0,0,0,0.28)";
     ctx.shadowBlur = 18;
     ctx.strokeStyle = "rgba(255,255,255,0.62)";
@@ -3008,6 +3048,17 @@ function drawTrain(width, height) {
     ctx.lineTo(base[3].x, base[3].y);
     ctx.lineTo(top[3].x, top[3].y);
     ctx.lineTo(top[2].x, top[2].y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = shadeColor(bodyColor, -24);
+    ctx.beginPath();
+    const leftFaceStart = unit.type === "locomotive" ? 4 : 3;
+    const leftFaceEnd = unit.type === "locomotive" ? 5 : 0;
+    ctx.moveTo(base[leftFaceStart].x, base[leftFaceStart].y);
+    ctx.lineTo(base[leftFaceEnd].x, base[leftFaceEnd].y);
+    ctx.lineTo(top[leftFaceEnd].x, top[leftFaceEnd].y);
+    ctx.lineTo(top[leftFaceStart].x, top[leftFaceStart].y);
     ctx.closePath();
     ctx.fill();
 
