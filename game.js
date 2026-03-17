@@ -342,6 +342,85 @@ let state = null;
 let lastFrame = performance.now();
 let showCameraDebugOverlay = false;
 
+const UI_UPDATE_INTERVAL_MS = 33;
+const uiCache = {
+  lastUiUpdateMs: 0,
+  remainingStationsKey: "",
+};
+const perfMonitor = {
+  enabled: false,
+  logIntervalMs: 1000,
+  lastLogMs: 0,
+  frameCount: 0,
+  updateMs: 0,
+  renderMs: 0,
+  uiMs: 0,
+  backgroundMs: 0,
+  trackMs: 0,
+  sceneryMs: 0,
+  trainMs: 0,
+  speedEffectsMs: 0,
+  hudMs: 0,
+  evaluateRouteCalls: 0,
+  terrainHeightCalls: 0,
+};
+
+function perfAdd(key, value) {
+  if (perfMonitor.enabled) {
+    perfMonitor[key] += value;
+  }
+}
+
+function perfCount(key, amount = 1) {
+  if (perfMonitor.enabled) {
+    perfMonitor[key] += amount;
+  }
+}
+
+function runUiUpdate(force, now) {
+  if (!perfMonitor.enabled) {
+    updateUi(force, now);
+    return;
+  }
+  const start = performance.now();
+  updateUi(force, now);
+  perfAdd("uiMs", performance.now() - start);
+}
+
+function maybeLogPerformance(now) {
+  if (!perfMonitor.enabled) {
+    return;
+  }
+
+  perfMonitor.frameCount += 1;
+  const elapsed = now - perfMonitor.lastLogMs;
+  if (elapsed < perfMonitor.logIntervalMs) {
+    return;
+  }
+
+  const frames = Math.max(1, perfMonitor.frameCount);
+  const perFrame = (value) => (value / frames).toFixed(2);
+  const fps = (frames * 1000) / Math.max(1, elapsed);
+  const frameMs = elapsed / frames;
+  console.info(
+    `[perf] fps ${fps.toFixed(1)} frame ${frameMs.toFixed(2)}ms | update ${perFrame(perfMonitor.updateMs)}ms render ${perFrame(perfMonitor.renderMs)}ms ui ${perFrame(perfMonitor.uiMs)}ms bg ${perFrame(perfMonitor.backgroundMs)}ms track ${perFrame(perfMonitor.trackMs)}ms scenery ${perFrame(perfMonitor.sceneryMs)}ms train ${perFrame(perfMonitor.trainMs)}ms speedFx ${perFrame(perfMonitor.speedEffectsMs)}ms hud ${perFrame(perfMonitor.hudMs)}ms routeEval ${Math.round(perfMonitor.evaluateRouteCalls / frames)}/f terrainH ${Math.round(perfMonitor.terrainHeightCalls / frames)}/f`,
+  );
+
+  perfMonitor.lastLogMs = now;
+  perfMonitor.frameCount = 0;
+  perfMonitor.updateMs = 0;
+  perfMonitor.renderMs = 0;
+  perfMonitor.uiMs = 0;
+  perfMonitor.backgroundMs = 0;
+  perfMonitor.trackMs = 0;
+  perfMonitor.sceneryMs = 0;
+  perfMonitor.trainMs = 0;
+  perfMonitor.speedEffectsMs = 0;
+  perfMonitor.hudMs = 0;
+  perfMonitor.evaluateRouteCalls = 0;
+  perfMonitor.terrainHeightCalls = 0;
+}
+
 function cloneConfigValue(value) {
   if (Array.isArray(value)) {
     return value.map(cloneConfigValue);
@@ -483,6 +562,24 @@ function formatDistanceKm(distance) {
   return `${(Math.max(0, distance) / 1000).toFixed(1)} km`;
 }
 
+function setTextIfChanged(element, value) {
+  if (element.textContent !== value) {
+    element.textContent = value;
+  }
+}
+
+function setStyleValueIfChanged(element, property, value) {
+  if (element.style[property] !== value) {
+    element.style[property] = value;
+  }
+}
+
+function toggleClassIfChanged(element, className, enabled) {
+  if (element.classList.contains(className) !== enabled) {
+    element.classList.toggle(className, enabled);
+  }
+}
+
 function getGameProgressPercent() {
   const finalStation = route?.stations?.[route.stations.length - 1];
   if (!finalStation || finalStation.distance <= 0) {
@@ -496,15 +593,24 @@ function getGameProgressPercent() {
   return clamp((state.distance / finalStation.distance) * 100, 0, 100);
 }
 
-function renderRemainingStations() {
-  const upcomingStations = route.stations.slice(state.stationIndex);
-
-  if (!upcomingStations.length) {
-    remainingStations.innerHTML = '<li class="station-progress-empty">No remaining stations.</li>';
+function renderRemainingStations(force = false) {
+  const refreshBucket = Math.floor(Math.max(0, state.distance) / 50);
+  const listKey = `${state.stationIndex}|${refreshBucket}`;
+  if (!force && uiCache.remainingStationsKey === listKey) {
     return;
   }
 
-  remainingStations.innerHTML = upcomingStations
+  const upcomingStations = route.stations.slice(state.stationIndex);
+
+  if (!upcomingStations.length) {
+    if (remainingStations.innerHTML !== '<li class="station-progress-empty">No remaining stations.</li>') {
+      remainingStations.innerHTML = '<li class="station-progress-empty">No remaining stations.</li>';
+    }
+    uiCache.remainingStationsKey = listKey;
+    return;
+  }
+
+  const nextMarkup = upcomingStations
     .map((station) => `
       <li class="station-progress-item">
         <strong>${station.name}</strong>
@@ -512,6 +618,12 @@ function renderRemainingStations() {
       </li>
     `)
     .join("");
+
+  if (remainingStations.innerHTML !== nextMarkup) {
+    remainingStations.innerHTML = nextMarkup;
+  }
+
+  uiCache.remainingStationsKey = listKey;
 }
 
 function syncAssistLegend() {
@@ -1071,6 +1183,8 @@ function evaluateSegment(segment, distanceIntoSegment) {
 }
 
 function evaluateRoute(distance) {
+  perfCount("evaluateRouteCalls");
+
   if (distance < 0) {
     const firstSegment = route.segments[0];
     const elevationInfo = route && route.elevationProfile
@@ -1091,9 +1205,22 @@ function evaluateRoute(distance) {
   }
 
   const clampedDistance = clamp(distance, 0, route.totalLength);
-  const segment = route.segments.find(
-    (item) => clampedDistance >= item.start && clampedDistance <= item.end,
-  ) || route.segments[route.segments.length - 1];
+  let low = 0;
+  let high = route.segments.length - 1;
+  let segment = route.segments[high];
+
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const candidate = route.segments[mid];
+    if (clampedDistance < candidate.start) {
+      high = mid - 1;
+    } else if (clampedDistance > candidate.end) {
+      low = mid + 1;
+    } else {
+      segment = candidate;
+      break;
+    }
+  }
 
   return evaluateSegment(segment, clampedDistance - segment.start);
 }
@@ -1319,6 +1446,8 @@ function getTerrainCellAverageHeight(cellGridX, cellGridY) {
 }
 
 function getTerrainHeightAtWorld(worldX, worldY) {
+  perfCount("terrainHeightCalls");
+
   const cellSize = TUNING.visuals.terrainCellSize;
   const cellX = Math.floor(worldX / cellSize);
   const cellY = Math.floor(worldY / cellSize);
@@ -1655,6 +1784,9 @@ function createTerrainTileStyle(cellGridX, cellGridY) {
     topRightKey: `${cellGridX + 1},${cellGridY}`,
     bottomLeftKey: `${cellGridX},${cellGridY + 1}`,
     bottomRightKey: `${cellGridX + 1},${cellGridY + 1}`,
+    shadeSeed: hashNoise(cellGridX * 0.31 + 17.2, cellGridY * 0.27 - 9.6),
+    detailSeed: hashNoise(cellGridX * 0.43 - 5.1, cellGridY * 0.39 + 12.8),
+    lineSeed: hashNoise(cellGridX * 0.19 + 3.7, cellGridY * 0.23 + 21.4),
   };
 }
 
@@ -2440,7 +2572,12 @@ function finishRun() {
   });
 }
 
-function updateUi() {
+function updateUi(force = false, now = performance.now()) {
+  if (!force && now - uiCache.lastUiUpdateMs < UI_UPDATE_INTERVAL_MS) {
+    return;
+  }
+  uiCache.lastUiUpdateMs = now;
+
   const nextStation = route.stations[state.stationIndex];
   const upcomingLimit = findUpcomingLimit();
   const gradientPercent = getCurrentGradientPercent();
@@ -2451,54 +2588,54 @@ function updateUi() {
   const statusMessage = state.signalStatus ? state.signalStatus.message : state.message;
   const statusDetail = state.signalStatus ? state.signalStatus.detail : state.detail;
 
-  statusText.textContent = statusMessage;
-  subStatus.textContent = statusDetail;
-  speedKph.textContent = Math.round(state.speed * 3.6);
-  lineLimitKph.textContent = shownLimit == null ? "No limit" : Math.round(shownLimit * 3.6);
-  lineLimitSecondary.textContent = shownLimit == null
+  setTextIfChanged(statusText, statusMessage);
+  setTextIfChanged(subStatus, statusDetail);
+  setTextIfChanged(speedKph, String(Math.round(state.speed * 3.6)));
+  setTextIfChanged(lineLimitKph, shownLimit == null ? "No limit" : String(Math.round(shownLimit * 3.6)));
+  setTextIfChanged(lineLimitSecondary, shownLimit == null
     ? `Line unrestricted${Math.abs(gradientPercent) >= 0.05 ? ` • ${gradientPercent >= 0 ? "Up" : "Down"} ${Math.abs(gradientPercent).toFixed(1)}%` : ""}`
-    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h${Math.abs(gradientPercent) >= 0.05 ? ` • ${gradientPercent >= 0 ? "Up" : "Down"} ${Math.abs(gradientPercent).toFixed(1)}%` : ""}`;
-  distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
-  stationName.textContent = nextStation ? nextStation.name : "All stations served";
+    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h${Math.abs(gradientPercent) >= 0.05 ? ` • ${gradientPercent >= 0 ? "Up" : "Down"} ${Math.abs(gradientPercent).toFixed(1)}%` : ""}`);
+  setTextIfChanged(distanceToStation, nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived");
+  setTextIfChanged(stationName, nextStation ? nextStation.name : "All stations served");
   const progressPercent = getGameProgressPercent();
-  gameProgress.textContent = Math.round(progressPercent);
-  gameProgressFill.style.width = `${progressPercent}%`;
-  elapsedTime.textContent = formatTime(state.elapsed);
-  penaltyTime.textContent = String(Math.floor(Math.max(0, state.penalties)));
-  stopError.textContent = state.lastStopError == null ? "—" : `${state.lastStopError.toFixed(1)} m`;
-  renderRemainingStations();
+  setTextIfChanged(gameProgress, String(Math.round(progressPercent)));
+  setStyleValueIfChanged(gameProgressFill, "width", `${progressPercent}%`);
+  setTextIfChanged(elapsedTime, formatTime(state.elapsed));
+  setTextIfChanged(penaltyTime, String(Math.floor(Math.max(0, state.penalties))));
+  setTextIfChanged(stopError, state.lastStopError == null ? "—" : `${state.lastStopError.toFixed(1)} m`);
+  renderRemainingStations(force);
 
   updateBar(actualFill, state.actualControl);
   updateMarker(requestedMarker, state.requestedControl);
-  requestedLabel.textContent = `Target ${controlLabel(state.requestedControl)}`;
-  actualLabel.textContent = controlLabel(state.actualControl);
+  setTextIfChanged(requestedLabel, `Target ${controlLabel(state.requestedControl)}`);
+  setTextIfChanged(actualLabel, controlLabel(state.actualControl));
   const delta = Math.abs(state.requestedControl - state.actualControl);
-  controlDelta.textContent = delta < 0.04 ? "Tracking" : `Lag ${Math.round(delta * 100)}%`;
+  setTextIfChanged(controlDelta, delta < 0.04 ? "Tracking" : `Lag ${Math.round(delta * 100)}%`);
 
-  accelerateButton.classList.toggle("active", keys.accelerate);
-  brakeButton.classList.toggle("active", keys.brake);
+  toggleClassIfChanged(accelerateButton, "active", keys.accelerate);
+  toggleClassIfChanged(brakeButton, "active", keys.brake);
 
   if (assist) {
-    stationAssist.classList.remove("hidden");
-    assistStationTitle.textContent = assist.station.name;
-    assistDistanceText.textContent = assist.gap >= 0
+    toggleClassIfChanged(stationAssist, "hidden", false);
+    setTextIfChanged(assistStationTitle, assist.station.name);
+    setTextIfChanged(assistDistanceText, assist.gap >= 0
       ? `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m short of the stop mark.`
-      : `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m beyond the stop mark.`;
-    assistFrontMarker.style.left = `${assist.markerPercent}%`;
+      : `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m beyond the stop mark.`);
+    setStyleValueIfChanged(assistFrontMarker, "left", `${assist.markerPercent}%`);
   } else {
-    stationAssist.classList.add("hidden");
+    toggleClassIfChanged(stationAssist, "hidden", true);
   }
 }
 
 function updateBar(element, value) {
   const center = 50;
   const magnitude = Math.abs(value) * 50;
-  element.style.width = `${magnitude}%`;
-  element.style.left = value >= 0 ? `${center}%` : `${center - magnitude}%`;
+  setStyleValueIfChanged(element, "width", `${magnitude}%`);
+  setStyleValueIfChanged(element, "left", value >= 0 ? `${center}%` : `${center - magnitude}%`);
 }
 
 function updateMarker(element, value) {
-  element.style.left = `${50 + value * 50}%`;
+  setStyleValueIfChanged(element, "left", `${50 + value * 50}%`);
 }
 
 function worldToScreenWithView(point, view, width) {
@@ -2750,6 +2887,12 @@ function drawBackground(width, height) {
       for (let worldX = startWorldX; worldX <= endWorldX; worldX += cellSize) {
         const cellGridX = Math.floor(worldX / cellSize);
         const cellGridY = Math.floor(worldY / cellSize);
+        const tileKey = `${cellGridX},${cellGridY}`;
+        let tileStyle = route.terrainTileCache.get(tileKey);
+        if (!tileStyle) {
+          tileStyle = createTerrainTileStyle(cellGridX, cellGridY);
+          route.terrainTileCache.set(tileKey, tileStyle);
+        }
 
         const topLeft = getTerrainCornerStyle(cellGridX, cellGridY);
         const topRight = getTerrainCornerStyle(cellGridX + 1, cellGridY);
@@ -2811,8 +2954,61 @@ function drawBackground(width, height) {
           continue;
         }
 
-        const fillColor = toGlColor(mixPaletteColor(topColor, bottomColor, 0.5), 0.42);
-        webglTerrainRenderer.pushSolidQuad(top, right, bottom, left, fillColor);
+        const shadeMix = tileStyle.shadeSeed - 0.5;
+        const detailMix = tileStyle.detailSeed - 0.5;
+        const modTop = mixPaletteColor(
+          topColor,
+          mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5),
+          clamp(0.06 + shadeMix * 0.1, 0.02, 0.14),
+        );
+        const modBottom = mixPaletteColor(
+          bottomColor,
+          mixPaletteColor(topEdgeAlt, bottomEdgeAlt, 0.5),
+          clamp(0.05 + detailMix * 0.08, 0.01, 0.13),
+        );
+
+        const topBlend = toGlColor(modTop, 0.28);
+        const bottomBlend = toGlColor(modBottom, 0.3);
+        webglTerrainRenderer.pushGradientQuad(
+          top,
+          right,
+          bottom,
+          left,
+          topBlend,
+          toGlColor(mixPaletteColor(modTop, modBottom, 0.25), 0.31),
+          bottomBlend,
+          toGlColor(mixPaletteColor(modTop, modBottom, 0.7), 0.31),
+        );
+
+        const detailColor = toGlColor(mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5), -0.08);
+        const diagStrength = clamp(0.018 + relief * 0.0024, 0.018, 0.055);
+        const detailStroke = [detailColor[0], detailColor[1], detailColor[2], diagStrength];
+        const lineShiftA = 0.24 + tileStyle.lineSeed * 0.42;
+        const lineShiftB = 0.22 + (1 - tileStyle.lineSeed) * 0.44;
+        webglTerrainRenderer.pushLine(
+          {
+            x: lerp(top.x, left.x, lineShiftA),
+            y: lerp(top.y, left.y, lineShiftA),
+          },
+          {
+            x: lerp(right.x, bottom.x, lineShiftA),
+            y: lerp(right.y, bottom.y, lineShiftA),
+          },
+          1,
+          detailStroke,
+        );
+        webglTerrainRenderer.pushLine(
+          {
+            x: lerp(top.x, right.x, lineShiftB),
+            y: lerp(top.y, right.y, lineShiftB),
+          },
+          {
+            x: lerp(left.x, bottom.x, lineShiftB),
+            y: lerp(left.y, bottom.y, lineShiftB),
+          },
+          1,
+          [1, 1, 1, clamp(diagStrength * 0.66, 0.01, 0.035)],
+        );
 
         const outline = [1, 1, 1, clamp(0.06 + relief * 0.006, 0.04, 0.12)];
         webglTerrainRenderer.pushLine(top, right, 1, outline);
@@ -3290,12 +3486,20 @@ function drawTrack(width, height) {
   const view = getViewMetrics(width, height);
   const { scale, startDistance, endDistance } = view;
 
-  drawScenery(view, width, height);
+  if (perfMonitor.enabled) {
+    const sceneryStart = performance.now();
+    drawScenery(view, width, height);
+    perfAdd("sceneryMs", performance.now() - sceneryStart);
+  } else {
+    drawScenery(view, width, height);
+  }
 
   const centerPoints = [];
   const leftRail = [];
   const rightRail = [];
-  const sampleStep = TUNING.visuals.trackSampleStep;
+  const baseSampleStep = TUNING.visuals.trackSampleStep;
+  const sampleMultiplier = scale < 0.12 ? 4 : scale < 0.18 ? 3 : scale < 0.26 ? 2 : 1;
+  const sampleStep = baseSampleStep * sampleMultiplier;
   const sampleStart = Math.max(0, Math.floor(startDistance / sampleStep) * sampleStep);
   const sleeperWorldStep = sampleStep * TUNING.visuals.sleeperStep;
   const sleeperStart = Math.max(0, Math.floor(startDistance / sleeperWorldStep) * sleeperWorldStep);
@@ -4305,6 +4509,7 @@ function drawSpeedEffects(width, height) {
 }
 
 function render() {
+  const renderStart = perfMonitor.enabled ? performance.now() : 0;
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
 
@@ -4312,29 +4517,63 @@ function render() {
     ctx.clearRect(0, 0, width, height);
   }
 
-  drawBackground(width, height);
-  drawTrack(width, height);
-  drawTrain(width, height);
-  drawSpeedEffects(width, height);
+  if (perfMonitor.enabled) {
+    const backgroundStart = performance.now();
+    drawBackground(width, height);
+    perfAdd("backgroundMs", performance.now() - backgroundStart);
+
+    const trackStart = performance.now();
+    drawTrack(width, height);
+    perfAdd("trackMs", performance.now() - trackStart);
+
+    const trainStart = performance.now();
+    drawTrain(width, height);
+    perfAdd("trainMs", performance.now() - trainStart);
+
+    const speedEffectsStart = performance.now();
+    drawSpeedEffects(width, height);
+    perfAdd("speedEffectsMs", performance.now() - speedEffectsStart);
+  } else {
+    drawBackground(width, height);
+    drawTrack(width, height);
+    drawTrain(width, height);
+    drawSpeedEffects(width, height);
+  }
 
   if (usingWebGL) {
     webglBlitRenderer.draw(legacyCanvas);
     hudCtx.clearRect(0, 0, width, height);
   }
 
-  drawCameraDebugOverlay(width, height);
-  drawHudOverlay(width, height);
+  if (perfMonitor.enabled) {
+    const hudStart = performance.now();
+    drawCameraDebugOverlay(width, height);
+    drawHudOverlay(width, height);
+    perfAdd("hudMs", performance.now() - hudStart);
+    perfAdd("renderMs", performance.now() - renderStart);
+  } else {
+    drawCameraDebugOverlay(width, height);
+    drawHudOverlay(width, height);
+  }
 }
 
-function update(dt) {
+function update(dt, now) {
+  const updateStart = perfMonitor.enabled ? performance.now() : 0;
+
   if (!state.started || state.finished) {
-    updateUi();
+    runUiUpdate(false, now);
+    if (perfMonitor.enabled) {
+      perfAdd("updateMs", performance.now() - updateStart);
+    }
     return;
   }
 
   if (state.derailment) {
     updateDerailment(dt);
-    updateUi();
+    runUiUpdate(false, now);
+    if (perfMonitor.enabled) {
+      perfAdd("updateMs", performance.now() - updateStart);
+    }
     return;
   }
 
@@ -4343,27 +4582,40 @@ function update(dt) {
   updatePhysics(dt);
   updateDieselExhaust(dt);
   if (processSignalPasses()) {
-    updateUi();
+    runUiUpdate(false, now);
+    if (perfMonitor.enabled) {
+      perfAdd("updateMs", performance.now() - updateStart);
+    }
     return;
   }
   if (processSignals(dt)) {
-    updateUi();
+    runUiUpdate(false, now);
+    if (perfMonitor.enabled) {
+      perfAdd("updateMs", performance.now() - updateStart);
+    }
     return;
   }
   if (checkFailureConditions()) {
-    updateUi();
+    runUiUpdate(false, now);
+    if (perfMonitor.enabled) {
+      perfAdd("updateMs", performance.now() - updateStart);
+    }
     return;
   }
   updatePenalties(dt);
   updateStations();
-  updateUi();
+  runUiUpdate(false, now);
+  if (perfMonitor.enabled) {
+    perfAdd("updateMs", performance.now() - updateStart);
+  }
 }
 
 function loop(now) {
   const dt = Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
-  update(dt);
+  update(dt, now);
   render();
+  maybeLogPerformance(now);
   requestAnimationFrame(loop);
 }
 
@@ -4381,7 +4633,7 @@ function startRun() {
   resizeCanvas();
   state.message = "Departing Origin";
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
-  updateUi();
+  runUiUpdate(true, performance.now());
 }
 
 startButton.addEventListener("click", startRun);
@@ -4391,6 +4643,13 @@ cameraDebugToggle.addEventListener("change", () => {
 });
 
 function initializeGame() {
+  const query = new URLSearchParams(window.location.search);
+  perfMonitor.enabled = query.has("perf");
+  if (perfMonitor.enabled) {
+    perfMonitor.lastLogMs = performance.now();
+    console.info("[perf] instrumentation enabled via ?perf");
+  }
+
   document.body.classList.add("cover-active");
   statusText.textContent = "Loading settings";
   subStatus.textContent = "Applying built-in game tuning.";
@@ -4401,7 +4660,7 @@ function initializeGame() {
   showCameraDebugOverlay = false;
   cameraDebugToggle.checked = false;
   syncAssistLegend();
-  updateUi();
+  runUiUpdate(true, performance.now());
   lastFrame = performance.now();
   requestAnimationFrame(loop);
 }

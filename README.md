@@ -32,6 +32,16 @@ Gameplay tuning can be overridden in `tuning.json`, which is loaded on startup.
 
 For a smoother local workflow, you can also serve the folder with any static file server. That is the most reliable way to ensure `tuning.json` is read by the browser; when opening the page directly from disk, the game falls back to the built-in defaults if the JSON file cannot be fetched.
 
+## Performance Profiling
+
+The game includes an opt-in runtime profiler that prints per-second frame cost summaries in the browser console.
+
+- Enable it by adding `?perf` to the page URL.
+- Example local URL: `http://localhost:8080/index.html?perf`
+- Look for `[perf]` log lines with average per-frame timings for update, render, HUD, scenery, track, and call counts for route and terrain sampling.
+
+This mode is intended for diagnosis only and is disabled by default.
+
 ## Files
 
 - `index.html`: game shell and HUD markup
