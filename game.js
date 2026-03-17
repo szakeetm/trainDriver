@@ -160,14 +160,14 @@ const DEFAULT_TUNING = {
     yellowBlockLengthMin: 420, // Minimum distance in meters that a yellow restriction remains active after passing it.
     yellowBlockLengthMax: 1100, // Maximum distance in meters that a yellow restriction remains active after passing it.
     redApproachDistance: 650, // Distance in meters ahead of a red signal where the HUD starts warning about it.
-    redStopWindow: 22, // Distance in meters before a red signal where stopping counts as waiting at the signal.
+    redStopWindow: 100, // Distance in meters before a red signal where stopping counts as waiting at the signal.
     redStopSpeed: 0.25, // Maximum speed in m/s that still counts as stopped at a red signal.
     redHoldMin: 2.5, // Minimum seconds that a red signal stays at stop once the train is waiting.
     redHoldMax: 5.5, // Maximum seconds that a red signal stays at stop once the train is waiting.
     redPassMargin: 14, // Distance in meters past a red signal before it counts as a failure.
     sideOffset: 20, // Extra lateral offset in meters used to draw signals beside the track.
     redCountdownDisplayDistance: 220, // Distance in meters ahead of a red signal where the over-signal countdown becomes visible.
-    redStopCircleScale: 0.7, // Fraction of the stop window used as the visual stop-circle radius on the track.
+    redStopCircleScale: 0.7, // Legacy setting; red signals now use the full pre-signal stop zone.
   },
   scenery: {
     startDistance: 120, // First distance from origin where scenery generation begins.
@@ -655,13 +655,13 @@ function getStationStopMetrics(station) {
 }
 
 function getRedStopMetrics(signal) {
-  const zoneLength = getStationZoneLength();
+  const zoneLength = TUNING.signals.redStopWindow;
   return {
     zoneLength,
     zoneStart: signal.distance - zoneLength,
     zoneEnd: signal.distance,
-    targetDistance: signal.distance - getZoneSlackTolerance(zoneLength),
-    tolerance: getZoneSlackTolerance(zoneLength),
+    targetDistance: signal.distance,
+    tolerance: zoneLength,
   };
 }
 
@@ -1815,20 +1815,20 @@ function findUpcomingLimit() {
 function getRedStopZone(signal) {
   const stopMetrics = getRedStopMetrics(signal);
   return {
-    centerDistance: (stopMetrics.zoneStart + stopMetrics.zoneEnd) * 0.5,
-    radius: stopMetrics.tolerance,
+    startDistance: stopMetrics.zoneStart,
+    endDistance: stopMetrics.zoneEnd,
   };
 }
 
 function isInsideRedStopZone(signal, distance = state.distance) {
   const stopZone = getRedStopZone(signal);
-  return Math.abs(distance - stopZone.centerDistance) <= stopZone.radius;
+  return distance >= stopZone.startDistance && distance <= stopZone.endDistance;
 }
 
 function processSignals(dt) {
   state.signalStatus = null;
   const nextRed = route.signals.find(
-    (signal) => signal.kind === "red" && signal.aspect === "red" && signal.distance >= state.distance - TUNING.signals.redPassMargin,
+    (signal) => signal.kind === "red" && signal.aspect === "red" && signal.distance >= state.distance,
   );
 
   if (!nextRed) {
@@ -1838,11 +1838,6 @@ function processSignals(dt) {
   const gap = nextRed.distance - state.distance;
   const stopZone = getRedStopZone(nextRed);
   const inStopZone = isInsideRedStopZone(nextRed);
-  if (state.distance > stopZone.centerDistance + stopZone.radius) {
-    beginDerailment("Passed a red signal at stop.");
-    return true;
-  }
-
   if (gap <= TUNING.signals.redApproachDistance) {
     if (inStopZone && state.speed <= TUNING.signals.redStopSpeed) {
       nextRed.waitTimer += dt;
@@ -1859,11 +1854,11 @@ function processSignals(dt) {
           detail: "Proceed when ready.",
         };
       }
-    } else if (state.distance <= stopZone.centerDistance + stopZone.radius) {
-      const zoneGap = getRedStopMetrics(nextRed).targetDistance - state.distance;
+    } else if (state.distance <= stopZone.endDistance) {
+      const zoneGap = stopZone.startDistance - state.distance;
       state.signalStatus = {
         message: "Red signal ahead",
-        detail: zoneGap > 0 ? `Stop in the red target in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red target.",
+        detail: zoneGap > 0 ? `Stop in the red zone in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red zone.",
       };
     }
   }
@@ -2879,8 +2874,6 @@ function drawRouteMarkers(view, width, height) {
       };
       const stopZoneLength = Math.max(26, stopMetrics.zoneLength * scale);
       const stopZoneHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
-      const stopTargetOffset = (stopMetrics.targetDistance - stopZoneCenterDistance) * scale;
-      const stopTargetHeight = stopZoneHeight + clamp(TRACK_WIDTH * scale * 3.8, 16, 30);
 
       ctx.save();
       ctx.translate(stopZoneScreen.x, stopZoneScreen.y);
@@ -2891,11 +2884,6 @@ function drawRouteMarkers(view, width, height) {
       ctx.beginPath();
       ctx.roundRect(-stopZoneLength * 0.5, -stopZoneHeight * 0.5, stopZoneLength, stopZoneHeight, stopZoneHeight * 0.5);
       ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(255, 218, 213, 0.92)";
-      ctx.beginPath();
-      ctx.moveTo(stopTargetOffset, -stopTargetHeight * 0.5);
-      ctx.lineTo(stopTargetOffset, stopTargetHeight * 0.5);
       ctx.stroke();
       ctx.restore();
 
@@ -2913,7 +2901,7 @@ function drawRouteMarkers(view, width, height) {
 
         ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
         ctx.font = "600 10px Inter, sans-serif";
-        ctx.fillText("Stop here", stopZoneScreen.x, stopZoneScreen.y - stopZoneHeight * 0.5 - 8);
+        ctx.fillText("Stop zone", stopZoneScreen.x, stopZoneScreen.y - stopZoneHeight * 0.5 - 8);
       }
     }
     ctx.restore();
