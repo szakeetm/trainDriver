@@ -401,6 +401,41 @@ function applyTuning(configOverrides = null) {
   TOTAL_STATIONS = TUNING.stations.total;
 }
 
+function getStationZoneLength() {
+  return TRAIN_TOTAL_LENGTH * 1.2;
+}
+
+function getStationStopTolerance() {
+  return 50;
+}
+
+function getZoneSlackTolerance(zoneLength = getStationZoneLength()) {
+  return Math.max(0, (zoneLength - TRAIN_TOTAL_LENGTH) * 0.5);
+}
+
+function getStationStopMetrics(station) {
+  const zoneLength = getStationZoneLength();
+  const zoneHalfLength = zoneLength * 0.5;
+  return {
+    zoneLength,
+    zoneStart: station.distance - zoneHalfLength,
+    zoneEnd: station.distance + zoneHalfLength,
+    targetDistance: station.distance + TRAIN_TOTAL_LENGTH * 0.5,
+    tolerance: getStationStopTolerance(),
+  };
+}
+
+function getRedStopMetrics(signal) {
+  const zoneLength = getStationZoneLength();
+  return {
+    zoneLength,
+    zoneStart: signal.distance - zoneLength,
+    zoneEnd: signal.distance,
+    targetDistance: signal.distance - getZoneSlackTolerance(zoneLength),
+    tolerance: getZoneSlackTolerance(zoneLength),
+  };
+}
+
 async function loadTuningConfig() {
   try {
     const response = await fetch("./tuning.json", { cache: "no-store" });
@@ -486,7 +521,7 @@ function renderRemainingStations() {
     .map((station) => `
       <li class="station-progress-item">
         <strong>${station.name}</strong>
-        <span>${formatDistanceKm(station.distance - state.distance)}</span>
+        <span>${formatDistanceKm(getStationStopMetrics(station).targetDistance - state.distance)}</span>
       </li>
     `)
     .join("");
@@ -500,7 +535,7 @@ function syncAssistLegend() {
     return;
   }
 
-  const acceptancePercent = clamp((STATION_WINDOW / STATION_ASSIST_ZOOM) * 100, 0, 100);
+  const acceptancePercent = clamp((getStationStopTolerance() / STATION_ASSIST_ZOOM) * 100, 0, 100);
   const leftPercent = (100 - acceptancePercent) * 0.5;
   assistScale.style.setProperty("--assist-window-left", `${leftPercent}%`);
   assistScale.style.setProperty("--assist-window-width", `${acceptancePercent}%`);
@@ -943,6 +978,7 @@ function generateBiomes(totalLength) {
 
 function generateRoute() {
   const stationNames = TUNING.stations.names;
+  const stationCurveClearDistance = getStationZoneLength() * 0.5;
 
   const segments = [];
   const stations = [{ name: "Origin", distance: 0 }];
@@ -1009,6 +1045,12 @@ function generateRoute() {
       distance: stationDistance,
       visual: createStationVisual(),
     });
+
+    if (stationIndex < TOTAL_STATIONS - 1 && stationCurveClearDistance > 1) {
+      const built = makeSegment(cursor, stationCurveClearDistance, 0, null);
+      segments.push(built.segment);
+      cursor = built.endState;
+    }
   }
 
   const tail = makeSegment(cursor, TUNING.stations.tailLength, 0, null);
@@ -1557,9 +1599,10 @@ function findUpcomingLimit() {
 }
 
 function getRedStopZone(signal) {
+  const stopMetrics = getRedStopMetrics(signal);
   return {
-    centerDistance: Math.max(0, signal.distance - TUNING.signals.redStopWindow * 0.5),
-    radius: TUNING.signals.redStopWindow * TUNING.signals.redStopCircleScale,
+    centerDistance: (stopMetrics.zoneStart + stopMetrics.zoneEnd) * 0.5,
+    radius: stopMetrics.tolerance,
   };
 }
 
@@ -1603,10 +1646,10 @@ function processSignals(dt) {
         };
       }
     } else if (state.distance <= stopZone.centerDistance + stopZone.radius) {
-      const zoneGap = stopZone.centerDistance - state.distance;
+      const zoneGap = getRedStopMetrics(nextRed).targetDistance - state.distance;
       state.signalStatus = {
         message: "Red signal ahead",
-        detail: zoneGap > 0 ? `Stop in the red circle in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red circle.",
+        detail: zoneGap > 0 ? `Stop in the red target in ${roundDisplayDistance(zoneGap)} m.` : "Hold the locomotive front inside the red target.",
       };
     }
   }
@@ -1644,12 +1687,13 @@ function getStopAssistData() {
     return null;
   }
 
-  const gap = nextStation.distance - state.distance;
+  const stopMetrics = getStationStopMetrics(nextStation);
+  const gap = stopMetrics.targetDistance - state.distance;
   if (Math.abs(gap) > STATION_ASSIST_RANGE) {
     return null;
   }
 
-  const frontOffset = state.distance - nextStation.distance;
+  const frontOffset = state.distance - stopMetrics.targetDistance;
   const markerPercent = clamp(
     ((frontOffset + STATION_ASSIST_ZOOM) / (STATION_ASSIST_ZOOM * 2)) * 100,
     TUNING.visuals.stopAssistMarkerMinPercent,
@@ -1839,9 +1883,10 @@ function updateStations() {
     return;
   }
 
-  const gap = nextStation.distance - state.distance;
+  const stopMetrics = getStationStopMetrics(nextStation);
+  const gap = stopMetrics.targetDistance - state.distance;
 
-  if (Math.abs(gap) <= STATION_WINDOW && state.speed <= STATION_STOP_SPEED) {
+  if (Math.abs(gap) <= stopMetrics.tolerance && state.speed <= STATION_STOP_SPEED) {
     const error = Math.abs(gap);
     state.stationResults.push({
       name: nextStation.name,
@@ -1874,7 +1919,7 @@ function updateStations() {
     state.detail = "Heavy delay penalty applied. Start braking sooner on the next stop.";
   } else if (gap < 600 && gap > -60) {
     state.message = `Approaching ${nextStation.name}`;
-    state.detail = "A 100 m train takes space. Start easing off well before the station ring.";
+    state.detail = "A 100 m train takes space. Start easing off well before the station target.";
   } else if (gap >= 600) {
     state.message = "Running between stations";
     state.detail = "Run fast on tangents, but read the next curve and station well ahead.";
@@ -1920,7 +1965,7 @@ function updateUi() {
   const upcomingLimit = findUpcomingLimit();
   const shownLimit = upcomingLimit.limit;
   const shownUpcomingLimit = upcomingLimit.upcomingLimit;
-  const gap = nextStation ? nextStation.distance - state.distance : 0;
+  const gap = nextStation ? getStationStopMetrics(nextStation).targetDistance - state.distance : 0;
   const assist = getStopAssistData();
   const statusMessage = state.signalStatus ? state.signalStatus.message : state.message;
   const statusDetail = state.signalStatus ? state.signalStatus.detail : state.detail;
@@ -1969,6 +2014,9 @@ function updateBar(element, value) {
   const magnitude = Math.abs(value) * 50;
   element.style.width = `${magnitude}%`;
   element.style.left = value >= 0 ? `${center}%` : `${center - magnitude}%`;
+  element.style.background = value >= 0
+    ? "linear-gradient(90deg, #f6a23f, #ffc160)"
+    : "linear-gradient(90deg, #58a8ff, #7ed3ff)";
 }
 
 function updateMarker(element, value) {
@@ -2433,6 +2481,8 @@ function drawRouteMarkers(view, width, height) {
   const { camera, scale } = view;
   route.stations.slice(1).forEach((station, index) => {
     const point = evaluateRoute(station.distance);
+    const stopMetrics = getStationStopMetrics(station);
+    const targetOffset = stopMetrics.targetDistance - station.distance;
     const screen = {
       x: width * 0.5 + (point.x - camera.x) * scale,
       y: view.anchorY + (point.y - camera.y) * scale,
@@ -2442,18 +2492,18 @@ function drawRouteMarkers(view, width, height) {
     }
 
     const isActive = index + 1 === state.stationIndex;
-    const markerWidth = clamp(STATION_WINDOW * scale * 2, 34, 132);
+    const markerWidth = Math.max(22, stopMetrics.tolerance * scale * 2);
     const markerHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
     const markerRadius = Math.min(markerHeight * 0.5, 10);
     const centerMarkerHeight = markerHeight + clamp(TRACK_WIDTH * scale * 3.8, 16, 30);
-    const platformLength = markerWidth + clamp(26 * scale, 12, 36);
+    const platformLength = Math.max(markerWidth + clamp(26 * scale, 12, 36), stopMetrics.zoneLength * scale);
     const platformWidth = clamp(TRACK_WIDTH * scale * 1.7, 8, 14);
     const platformOffset = clamp(TRACK_WIDTH * scale * 1.85, 11, 20);
     const buildingWidth = clamp(28 * scale, 18, 38);
     const buildingDepth = clamp(18 * scale, 12, 24);
     const buildingOffset = platformOffset + platformWidth * 0.5 + buildingDepth * 0.8;
-    const platformStartX = -platformLength;
-    const buildingTrackOffset = platformStartX + platformLength * 0.3;
+    const platformStartX = -platformLength * 0.5;
+    const buildingTrackOffset = -platformLength * 0.2;
     const stationVisual = station.visual || createStationVisual();
     const labelTrackOffset = buildingTrackOffset;
     const labelSideOffset = stationVisual.buildingSide === -1 ? -(buildingOffset + buildingDepth + 12) : buildingOffset + buildingDepth + 12;
@@ -2497,15 +2547,15 @@ function drawRouteMarkers(view, width, height) {
     ctx.strokeStyle = isActive ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.roundRect(-markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
+    ctx.roundRect(targetOffset * scale - markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
     ctx.fill();
     ctx.stroke();
 
     ctx.strokeStyle = isActive ? "rgba(217, 255, 231, 0.98)" : "rgba(217, 255, 231, 0.72)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, -centerMarkerHeight * 0.5);
-    ctx.lineTo(0, centerMarkerHeight * 0.5);
+    ctx.moveTo(targetOffset * scale, -centerMarkerHeight * 0.5);
+    ctx.lineTo(targetOffset * scale, centerMarkerHeight * 0.5);
     ctx.stroke();
     ctx.restore();
 
@@ -2606,21 +2656,34 @@ function drawRouteMarkers(view, width, height) {
     }
 
     if (signal.kind === "red" && signal.aspect === "red") {
-      const stopZone = getRedStopZone(signal);
-      const stopCircleDistance = stopZone.centerDistance;
-      const stopCirclePoint = evaluateRoute(stopCircleDistance);
-      const stopCircleScreen = {
-        x: width * 0.5 + (stopCirclePoint.x - camera.x) * scale,
-        y: view.anchorY + (stopCirclePoint.y - camera.y) * scale,
+      const stopMetrics = getRedStopMetrics(signal);
+      const stopZoneCenterDistance = (stopMetrics.zoneStart + stopMetrics.zoneEnd) * 0.5;
+      const stopZoneCenter = evaluateRoute(stopZoneCenterDistance);
+      const stopZoneScreen = {
+        x: width * 0.5 + (stopZoneCenter.x - camera.x) * scale,
+        y: view.anchorY + (stopZoneCenter.y - camera.y) * scale,
       };
-      const stopCircleRadius = Math.max(9, stopZone.radius * scale);
+      const stopZoneLength = Math.max(26, stopMetrics.zoneLength * scale);
+      const stopZoneHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
+      const stopTargetOffset = (stopMetrics.targetDistance - stopZoneCenterDistance) * scale;
+      const stopTargetHeight = stopZoneHeight + clamp(TRACK_WIDTH * scale * 3.8, 16, 30);
+
+      ctx.save();
+      ctx.translate(stopZoneScreen.x, stopZoneScreen.y);
+      ctx.rotate(stopZoneCenter.heading);
       ctx.fillStyle = "rgba(255, 106, 98, 0.1)";
       ctx.strokeStyle = "rgba(255, 146, 136, 0.7)";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(stopCircleScreen.x, stopCircleScreen.y, stopCircleRadius, 0, Math.PI * 2);
+      ctx.roundRect(-stopZoneLength * 0.5, -stopZoneHeight * 0.5, stopZoneLength, stopZoneHeight, stopZoneHeight * 0.5);
       ctx.fill();
       ctx.stroke();
+      ctx.strokeStyle = "rgba(255, 218, 213, 0.92)";
+      ctx.beginPath();
+      ctx.moveTo(stopTargetOffset, -stopTargetHeight * 0.5);
+      ctx.lineTo(stopTargetOffset, stopTargetHeight * 0.5);
+      ctx.stroke();
+      ctx.restore();
 
       const gap = signal.distance - state.distance;
       if (gap >= 0 && gap <= TUNING.signals.redCountdownDisplayDistance) {
@@ -2636,7 +2699,7 @@ function drawRouteMarkers(view, width, height) {
 
         ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
         ctx.font = "600 10px Inter, sans-serif";
-        ctx.fillText("Stop here", stopCircleScreen.x, stopCircleScreen.y - stopCircleRadius - 8);
+        ctx.fillText("Stop here", stopZoneScreen.x, stopZoneScreen.y - stopZoneHeight * 0.5 - 8);
       }
     }
     ctx.restore();

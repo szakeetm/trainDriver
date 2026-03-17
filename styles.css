@@ -606,7 +606,7 @@ button {
 }
 
 .actual-fill {
-  background: linear-gradient(90deg, #ff7d85, #ffca78 48%, #71dfff 52%, #7cf2d8);
+  background: linear-gradient(90deg, #f6a23f, #ffc160);
 }
 
 .target-marker {

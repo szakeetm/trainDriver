@@ -571,9 +571,16 @@
     }
 
     buildStations() {
-      const { route, trackWidth, sampleRoute } = this.routeState;
+      const { route, trackWidth, trainConsist, tuning, sampleRoute } = this.routeState;
+      const trainLength = trainConsist.reduce(
+        (sum, unit, index) => sum + unit.length + (index === 0 ? 0 : tuning.train.couplerGap),
+        0,
+      );
+      const stationLength = trainLength * 1.2;
+      const stopTargetOffset = trainLength * 0.5;
       route.stations.slice(1).forEach((station, index) => {
         const point = sampleRoute(station.distance);
+        const targetPoint = sampleRoute(station.distance + stopTargetOffset);
         const group = new THREE.Group();
         const normalX = -Math.sin(point.heading);
         const normalZ = Math.cos(point.heading);
@@ -592,7 +599,7 @@
 
         [-1, 1].forEach((side) => {
           const platform = new THREE.Mesh(
-            new THREE.BoxGeometry(8.5, 1.1, 48),
+            new THREE.BoxGeometry(8.5, 1.1, stationLength),
             platformMaterial,
           );
           platform.position.set(
@@ -610,7 +617,7 @@
           new THREE.CylinderGeometry(1.15, 1.15, 12, 20),
           markerMaterial,
         );
-        marker.position.set(point.x, 6.2, point.y);
+        marker.position.set(targetPoint.x, 6.2, targetPoint.y);
         marker.castShadow = true;
         group.add(marker);
 
@@ -626,7 +633,7 @@
             metalness: 0.04,
           }),
         );
-        halo.position.set(point.x, 0.12, point.y);
+        halo.position.set(targetPoint.x, 0.12, targetPoint.y);
         halo.receiveShadow = true;
         group.add(halo);
 
