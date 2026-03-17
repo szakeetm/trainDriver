@@ -202,6 +202,7 @@
     "isometricVerticalScale": 0.48,
     "isometricElevationScale": 1.55,
     "terrainCellSize": 74,
+    "terrainNeighborHeightMaxDelta": 6,
     "terrainClearWidthMin": 20,
     "terrainClearWidthScale": 4.2,
     "trackBedWidthMin": 4.5,

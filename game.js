@@ -253,6 +253,7 @@ const DEFAULT_TUNING = {
     isometricVerticalScale: 0.48, // Screen-space vertical squash of the isometric projection.
     isometricElevationScale: 1.55, // Extra screen-space lift per meter of elevation in the isometric projection.
     terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
+    terrainNeighborHeightMaxDelta: 6, // Maximum allowed height difference between neighboring terrain gridpoints.
     terrainClearWidthMin: 20, // Minimum width in pixels of the cleared corridor around the track.
     terrainClearWidthScale: 4.2, // Cleared corridor width multiplier relative to zoom scale.
     backgroundGridStep: 48, // Vertical spacing in pixels between faint background scanlines.
@@ -666,8 +667,7 @@ function getViewMetrics(width, height) {
   const trainPose = leadUnit.pose;
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
   const gradeFactor = clamp(Math.abs(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), 0, 1);
-  const projectedTrackAngle = getProjectedAngle(trainPose.heading);
-  const verticalBias = clamp(-Math.sin(projectedTrackAngle), -1, 1);
+  const gradeBias = clamp(-(trainPose.grade || 0) / Math.max(TUNING.route.maxGradient, 1e-6), -1, 1);
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
   const lookAhead = TUNING.camera.lookAheadMin
     + speedFactor * TUNING.camera.lookAheadBySpeed
@@ -729,9 +729,9 @@ function getViewMetrics(width, height) {
   scale *= 0.98;
   const anchorX = sideMargin - minProjX * scale;
   const dynamicAnchorY = clamp(
-    0.58 - verticalBias * (0.1 + gradeFactor * 0.08),
-    0.4,
-    0.68,
+    0.62 - gradeBias * (0.05 + gradeFactor * 0.08),
+    0.5,
+    0.72,
   );
   const anchorY = height * dynamicAnchorY - trainProj.y * scale;
 
@@ -1005,7 +1005,20 @@ function getTerrainGridHeight(gridX, gridY) {
   const fine = (hashNoise(gridX * 0.73 + 5, gridY * 0.69 - 9) - 0.5) * 0.8;
   const rawHeight = (broad + medium + fine) * TUNING.visuals.terrainHeightExaggeration;
   const terraceStep = 6;
-  const height = Math.round(rawHeight / terraceStep) * terraceStep;
+  let height = Math.round(rawHeight / terraceStep) * terraceStep;
+  const maxNeighborDelta = TUNING.visuals.terrainNeighborHeightMaxDelta;
+  const neighborHeights = [
+    route.terrainHeightCache.get(`${gridX - 1},${gridY}`),
+    route.terrainHeightCache.get(`${gridX},${gridY - 1}`),
+    route.terrainHeightCache.get(`${gridX - 1},${gridY - 1}`),
+    route.terrainHeightCache.get(`${gridX + 1},${gridY - 1}`),
+  ].filter((value) => value != null);
+  if (neighborHeights.length) {
+    const minAllowed = Math.max(...neighborHeights.map((value) => value - maxNeighborDelta));
+    const maxAllowed = Math.min(...neighborHeights.map((value) => value + maxNeighborDelta));
+    height = clamp(height, minAllowed, maxAllowed);
+    height = Math.round(height / terraceStep) * terraceStep;
+  }
   route.terrainHeightCache.set(key, height);
   return height;
 }
@@ -3097,12 +3110,23 @@ function drawTrain(width, height) {
   ctx.restore();
 
   renderUnits.slice().reverse().forEach((unit) => {
-    const center = worldToScreenWithView({
-      x: unit.renderX,
-      y: unit.renderY,
+    const frontScreen = worldToScreenWithView({
+      x: unit.frontX,
+      y: unit.frontY,
       visualElevation: unit.visualElevation,
     }, view, width);
-    const projectedAngle = getProjectedAngle(unit.renderHeading);
+    const rearScreen = worldToScreenWithView({
+      x: unit.rearX,
+      y: unit.rearY,
+      visualElevation: unit.visualElevation,
+    }, view, width);
+    const axisX = frontScreen.x - rearScreen.x;
+    const axisY = frontScreen.y - rearScreen.y;
+    const axisLength = Math.hypot(axisX, axisY) || 1;
+    const tangentX = axisX / axisLength;
+    const tangentY = axisY / axisLength;
+    const normalX = -tangentY;
+    const normalY = tangentX;
     const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
     const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
     const bodyColor = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
@@ -3113,42 +3137,69 @@ function drawTrain(width, height) {
     const depthX = pixelWidth * 0.26;
     const depthY = pixelWidth * 0.36;
     const halfWidth = pixelWidth * 0.48;
-    const halfLength = pixelLength * 0.5;
-    const frontNose = unit.type === "locomotive" ? pixelLength * 0.16 : 0;
+    const roofLiftX = -depthX;
+    const roofLiftY = -depthY;
+    const frontInset = unit.type === "locomotive" ? pixelWidth * 0.16 : 0;
+    const frontLeft = {
+      x: frontScreen.x - normalX * (halfWidth - frontInset) + tangentX * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+      y: frontScreen.y - normalY * (halfWidth - frontInset) + tangentY * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+    };
+    const frontRight = {
+      x: frontScreen.x + normalX * (halfWidth - frontInset) + tangentX * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+      y: frontScreen.y + normalY * (halfWidth - frontInset) + tangentY * (unit.type === "locomotive" ? pixelLength * 0.06 : 0),
+    };
+    const midRight = {
+      x: frontScreen.x + normalX * halfWidth - tangentX * pixelLength * 0.14,
+      y: frontScreen.y + normalY * halfWidth - tangentY * pixelLength * 0.14,
+    };
+    const rearRight = {
+      x: rearScreen.x + normalX * halfWidth,
+      y: rearScreen.y + normalY * halfWidth,
+    };
+    const rearLeft = {
+      x: rearScreen.x - normalX * halfWidth,
+      y: rearScreen.y - normalY * halfWidth,
+    };
+    const midLeft = {
+      x: frontScreen.x - normalX * halfWidth - tangentX * pixelLength * 0.14,
+      y: frontScreen.y - normalY * halfWidth - tangentY * pixelLength * 0.14,
+    };
     const base = unit.type === "locomotive"
-      ? [
-        { x: -halfWidth * 0.72, y: -halfLength + frontNose },
-        { x: halfWidth * 0.72, y: -halfLength + frontNose },
-        { x: halfWidth, y: -halfLength * 0.16 },
-        { x: halfWidth, y: halfLength },
-        { x: -halfWidth, y: halfLength },
-        { x: -halfWidth, y: -halfLength * 0.16 },
-      ]
-      : [
-        { x: -halfWidth, y: -halfLength },
-        { x: halfWidth, y: -halfLength },
-        { x: halfWidth, y: halfLength },
-        { x: -halfWidth, y: halfLength },
-      ];
+      ? [frontLeft, frontRight, midRight, rearRight, rearLeft, midLeft]
+      : [frontLeft, frontRight, rearRight, rearLeft];
     const top = base.map((point) => ({
-      x: point.x - depthX,
-      y: point.y - depthY,
+      x: point.x + roofLiftX,
+      y: point.y + roofLiftY,
     }));
-    const roofInset = unit.type === "locomotive" ? 0.18 : 0.14;
-    const roofFrontBias = unit.type === "locomotive" ? pixelLength * 0.06 : pixelLength * 0.02;
+    const roofFrontCenter = {
+      x: frontScreen.x - tangentX * pixelLength * 0.14,
+      y: frontScreen.y - tangentY * pixelLength * 0.14,
+    };
+    const roofRearCenter = {
+      x: rearScreen.x + tangentX * pixelLength * 0.24,
+      y: rearScreen.y + tangentY * pixelLength * 0.24,
+    };
+    const roofHalfWidth = halfWidth * (unit.type === "locomotive" ? 0.66 : 0.58);
     const roof = [
-      { x: -halfWidth * (1 - roofInset), y: -halfLength * 0.34 + roofFrontBias },
-      { x: halfWidth * (1 - roofInset), y: -halfLength * 0.34 + roofFrontBias },
-      { x: halfWidth * (1 - roofInset), y: halfLength * 0.22 },
-      { x: -halfWidth * (1 - roofInset), y: halfLength * 0.22 },
-    ].map((point) => ({
-      x: point.x - depthX * 0.82,
-      y: point.y - depthY * 0.82,
-    }));
+      {
+        x: roofFrontCenter.x - normalX * roofHalfWidth + roofLiftX * 0.82,
+        y: roofFrontCenter.y - normalY * roofHalfWidth + roofLiftY * 0.82,
+      },
+      {
+        x: roofFrontCenter.x + normalX * roofHalfWidth + roofLiftX * 0.82,
+        y: roofFrontCenter.y + normalY * roofHalfWidth + roofLiftY * 0.82,
+      },
+      {
+        x: roofRearCenter.x + normalX * roofHalfWidth + roofLiftX * 0.82,
+        y: roofRearCenter.y + normalY * roofHalfWidth + roofLiftY * 0.82,
+      },
+      {
+        x: roofRearCenter.x - normalX * roofHalfWidth + roofLiftX * 0.82,
+        y: roofRearCenter.y - normalY * roofHalfWidth + roofLiftY * 0.82,
+      },
+    ];
 
     ctx.save();
-    ctx.translate(center.x, center.y);
-    ctx.rotate(projectedAngle + Math.PI / 2);
     ctx.shadowColor = "rgba(0,0,0,0.28)";
     ctx.shadowBlur = 18;
     ctx.strokeStyle = "rgba(255,255,255,0.62)";
@@ -3225,20 +3276,38 @@ function drawTrain(width, height) {
     if (unit.type === "locomotive") {
       ctx.fillStyle = "rgba(255, 232, 160, 0.88)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.12 - depthX * 0.68, -pixelLength * 0.46 - depthY * 0.74, pixelWidth * 0.24, Math.max(5, pixelLength * 0.11), 3);
+      ctx.roundRect(frontScreen.x - normalX * (pixelWidth * 0.08) + roofLiftX * 0.78 - pixelWidth * 0.08, frontScreen.y - normalY * (pixelWidth * 0.08) + roofLiftY * 0.78 - pixelLength * 0.02, pixelWidth * 0.16, Math.max(5, pixelLength * 0.11), 3);
       ctx.fill();
       ctx.fillStyle = "rgba(22, 29, 38, 0.95)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.16 - depthX * 0.76, -pixelLength * 0.1 - depthY * 0.8, pixelWidth * 0.32, pixelLength * 0.2, 4);
+      ctx.roundRect(
+        (roofFrontCenter.x + roofRearCenter.x) * 0.5 - pixelWidth * 0.16 + roofLiftX * 0.38,
+        (roofFrontCenter.y + roofRearCenter.y) * 0.5 - pixelLength * 0.12 + roofLiftY * 0.38,
+        pixelWidth * 0.32,
+        pixelLength * 0.24,
+        4,
+      );
       ctx.fill();
       ctx.fillStyle = "rgba(7, 21, 36, 0.78)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.19 - depthX * 0.62, -pixelLength * 0.22 - depthY * 0.62, pixelWidth * 0.38, pixelLength * 0.16, 3);
+      ctx.roundRect(
+        roofFrontCenter.x - pixelWidth * 0.19 + roofLiftX * 0.56,
+        roofFrontCenter.y - pixelLength * 0.18 + roofLiftY * 0.56,
+        pixelWidth * 0.38,
+        pixelLength * 0.16,
+        3,
+      );
       ctx.fill();
     } else {
       ctx.fillStyle = "rgba(50, 73, 92, 0.45)";
       ctx.beginPath();
-      ctx.roundRect(-pixelWidth * 0.12 - depthX * 0.58, -pixelLength * 0.28 - depthY * 0.58, pixelWidth * 0.24, pixelLength * 0.48, 3);
+      ctx.roundRect(
+        (roofFrontCenter.x + roofRearCenter.x) * 0.5 - pixelWidth * 0.12 + roofLiftX * 0.46,
+        (roofFrontCenter.y + roofRearCenter.y) * 0.5 - pixelLength * 0.24 + roofLiftY * 0.46,
+        pixelWidth * 0.24,
+        pixelLength * 0.48,
+        3,
+      );
       ctx.fill();
     }
 
