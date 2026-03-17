@@ -713,27 +713,76 @@ function getViewMetrics(width, height) {
   });
 
   const projectedPoints = samplePoints.map((point) => projectIsometricPoint(point, camera));
-  const minProjX = Math.min(...projectedPoints.map((point) => point.x));
-  const maxProjX = Math.max(...projectedPoints.map((point) => point.x));
-  const minProjY = Math.min(...projectedPoints.map((point) => point.y));
   const rearProj = projectIsometricPoint(rearPose, camera);
-  const trainProj = projectIsometricPoint(trainPose, camera);
-  const viewStartProj = projectIsometricPoint(viewStartPose, camera);
   const sideMargin = 48;
   const topMargin = 52;
   const bottomMargin = 40;
-  let scale = Math.min(
-    (width - sideMargin * 2) / Math.max(maxProjX - minProjX, 1e-6),
-    (height - topMargin - bottomMargin) / Math.max(viewStartProj.y - minProjY, 1e-6),
-  ) * zoomMultiplier;
-  scale *= 0.98;
-  const anchorX = sideMargin - minProjX * scale;
+  const centerX = width * 0.5;
+  const centerY = height * 0.5;
+  const tangentVector = {
+    x: Math.cos(trainPose.heading) - Math.sin(trainPose.heading),
+    y: (Math.cos(trainPose.heading) + Math.sin(trainPose.heading)) * TUNING.visuals.isometricVerticalScale,
+  };
+  const tangentLength = Math.hypot(tangentVector.x, tangentVector.y) || 1;
+  const tangentX = tangentVector.x / tangentLength;
+  const tangentY = tangentVector.y / tangentLength;
+  const rearInsetLeft = sideMargin;
+  const rearInsetRight = width - sideMargin;
+  const rearInsetTop = topMargin;
+  const rearInsetBottom = height - bottomMargin;
+  const rearDistanceCandidates = [];
+  if (Math.abs(tangentX) > 1e-6) {
+    rearDistanceCandidates.push(
+      tangentX > 0
+        ? (centerX - rearInsetLeft) / tangentX
+        : (rearInsetRight - centerX) / -tangentX,
+    );
+  }
+  if (Math.abs(tangentY) > 1e-6) {
+    rearDistanceCandidates.push(
+      tangentY > 0
+        ? (centerY - rearInsetTop) / tangentY
+        : (rearInsetBottom - centerY) / -tangentY,
+    );
+  }
+  const rearRayDistance = Math.max(0, Math.min(...rearDistanceCandidates.filter((value) => value > 0))) - 8;
+  const targetRearScreen = {
+    x: centerX - tangentX * rearRayDistance,
+    y: centerY - tangentY * rearRayDistance,
+  };
+  let scaleLimit = Number.POSITIVE_INFINITY;
+  projectedPoints.forEach((point) => {
+    const deltaX = point.x - rearProj.x;
+    const deltaY = point.y - rearProj.y;
+    if (Math.abs(deltaX) > 1e-6) {
+      const boundX = deltaX > 0
+        ? (rearInsetRight - targetRearScreen.x) / deltaX
+        : (rearInsetLeft - targetRearScreen.x) / deltaX;
+      if (boundX > 0) {
+        scaleLimit = Math.min(scaleLimit, boundX);
+      }
+    }
+    if (Math.abs(deltaY) > 1e-6) {
+      const boundY = deltaY > 0
+        ? (rearInsetBottom - targetRearScreen.y) / deltaY
+        : (rearInsetTop - targetRearScreen.y) / deltaY;
+      if (boundY > 0) {
+        scaleLimit = Math.min(scaleLimit, boundY);
+      }
+    }
+  });
+  if (!Number.isFinite(scaleLimit)) {
+    scaleLimit = 1;
+  }
+  let scale = Math.max(0.0001, scaleLimit * 0.985);
+  const anchorX = targetRearScreen.x - rearProj.x * scale;
   const dynamicAnchorY = clamp(
     0.62 - gradeBias * (0.05 + gradeFactor * 0.08),
     0.5,
     0.72,
   );
-  const anchorY = height * dynamicAnchorY - trainProj.y * scale;
+  const centerAlignedAnchorY = centerY - (rearProj.y + tangentY * rearRayDistance) * scale;
+  const anchorY = lerp(centerAlignedAnchorY, height * dynamicAnchorY - projectIsometricPoint(trainPose, camera).y * scale, Math.min(0.18, gradeFactor * 0.35));
 
   return {
     camera,
@@ -1200,6 +1249,7 @@ function generateRoute() {
     terrainCornerCache: new Map(),
     terrainHeightCache: new Map(),
     terrainTileCache: new Map(),
+    scenerySpriteCache: new Map(),
     signals: generateSignals(segments, stations, totalLength),
     scenery: generateScenery(stations, totalLength),
     totalLength,
@@ -2226,7 +2276,17 @@ function shadeColor(color, amount) {
   return color;
 }
 
-function drawIsoPrism(width, depth, height, topColor, leftColor, rightColor, strokeColor = "rgba(255,255,255,0.35)") {
+function createSpriteCanvas(width, height) {
+  if (typeof OffscreenCanvas !== "undefined") {
+    return new OffscreenCanvas(width, height);
+  }
+  const spriteCanvas = document.createElement("canvas");
+  spriteCanvas.width = width;
+  spriteCanvas.height = height;
+  return spriteCanvas;
+}
+
+function drawIsoPrism(width, depth, height, topColor, leftColor, rightColor, strokeColor = "rgba(255,255,255,0.35)", targetCtx = ctx) {
   const halfWidth = width * 0.5;
   const halfDepth = depth * 0.5;
   const topFace = [
@@ -2248,32 +2308,32 @@ function drawIsoPrism(width, depth, height, topColor, leftColor, rightColor, str
     { x: halfWidth, y: 0 },
   ];
 
-  ctx.fillStyle = leftColor;
-  ctx.beginPath();
-  ctx.moveTo(leftFace[0].x, leftFace[0].y);
-  leftFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-  ctx.closePath();
-  ctx.fill();
+  targetCtx.fillStyle = leftColor;
+  targetCtx.beginPath();
+  targetCtx.moveTo(leftFace[0].x, leftFace[0].y);
+  leftFace.slice(1).forEach((point) => targetCtx.lineTo(point.x, point.y));
+  targetCtx.closePath();
+  targetCtx.fill();
 
-  ctx.fillStyle = rightColor;
-  ctx.beginPath();
-  ctx.moveTo(rightFace[0].x, rightFace[0].y);
-  rightFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-  ctx.closePath();
-  ctx.fill();
+  targetCtx.fillStyle = rightColor;
+  targetCtx.beginPath();
+  targetCtx.moveTo(rightFace[0].x, rightFace[0].y);
+  rightFace.slice(1).forEach((point) => targetCtx.lineTo(point.x, point.y));
+  targetCtx.closePath();
+  targetCtx.fill();
 
-  ctx.fillStyle = topColor;
-  ctx.strokeStyle = strokeColor;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(topFace[0].x, topFace[0].y);
-  topFace.slice(1).forEach((point) => ctx.lineTo(point.x, point.y));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
+  targetCtx.fillStyle = topColor;
+  targetCtx.strokeStyle = strokeColor;
+  targetCtx.lineWidth = 1;
+  targetCtx.beginPath();
+  targetCtx.moveTo(topFace[0].x, topFace[0].y);
+  topFace.slice(1).forEach((point) => targetCtx.lineTo(point.x, point.y));
+  targetCtx.closePath();
+  targetCtx.fill();
+  targetCtx.stroke();
 }
 
-function drawConiferTree(unitScale, trunkColor, foliageBase) {
+function drawConiferTree(unitScale, trunkColor, foliageBase, targetCtx = ctx) {
   const trunkHeight = Math.max(10, unitScale * 7);
   drawIsoPrism(
     Math.max(4, unitScale * 1.3),
@@ -2282,16 +2342,18 @@ function drawConiferTree(unitScale, trunkColor, foliageBase) {
     shadeColor(trunkColor, 8),
     shadeColor(trunkColor, -14),
     shadeColor(trunkColor, -4),
+    "rgba(255,255,255,0.35)",
+    targetCtx,
   );
-  ctx.translate(0, -trunkHeight);
+  targetCtx.translate(0, -trunkHeight);
   const tiers = [
     { width: 18, depth: 14, height: 16, lift: 0 },
     { width: 14, depth: 11, height: 13, lift: 8 },
     { width: 10, depth: 8, height: 10, lift: 14 },
   ];
   tiers.forEach((tier) => {
-    ctx.save();
-    ctx.translate(0, -tier.lift);
+    targetCtx.save();
+    targetCtx.translate(0, -tier.lift);
     drawIsoPrism(
       Math.max(tier.width, unitScale * tier.width),
       Math.max(tier.depth, unitScale * tier.depth),
@@ -2300,12 +2362,13 @@ function drawConiferTree(unitScale, trunkColor, foliageBase) {
       shadeColor(foliageBase, -22),
       shadeColor(foliageBase, -8),
       "rgba(255,255,255,0.18)",
+      targetCtx,
     );
-    ctx.restore();
+    targetCtx.restore();
   });
 }
 
-function drawMountainCluster(unitScale, palette, snowCap = false) {
+function drawMountainCluster(unitScale, palette, snowCap = false, targetCtx = ctx) {
   const peaks = [
     { x: -unitScale * 5.4, y: 0, w: 18, d: 14, h: 26 },
     { x: 0, y: -unitScale * 1.6, w: 24, d: 18, h: 34 },
@@ -2313,8 +2376,8 @@ function drawMountainCluster(unitScale, palette, snowCap = false) {
   ];
 
   peaks.forEach((peak, index) => {
-    ctx.save();
-    ctx.translate(peak.x, peak.y);
+    targetCtx.save();
+    targetCtx.translate(peak.x, peak.y);
     drawIsoPrism(
       Math.max(peak.w, unitScale * peak.w),
       Math.max(peak.d, unitScale * peak.d),
@@ -2323,9 +2386,10 @@ function drawMountainCluster(unitScale, palette, snowCap = false) {
       index === 1 ? palette.left : shadeColor(palette.left, -6),
       index === 1 ? palette.right : shadeColor(palette.right, -4),
       "rgba(255,255,255,0.14)",
+      targetCtx,
     );
     if (snowCap && peak.h >= 24) {
-      ctx.translate(0, -Math.max(peak.h, unitScale * peak.h) + Math.max(8, unitScale * 6));
+      targetCtx.translate(0, -Math.max(peak.h, unitScale * peak.h) + Math.max(8, unitScale * 6));
       drawIsoPrism(
         Math.max(peak.w * 0.42, unitScale * peak.w * 0.42),
         Math.max(peak.d * 0.36, unitScale * peak.d * 0.36),
@@ -2334,10 +2398,37 @@ function drawMountainCluster(unitScale, palette, snowCap = false) {
         "rgba(208, 214, 220, 0.94)",
         "rgba(226, 230, 234, 0.94)",
         "rgba(255,255,255,0.12)",
+        targetCtx,
       );
     }
-    ctx.restore();
+    targetCtx.restore();
   });
+}
+
+function drawCachedScenerySprite(targetCtx, sprite, x, y, rotation) {
+  targetCtx.save();
+  targetCtx.translate(x, y);
+  targetCtx.rotate(rotation);
+  targetCtx.drawImage(sprite.canvas, -sprite.anchorX, -sprite.anchorY);
+  targetCtx.restore();
+}
+
+function getScenerySprite(key, drawFn) {
+  if (route.scenerySpriteCache.has(key)) {
+    return route.scenerySpriteCache.get(key);
+  }
+
+  const spriteCanvas = createSpriteCanvas(196, 196);
+  const spriteCtx = spriteCanvas.getContext("2d");
+  spriteCtx.translate(98, 144);
+  drawFn(spriteCtx);
+  const sprite = {
+    canvas: spriteCanvas,
+    anchorX: 98,
+    anchorY: 144,
+  };
+  route.scenerySpriteCache.set(key, sprite);
+  return sprite;
 }
 
 function drawBackground(width, height) {
@@ -2641,39 +2732,73 @@ function drawScenery(view, width, height) {
     };
 
     if (mountainFactor > 0.62 && deterministicRoll > 0.4 && item.kind !== "pond" && item.kind !== "billboard" && item.kind !== "windmill") {
-      drawMountainCluster(unitScale * (0.9 + mountainFactor * 0.7), alpinePalette, mountainFactor > 0.78);
-      if (deterministicRoll > 0.72) {
-        ctx.save();
-        ctx.translate(-unitScale * 7, unitScale * 3);
-        drawConiferTree(unitScale * 0.72, "#63442f", "#4c7b43");
-        ctx.restore();
-      }
-      if (deterministicRoll < 0.58) {
-        ctx.save();
-        ctx.translate(unitScale * 8, unitScale * 4);
-        drawConiferTree(unitScale * 0.64, "#63442f", "#567f48");
-        ctx.restore();
-      }
+      const mountainScale = Math.round((unitScale * (0.9 + mountainFactor * 0.7)) * 10) / 10;
+      const sprite = getScenerySprite(
+        `mountain:${mountainScale}:${alpinePalette.top}:${alpinePalette.left}:${alpinePalette.right}:${mountainFactor > 0.78}:${deterministicRoll > 0.72}:${deterministicRoll < 0.58}`,
+        (spriteCtx) => {
+          drawMountainCluster(mountainScale, alpinePalette, mountainFactor > 0.78, spriteCtx);
+          if (deterministicRoll > 0.72) {
+            spriteCtx.save();
+            spriteCtx.translate(-mountainScale * 7, mountainScale * 3);
+            drawConiferTree(mountainScale * 0.72, "#63442f", "#4c7b43", spriteCtx);
+            spriteCtx.restore();
+          }
+          if (deterministicRoll < 0.58) {
+            spriteCtx.save();
+            spriteCtx.translate(mountainScale * 8, mountainScale * 4);
+            drawConiferTree(mountainScale * 0.64, "#63442f", "#567f48", spriteCtx);
+            spriteCtx.restore();
+          }
+        },
+      );
       ctx.restore();
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
       return;
     }
 
+    const spriteScale = Math.round(unitScale * 10) / 10;
+    const spriteKeyBase = `${item.kind}:${spriteScale}:${item.tint > 0 ? 1 : 0}:${Math.round(mountainFactor * 10)}:${Math.round(deterministicRoll * 10)}`;
+
     if (item.kind === "tree") {
-      if (mountainFactor > 0.34 || deterministicRoll > 0.64) {
-        drawConiferTree(unitScale, "#694732", shadeColor(foliage, 4));
-      } else {
-        drawIsoPrism(Math.max(6, unitScale * 2.2), Math.max(5, unitScale * 1.8), Math.max(10, unitScale * 8), "#6a4b38", "#523827", "#7a5843");
-        ctx.translate(0, -Math.max(10, unitScale * 8));
-        drawIsoPrism(Math.max(18, unitScale * 7.2), Math.max(14, unitScale * 5.8), Math.max(18, unitScale * 7.8), shadeColor(foliage, 12), shadeColor(foliage, -16), shadeColor(foliage, -6));
-      }
+      const sprite = getScenerySprite(
+        `${spriteKeyBase}:tree:${foliage}`,
+        (spriteCtx) => {
+          if (mountainFactor > 0.34 || deterministicRoll > 0.64) {
+            drawConiferTree(spriteScale, "#694732", shadeColor(foliage, 4), spriteCtx);
+          } else {
+            drawIsoPrism(Math.max(6, spriteScale * 2.2), Math.max(5, spriteScale * 1.8), Math.max(10, spriteScale * 8), "#6a4b38", "#523827", "#7a5843", "rgba(255,255,255,0.35)", spriteCtx);
+            spriteCtx.translate(0, -Math.max(10, spriteScale * 8));
+            drawIsoPrism(Math.max(18, spriteScale * 7.2), Math.max(14, spriteScale * 5.8), Math.max(18, spriteScale * 7.8), shadeColor(foliage, 12), shadeColor(foliage, -16), shadeColor(foliage, -6), "rgba(255,255,255,0.35)", spriteCtx);
+          }
+        },
+      );
+      ctx.restore();
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      return;
     } else if (item.kind === "bush") {
-      drawIsoPrism(Math.max(16, unitScale * 6.6), Math.max(12, unitScale * 5.2), Math.max(9, unitScale * 3.4), shadeColor(foliage, 10), shadeColor(foliage, -14), shadeColor(foliage, -6));
+      const sprite = getScenerySprite(
+        `${spriteKeyBase}:bush:${foliage}`,
+        (spriteCtx) => {
+          drawIsoPrism(Math.max(16, spriteScale * 6.6), Math.max(12, spriteScale * 5.2), Math.max(9, spriteScale * 3.4), shadeColor(foliage, 10), shadeColor(foliage, -14), shadeColor(foliage, -6), "rgba(255,255,255,0.35)", spriteCtx);
+        },
+      );
+      ctx.restore();
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      return;
     } else if (item.kind === "rock") {
-      if (mountainFactor > 0.42) {
-        drawMountainCluster(unitScale * 0.66, alpinePalette, mountainFactor > 0.8);
-      } else {
-        drawIsoPrism(Math.max(14, unitScale * 5.5), Math.max(10, unitScale * 4.2), Math.max(8, unitScale * 3), "#8b97a2", "#67727d", "#7a8792");
-      }
+      const sprite = getScenerySprite(
+        `${spriteKeyBase}:rock:${alpinePalette.top}`,
+        (spriteCtx) => {
+          if (mountainFactor > 0.42) {
+            drawMountainCluster(spriteScale * 0.66, alpinePalette, mountainFactor > 0.8, spriteCtx);
+          } else {
+            drawIsoPrism(Math.max(14, spriteScale * 5.5), Math.max(10, spriteScale * 4.2), Math.max(8, spriteScale * 3), "#8b97a2", "#67727d", "#7a8792", "rgba(255,255,255,0.35)", spriteCtx);
+          }
+        },
+      );
+      ctx.restore();
+      drawCachedScenerySprite(ctx, sprite, screen.x, screen.y, getProjectedAngle(item.rotation));
+      return;
     } else if (item.kind === "hut") {
       drawIsoPrism(Math.max(18, unitScale * 6.5), Math.max(14, unitScale * 5), Math.max(14, unitScale * 5.4), "#d0a16e", "#a77445", "#be8d60");
       ctx.translate(0, -Math.max(14, unitScale * 5.4));
@@ -3088,6 +3213,35 @@ function drawTrain(width, height) {
   const derailment = state.derailment;
   const renderUnits = getRenderedTrainUnits();
 
+  function drawOrientedPanel(centerPoint, tangentX, tangentY, normalX, normalY, along, across, fillStyle) {
+    const halfAlong = along * 0.5;
+    const halfAcross = across * 0.5;
+    const corners = [
+      {
+        x: centerPoint.x - tangentX * halfAlong - normalX * halfAcross,
+        y: centerPoint.y - tangentY * halfAlong - normalY * halfAcross,
+      },
+      {
+        x: centerPoint.x + tangentX * halfAlong - normalX * halfAcross,
+        y: centerPoint.y + tangentY * halfAlong - normalY * halfAcross,
+      },
+      {
+        x: centerPoint.x + tangentX * halfAlong + normalX * halfAcross,
+        y: centerPoint.y + tangentY * halfAlong + normalY * halfAcross,
+      },
+      {
+        x: centerPoint.x - tangentX * halfAlong + normalX * halfAcross,
+        y: centerPoint.y - tangentY * halfAlong + normalY * halfAcross,
+      },
+    ];
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x, corners[0].y);
+    corners.slice(1).forEach((corner) => ctx.lineTo(corner.x, corner.y));
+    ctx.closePath();
+    ctx.fill();
+  }
+
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
   ctx.lineWidth = Math.max(TUNING.train.couplerLineWidthMin, scale * TUNING.train.couplerLineWidthScale);
@@ -3274,41 +3428,59 @@ function drawTrain(width, height) {
     }
 
     if (unit.type === "locomotive") {
-      ctx.fillStyle = "rgba(255, 232, 160, 0.88)";
-      ctx.beginPath();
-      ctx.roundRect(frontScreen.x - normalX * (pixelWidth * 0.08) + roofLiftX * 0.78 - pixelWidth * 0.08, frontScreen.y - normalY * (pixelWidth * 0.08) + roofLiftY * 0.78 - pixelLength * 0.02, pixelWidth * 0.16, Math.max(5, pixelLength * 0.11), 3);
-      ctx.fill();
-      ctx.fillStyle = "rgba(22, 29, 38, 0.95)";
-      ctx.beginPath();
-      ctx.roundRect(
-        (roofFrontCenter.x + roofRearCenter.x) * 0.5 - pixelWidth * 0.16 + roofLiftX * 0.38,
-        (roofFrontCenter.y + roofRearCenter.y) * 0.5 - pixelLength * 0.12 + roofLiftY * 0.38,
-        pixelWidth * 0.32,
+      drawOrientedPanel(
+        {
+          x: frontScreen.x + tangentX * (pixelLength * 0.04) + roofLiftX * 0.78,
+          y: frontScreen.y + tangentY * (pixelLength * 0.04) + roofLiftY * 0.78,
+        },
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
+        Math.max(5, pixelLength * 0.11),
+        pixelWidth * 0.16,
+        "rgba(255, 232, 160, 0.88)",
+      );
+      drawOrientedPanel(
+        {
+          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5 + roofLiftX * 0.38,
+          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5 + roofLiftY * 0.38,
+        },
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
         pixelLength * 0.24,
-        4,
+        pixelWidth * 0.32,
+        "rgba(22, 29, 38, 0.95)",
       );
-      ctx.fill();
-      ctx.fillStyle = "rgba(7, 21, 36, 0.78)";
-      ctx.beginPath();
-      ctx.roundRect(
-        roofFrontCenter.x - pixelWidth * 0.19 + roofLiftX * 0.56,
-        roofFrontCenter.y - pixelLength * 0.18 + roofLiftY * 0.56,
-        pixelWidth * 0.38,
+      drawOrientedPanel(
+        {
+          x: roofFrontCenter.x + tangentX * (pixelLength * 0.02) + roofLiftX * 0.56,
+          y: roofFrontCenter.y + tangentY * (pixelLength * 0.02) + roofLiftY * 0.56,
+        },
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
         pixelLength * 0.16,
-        3,
+        pixelWidth * 0.38,
+        "rgba(7, 21, 36, 0.78)",
       );
-      ctx.fill();
     } else {
-      ctx.fillStyle = "rgba(50, 73, 92, 0.45)";
-      ctx.beginPath();
-      ctx.roundRect(
-        (roofFrontCenter.x + roofRearCenter.x) * 0.5 - pixelWidth * 0.12 + roofLiftX * 0.46,
-        (roofFrontCenter.y + roofRearCenter.y) * 0.5 - pixelLength * 0.24 + roofLiftY * 0.46,
-        pixelWidth * 0.24,
+      drawOrientedPanel(
+        {
+          x: (roofFrontCenter.x + roofRearCenter.x) * 0.5 + roofLiftX * 0.46,
+          y: (roofFrontCenter.y + roofRearCenter.y) * 0.5 + roofLiftY * 0.46,
+        },
+        tangentX,
+        tangentY,
+        normalX,
+        normalY,
         pixelLength * 0.48,
-        3,
+        pixelWidth * 0.24,
+        "rgba(50, 73, 92, 0.45)",
       );
-      ctx.fill();
     }
 
     ctx.restore();
