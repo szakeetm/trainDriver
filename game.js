@@ -42,6 +42,7 @@ const assistLegendMin = document.getElementById("assistLegendMin");
 const assistLegendMax = document.getElementById("assistLegendMax");
 
 const UI_REFRESH_INTERVAL = 0.06;
+const KPH_PER_MPS = 3.6;
 
 let uiRefreshCarry = UI_REFRESH_INTERVAL;
 let remainingStationsKey = "";
@@ -771,7 +772,7 @@ function applyTuning() {
   STATION_STOP_SPEED = TUNING.stations.stopSpeed;
   STATION_ASSIST_RANGE = TUNING.stations.assistRange;
   STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
-  OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / 3.6;
+  OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / KPH_PER_MPS;
   TRACK_WIDTH = TUNING.train.trackWidth;
   TRAIN_CONSIST = buildRandomizedConsist(TUNING.train.consist);
   COUPLER_GAP = TUNING.train.couplerGap;
@@ -862,6 +863,10 @@ function roundDisplayDistance(distance) {
 
 function formatDistanceKm(distance) {
   return `${(Math.max(0, distance) / 1000).toFixed(1)} km`;
+}
+
+function toKph(speedMetersPerSecond) {
+  return Math.round(speedMetersPerSecond * KPH_PER_MPS);
 }
 
 function getGameProgressPercent() {
@@ -1531,68 +1536,56 @@ function generateRoute() {
   };
 }
 
-function getBiomePalette(theme) {
-  if (theme === "desert") {
-    return {
-      base: [197, 168, 103, 0.44],
-      alt: [173, 145, 84, 0.34],
-      detail: [151, 123, 66, 0.18],
-    };
-  }
-  if (theme === "snow") {
-    return {
-      base: [214, 225, 232, 0.48],
-      alt: [173, 193, 207, 0.32],
-      detail: [244, 248, 252, 0.22],
-    };
-  }
-  if (theme === "mountain") {
-    return {
-      base: [120, 130, 126, 0.42],
-      alt: [90, 98, 94, 0.36],
-      detail: [68, 76, 74, 0.22],
-    };
-  }
-  if (theme === "river") {
-    return {
-      base: [98, 143, 104, 0.38],
-      alt: [72, 125, 128, 0.34],
-      detail: [80, 160, 194, 0.22],
-    };
-  }
-  if (theme === "farmland") {
-    return {
-      base: [167, 152, 92, 0.42],
-      alt: [142, 126, 74, 0.34],
-      detail: [204, 186, 111, 0.18],
-    };
-  }
-  if (theme === "autumn") {
-    return {
-      base: [149, 103, 58, 0.42],
-      alt: [118, 74, 42, 0.34],
-      detail: [191, 137, 72, 0.2],
-    };
-  }
-  if (theme === "marsh") {
-    return {
-      base: [91, 121, 90, 0.42],
-      alt: [73, 97, 76, 0.35],
-      detail: [110, 146, 124, 0.2],
-    };
-  }
-  if (theme === "canyon") {
-    return {
-      base: [170, 103, 73, 0.42],
-      alt: [132, 78, 56, 0.34],
-      detail: [209, 147, 109, 0.2],
-    };
-  }
-  return {
+const BIOME_PALETTES = {
+  default: {
     base: [123, 156, 86, 0.42],
     alt: [84, 129, 69, 0.34],
     detail: [90, 128, 58, 0.18],
-  };
+  },
+  desert: {
+    base: [197, 168, 103, 0.44],
+    alt: [173, 145, 84, 0.34],
+    detail: [151, 123, 66, 0.18],
+  },
+  snow: {
+    base: [214, 225, 232, 0.48],
+    alt: [173, 193, 207, 0.32],
+    detail: [244, 248, 252, 0.22],
+  },
+  mountain: {
+    base: [120, 130, 126, 0.42],
+    alt: [90, 98, 94, 0.36],
+    detail: [68, 76, 74, 0.22],
+  },
+  river: {
+    base: [98, 143, 104, 0.38],
+    alt: [72, 125, 128, 0.34],
+    detail: [80, 160, 194, 0.22],
+  },
+  farmland: {
+    base: [167, 152, 92, 0.42],
+    alt: [142, 126, 74, 0.34],
+    detail: [204, 186, 111, 0.18],
+  },
+  autumn: {
+    base: [149, 103, 58, 0.42],
+    alt: [118, 74, 42, 0.34],
+    detail: [191, 137, 72, 0.2],
+  },
+  marsh: {
+    base: [91, 121, 90, 0.42],
+    alt: [73, 97, 76, 0.35],
+    detail: [110, 146, 124, 0.2],
+  },
+  canyon: {
+    base: [170, 103, 73, 0.42],
+    alt: [132, 78, 56, 0.34],
+    detail: [209, 147, 109, 0.2],
+  },
+};
+
+function getBiomePalette(theme) {
+  return BIOME_PALETTES[theme] || BIOME_PALETTES.default;
 }
 
 function formatBiomeName(theme) {
@@ -2037,7 +2030,7 @@ function getUpcomingRouteEntries() {
     entries.push({
       type: "curve",
       distance: roundDisplayDistance(gap),
-      limitKph: Math.round(segment.speedLimit * 3.6),
+      limitKph: toKph(segment.speedLimit),
       direction: segment.curvature >= 0 ? "Right" : "Left",
     });
   }
@@ -2057,7 +2050,7 @@ function getUpcomingRouteEntries() {
       type: "signal",
       distance: roundDisplayDistance(gap),
       aspect: getSignalAspect(signal),
-      limitKph: signal.kind === "yellow" ? Math.round(signal.speedLimit * 3.6) : null,
+      limitKph: signal.kind === "yellow" ? toKph(signal.speedLimit) : null,
     });
   }
 
@@ -2198,7 +2191,7 @@ function processSignalPasses() {
     }
 
     if (signal.kind === "yellow" && state.speed > signal.speedLimit + OVERSPEED_FAIL_MARGIN) {
-      const failReason = `Passed a ${Math.round(signal.speedLimit * 3.6)} km/h signal more than 10 km/h too fast.`;
+      const failReason = `Passed a ${toKph(signal.speedLimit)} km/h signal more than 10 km/h too fast.`;
       beginDerailment(failReason);
       return true;
     }
@@ -2367,7 +2360,7 @@ function checkFailureConditions() {
   }
 
   if (state.speed > current.limit + OVERSPEED_FAIL_MARGIN) {
-    const failReason = `Exceeded the ${Math.round(current.limit * 3.6)} km/h limit by more than 10 km/h.`;
+    const failReason = `Exceeded the ${toKph(current.limit)} km/h limit by more than 10 km/h.`;
     beginDerailment(failReason);
     return true;
   }
@@ -2502,11 +2495,11 @@ function updateUi() {
 
   statusText.textContent = statusMessage;
   subStatus.textContent = statusDetail;
-  speedKph.textContent = Math.round(state.speed * 3.6);
-  lineLimitKph.textContent = shownLimit == null ? "No limit" : Math.round(shownLimit * 3.6);
+  speedKph.textContent = toKph(state.speed);
+  lineLimitKph.textContent = shownLimit == null ? "No limit" : toKph(shownLimit);
   lineLimitSecondary.textContent = shownLimit == null
     ? "Line unrestricted"
-    : `Curve limit ${Math.round(shownLimit * 3.6)} km/h`;
+    : `Curve limit ${toKph(shownLimit)} km/h`;
   distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
   const progressPercent = getGameProgressPercent();
@@ -2563,10 +2556,10 @@ function updateMarker(element, value) {
   element.style.left = `${50 + value * 50}%`;
 }
 
-function worldToScreen(point, camera, scale, width, height) {
+function worldToScreen(point, camera, scale, width, anchorY) {
   return {
     x: width * 0.5 + (point.x - camera.x) * scale,
-    y: height * 0.5 + (point.y - camera.y) * scale,
+    y: anchorY + (point.y - camera.y) * scale,
   };
 }
 
@@ -2740,13 +2733,10 @@ function drawScenery(view, width, height) {
     }
 
     const point = getSceneryPoint(item);
-    const screen = {
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    };
+    const screen = worldToScreen(point, camera, scale, width, view.anchorY);
 
     if (screen.y < -80 || screen.y > height + 80 || screen.x < -80 || screen.x > width + 80) {
-      return;
+      continue;
     }
 
     ctx.save();
@@ -2930,21 +2920,30 @@ function drawTrack(frame) {
     const point = evaluateRoute(sample);
     const normalX = -Math.sin(point.heading);
     const normalY = Math.cos(point.heading);
-    centerPoints.push({
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    });
+    centerPoints.push(worldToScreen(point, camera, scale, width, view.anchorY));
     leftRail.push(
-      {
-        x: width * 0.5 + (point.x + normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-        y: view.anchorY + (point.y + normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-      },
+      worldToScreen(
+        {
+          x: point.x + normalX * TRACK_WIDTH * 0.5,
+          y: point.y + normalY * TRACK_WIDTH * 0.5,
+        },
+        camera,
+        scale,
+        width,
+        view.anchorY,
+      ),
     );
     rightRail.push(
-      {
-        x: width * 0.5 + (point.x - normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-        y: view.anchorY + (point.y - normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-      },
+      worldToScreen(
+        {
+          x: point.x - normalX * TRACK_WIDTH * 0.5,
+          y: point.y - normalY * TRACK_WIDTH * 0.5,
+        },
+        camera,
+        scale,
+        width,
+        view.anchorY,
+      ),
     );
   }
 
@@ -3007,14 +3006,26 @@ function drawTrack(frame) {
     const point = evaluateRoute(sample);
     const normalX = -Math.sin(point.heading);
     const normalY = Math.cos(point.heading);
-    const leftPoint = {
-      x: width * 0.5 + (point.x + normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-      y: view.anchorY + (point.y + normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-    };
-    const rightPoint = {
-      x: width * 0.5 + (point.x - normalX * TRACK_WIDTH * 0.5 - camera.x) * scale,
-      y: view.anchorY + (point.y - normalY * TRACK_WIDTH * 0.5 - camera.y) * scale,
-    };
+    const leftPoint = worldToScreen(
+      {
+        x: point.x + normalX * TRACK_WIDTH * 0.5,
+        y: point.y + normalY * TRACK_WIDTH * 0.5,
+      },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
+    const rightPoint = worldToScreen(
+      {
+        x: point.x - normalX * TRACK_WIDTH * 0.5,
+        y: point.y - normalY * TRACK_WIDTH * 0.5,
+      },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
     ctx.beginPath();
     ctx.moveTo(leftPoint.x, leftPoint.y);
     ctx.lineTo(rightPoint.x, rightPoint.y);
@@ -3030,10 +3041,7 @@ function drawRouteMarkers(view, width, height) {
     const point = evaluateRoute(station.distance);
     const stopMetrics = getStationStopMetrics(station);
     const targetOffset = stopMetrics.targetDistance - station.distance;
-    const screen = {
-      x: width * 0.5 + (point.x - camera.x) * scale,
-      y: view.anchorY + (point.y - camera.y) * scale,
-    };
+    const screen = worldToScreen(point, camera, scale, width, view.anchorY);
     if (screen.y < -50 || screen.y > height + 50) {
       return;
     }
@@ -3128,10 +3136,7 @@ function drawRouteMarkers(view, width, height) {
       x: signPoint.x - normalX * (TRACK_WIDTH * 0.9 + 14),
       y: signPoint.y - normalY * (TRACK_WIDTH * 0.9 + 14),
     };
-    const screen = {
-      x: width * 0.5 + (markerPoint.x - camera.x) * scale,
-      y: view.anchorY + (markerPoint.y - camera.y) * scale,
-    };
+    const screen = worldToScreen(markerPoint, camera, scale, width, view.anchorY);
     if (screen.y < -40 || screen.y > height + 40 || screen.x < -40 || screen.x > width + 40) {
       return;
     }
@@ -3146,7 +3151,7 @@ function drawRouteMarkers(view, width, height) {
     ctx.fillStyle = "#ffe5b0";
     ctx.font = "700 11px Inter, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(`${Math.round(segment.speedLimit * 3.6)}`, screen.x, screen.y + 2);
+    ctx.fillText(`${toKph(segment.speedLimit)}`, screen.x, screen.y + 2);
   });
 
   route.signals.forEach((signal) => {
@@ -3157,10 +3162,7 @@ function drawRouteMarkers(view, width, height) {
       x: basePoint.x + normalX * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
       y: basePoint.y + normalY * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
     };
-    const screen = {
-      x: width * 0.5 + (signalPoint.x - camera.x) * scale,
-      y: view.anchorY + (signalPoint.y - camera.y) * scale,
-    };
+    const screen = worldToScreen(signalPoint, camera, scale, width, view.anchorY);
     if (screen.y < -60 || screen.y > height + 60 || screen.x < -60 || screen.x > width + 60) {
       return;
     }
@@ -3199,17 +3201,14 @@ function drawRouteMarkers(view, width, height) {
       ctx.fillStyle = "#ffeeb8";
       ctx.font = "700 10px Inter, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`${Math.round(signal.speedLimit * 3.6)}`, screen.x, screen.y - mastHeight + 25);
+      ctx.fillText(`${toKph(signal.speedLimit)}`, screen.x, screen.y - mastHeight + 25);
     }
 
     if (signal.kind === "red" && signal.aspect === "red") {
       const stopMetrics = getRedStopMetrics(signal);
       const stopZoneCenterDistance = (stopMetrics.zoneStart + stopMetrics.zoneEnd) * 0.5;
       const stopZoneCenter = evaluateRoute(stopZoneCenterDistance);
-      const stopZoneScreen = {
-        x: width * 0.5 + (stopZoneCenter.x - camera.x) * scale,
-        y: view.anchorY + (stopZoneCenter.y - camera.y) * scale,
-      };
+      const stopZoneScreen = worldToScreen(stopZoneCenter, camera, scale, width, view.anchorY);
       const stopZoneLength = Math.max(26, stopMetrics.zoneLength * scale);
       const stopZoneHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
 
@@ -3258,14 +3257,20 @@ function drawTrain(frame) {
   for (let index = 0; index < renderUnits.length - 1; index += 1) {
     const currentUnit = renderUnits[index];
     const nextUnit = renderUnits[index + 1];
-    const rearScreen = {
-      x: width * 0.5 + (currentUnit.rearX - camera.x) * scale,
-      y: view.anchorY + (currentUnit.rearY - camera.y) * scale,
-    };
-    const frontScreen = {
-      x: width * 0.5 + (nextUnit.frontX - camera.x) * scale,
-      y: view.anchorY + (nextUnit.frontY - camera.y) * scale,
-    };
+    const rearScreen = worldToScreen(
+      { x: currentUnit.rearX, y: currentUnit.rearY },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
+    const frontScreen = worldToScreen(
+      { x: nextUnit.frontX, y: nextUnit.frontY },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
     ctx.beginPath();
     ctx.moveTo(rearScreen.x, rearScreen.y);
     ctx.lineTo(frontScreen.x, frontScreen.y);
@@ -3274,10 +3279,13 @@ function drawTrain(frame) {
   ctx.restore();
 
   renderUnits.slice().reverse().forEach((unit) => {
-    const center = {
-      x: width * 0.5 + (unit.renderX - camera.x) * scale,
-      y: view.anchorY + (unit.renderY - camera.y) * scale,
-    };
+    const center = worldToScreen(
+      { x: unit.renderX, y: unit.renderY },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
     const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
     const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
 
@@ -3320,8 +3328,13 @@ function drawTrain(frame) {
       return;
     }
 
-    const screenX = width * 0.5 + (puff.x - camera.x) * scale;
-    const screenY = view.anchorY + (puff.y - camera.y) * scale;
+    const { x: screenX, y: screenY } = worldToScreen(
+      { x: puff.x, y: puff.y },
+      camera,
+      scale,
+      width,
+      view.anchorY,
+    );
     if (screenX < -radius || screenX > width + radius || screenY < -radius || screenY > height + radius) {
       return;
     }
