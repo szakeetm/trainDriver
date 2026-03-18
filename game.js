@@ -41,6 +41,12 @@ const assistFrontMarker = document.getElementById("assistFrontMarker");
 const assistLegendMin = document.getElementById("assistLegendMin");
 const assistLegendMax = document.getElementById("assistLegendMax");
 
+const UI_REFRESH_INTERVAL = 0.1;
+
+let uiRefreshCarry = UI_REFRESH_INTERVAL;
+let remainingStationsKey = "";
+let remainingStationEntries = [];
+
 const DEFAULT_TUNING = {
   limits: {
     maxLineSpeed: 72, // Base reference speed in m/s used by camera and speed effects.
@@ -875,18 +881,42 @@ function renderRemainingStations() {
   const upcomingStations = route.stations.slice(state.stationIndex);
 
   if (!upcomingStations.length) {
-    remainingStations.innerHTML = '<li class="station-progress-empty">No remaining stations.</li>';
+    if (remainingStationsKey !== "__empty__") {
+      remainingStations.textContent = "";
+      const item = document.createElement("li");
+      item.className = "station-progress-empty";
+      item.textContent = "No remaining stations.";
+      remainingStations.appendChild(item);
+      remainingStationsKey = "__empty__";
+      remainingStationEntries = [];
+    }
     return;
   }
 
-  remainingStations.innerHTML = upcomingStations
-    .map((station) => `
-      <li class="station-progress-item">
-        <strong>${station.name}</strong>
-        <span>${formatDistanceKm(getStationStopMetrics(station).targetDistance - state.distance)}</span>
-      </li>
-    `)
-    .join("");
+  const stationsKey = upcomingStations.map((station) => station.name).join("|");
+  if (stationsKey !== remainingStationsKey) {
+    remainingStations.textContent = "";
+    const fragment = document.createDocumentFragment();
+    remainingStationEntries = upcomingStations.map((station) => {
+      const item = document.createElement("li");
+      item.className = "station-progress-item";
+      const name = document.createElement("strong");
+      name.textContent = station.name;
+      const distance = document.createElement("span");
+      item.append(name, distance);
+      fragment.appendChild(item);
+      return { station, distance };
+    });
+    remainingStations.appendChild(fragment);
+    remainingStationsKey = stationsKey;
+  }
+
+  remainingStationEntries.forEach(({ station, distance }) => {
+    const nextDistance = formatDistanceKm(getStationStopMetrics(station).targetDistance - state.distance);
+    if (distance.textContent !== nextDistance) {
+      distance.textContent = nextDistance;
+    }
+  });
 }
 
 function syncAssistLegend() {
@@ -1201,14 +1231,14 @@ function syncDroneInsetRoute() {
   });
 }
 
-function renderDroneInset() {
+function renderDroneInset(frame) {
   if (!droneInsetRenderer || !route || !state || appShell.classList.contains("hidden") || isDroneInsetMinimized) {
     return;
   }
 
   droneInsetRenderer.renderFrame({
-    trainPose: evaluateRoute(state.distance),
-    renderedUnits: getRenderedTrainUnits(),
+    trainPose: frame.trainPose,
+    renderedUnits: frame.renderedUnits,
     trainLength: TRAIN_TOTAL_LENGTH,
     activeStationIndex: state.stationIndex,
     overspeedTimer: state.overspeedTimer,
@@ -1217,12 +1247,11 @@ function renderDroneInset() {
     powerOutput: Math.max(0, state.actualControl),
     acceleration: Math.max(0, state.acceleration || 0),
     speed: state.speed,
-    biomeBlend: getBiomeBlendAtDistance(),
+    biomeBlend: frame.biomeBlend,
   });
 }
 
-function getViewMetrics(width, height) {
-  const trainPose = evaluateRoute(state.distance);
+function getViewMetrics(width, height, trainPose = evaluateRoute(state.distance)) {
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
   const lookBehind = TUNING.camera.lookBehindMin + speedFactor * TUNING.camera.lookBehindBySpeed;
   const lookAhead = TUNING.camera.lookAheadMin + speedFactor * TUNING.camera.lookAheadBySpeed;
@@ -1291,11 +1320,53 @@ function evaluateRoute(distance) {
   }
 
   const clampedDistance = clamp(distance, 0, route.totalLength);
-  const segment = route.segments.find(
-    (item) => clampedDistance >= item.start && clampedDistance <= item.end,
-  ) || route.segments[route.segments.length - 1];
+  const segments = route.segments;
+  let segmentIndex = route.lastSegmentIndex || 0;
+  let segment = segments[segmentIndex];
+
+  if (!segment || clampedDistance < segment.start || clampedDistance > segment.end) {
+    let low = 0;
+    let high = segments.length - 1;
+
+    while (low <= high) {
+      const mid = (low + high) >> 1;
+      const candidate = segments[mid];
+      if (clampedDistance < candidate.start) {
+        high = mid - 1;
+      } else if (clampedDistance > candidate.end) {
+        low = mid + 1;
+      } else {
+        segmentIndex = mid;
+        segment = candidate;
+        break;
+      }
+    }
+
+    if (!segment || clampedDistance < segment.start || clampedDistance > segment.end) {
+      segmentIndex = clamp(low, 0, segments.length - 1);
+      segment = segments[segmentIndex] || segments[segments.length - 1];
+    }
+  }
+
+  route.lastSegmentIndex = segmentIndex;
 
   return evaluateSegment(segment, clampedDistance - segment.start);
+}
+
+function findFirstSortedIndex(items, target, valueSelector = (item) => item.distance) {
+  let low = 0;
+  let high = items.length;
+
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (valueSelector(items[mid]) < target) {
+      low = mid + 1;
+    } else {
+      high = mid;
+    }
+  }
+
+  return low;
 }
 
 function makeSegment(startState, length, curvature, speedLimit) {
@@ -1449,6 +1520,7 @@ function generateRoute() {
 
   return {
     segments,
+    lastSegmentIndex: 0,
     stations,
     biomes: generateBiomes(totalLength),
     terrainCornerCache: new Map(),
@@ -1625,8 +1697,7 @@ function createTerrainTileStyle(cellGridX, cellGridY) {
   };
 }
 
-function getTerrainCornerStyle(cornerGridX, cornerGridY) {
-  const biomeBlend = getBiomeBlendAtDistance(state.distance);
+function getTerrainCornerStyle(cornerGridX, cornerGridY, biomeBlend = getBiomeBlendAtDistance(state.distance)) {
   const primaryPalette = getBiomePalette(biomeBlend.primary);
   const secondaryPalette = getBiomePalette(biomeBlend.secondary);
   const baseColor = mixPaletteColor(primaryPalette.base, secondaryPalette.base, biomeBlend.mix);
@@ -1817,6 +1888,7 @@ function createInitialState() {
     failReason: null,
     exhaustPuffs: [],
     exhaustSpawnCarry: 0,
+    nextSignalIndex: 0,
   };
 }
 
@@ -1872,8 +1944,16 @@ function updateDieselExhaust(dt) {
     state.exhaustPuffs = [];
   }
 
-  const locomotive = getRenderedTrainUnits()[0];
   const intensity = state.derailment ? 0 : getDieselExhaustIntensity();
+  const locomotiveUnit = intensity > 0 ? getTrainUnits()[0] : null;
+  const locomotive = locomotiveUnit
+    ? {
+      ...locomotiveUnit,
+      renderX: locomotiveUnit.pose.x,
+      renderY: locomotiveUnit.pose.y,
+      renderHeading: locomotiveUnit.pose.heading,
+    }
+    : null;
   if (locomotive && locomotive.type === "locomotive" && intensity > 0) {
     state.exhaustSpawnCarry += (2 + intensity * 6) * dt;
     while (state.exhaustSpawnCarry >= 1) {
@@ -1914,47 +1994,92 @@ function getEffectiveSpeedLimitInfo(distance = state.distance) {
 }
 
 function getNextSignal() {
-  return route.signals.find((signal) => {
-    if (signal.kind === "red" && signal.aspect === "red") {
-      return signal.distance >= state.distance - TUNING.signals.redPassMargin;
+  const startIndex = Math.max(
+    state.nextSignalIndex || 0,
+    findFirstSortedIndex(route.signals, state.distance - TUNING.signals.redPassMargin),
+  );
+
+  for (let index = startIndex; index < route.signals.length; index += 1) {
+    const signal = route.signals[index];
+    if (signal.passed) {
+      continue;
     }
-    return signal.distance > state.distance;
-  }) || null;
+
+    if (signal.kind === "red" && signal.aspect === "red") {
+      if (signal.distance >= state.distance - TUNING.signals.redPassMargin) {
+        return signal;
+      }
+      continue;
+    }
+
+    if (signal.distance > state.distance) {
+      return signal;
+    }
+  }
+
+  return null;
 }
 
 function getUpcomingRouteEntries() {
-  const curveEntries = route.segments
-    .filter((segment) => segment.speedLimit != null && segment.start >= state.distance)
-    .map((segment) => ({
+  const lookahead = TUNING.route.upcomingCurveLookahead;
+  const entries = [];
+  const segmentStartIndex = findFirstSortedIndex(route.segments, state.distance, (segment) => segment.start);
+  for (let index = segmentStartIndex; index < route.segments.length; index += 1) {
+    const segment = route.segments[index];
+    const gap = segment.start - state.distance;
+    if (gap > lookahead) {
+      break;
+    }
+    if (segment.speedLimit == null) {
+      continue;
+    }
+
+    entries.push({
       type: "curve",
-      distance: roundDisplayDistance(segment.start - state.distance),
+      distance: roundDisplayDistance(gap),
       limitKph: Math.round(segment.speedLimit * 3.6),
       direction: segment.curvature >= 0 ? "Right" : "Left",
-    }));
+    });
+  }
 
-  const signalEntries = route.signals
-    .filter((signal) => signal.distance >= state.distance)
-    .map((signal) => ({
+  const signalStartIndex = Math.max(state.nextSignalIndex || 0, findFirstSortedIndex(route.signals, state.distance));
+  for (let index = signalStartIndex; index < route.signals.length; index += 1) {
+    const signal = route.signals[index];
+    const gap = signal.distance - state.distance;
+    if (gap > lookahead) {
+      break;
+    }
+    if (signal.passed) {
+      continue;
+    }
+
+    entries.push({
       type: "signal",
-      distance: roundDisplayDistance(signal.distance - state.distance),
+      distance: roundDisplayDistance(gap),
       aspect: getSignalAspect(signal),
       limitKph: signal.kind === "yellow" ? Math.round(signal.speedLimit * 3.6) : null,
-    }));
+    });
+  }
 
-  return [...curveEntries, ...signalEntries]
-    .filter((entry) => entry.distance <= TUNING.route.upcomingCurveLookahead)
+  return entries
     .sort((a, b) => a.distance - b.distance)
     .slice(0, TUNING.visuals.routePredictorMaxEntries);
 }
 
 function findUpcomingLimit() {
   const current = getEffectiveSpeedLimitInfo();
-  const nextCurve = route.segments.find(
-    (segment) =>
-      segment.start > state.distance
-      && segment.speedLimit != null
-      && segment.start - state.distance < TUNING.route.upcomingCurveLookahead,
-  );
+  let nextCurve = null;
+  const segmentStartIndex = findFirstSortedIndex(route.segments, state.distance, (segment) => segment.start);
+  for (let index = segmentStartIndex; index < route.segments.length; index += 1) {
+    const segment = route.segments[index];
+    if (segment.start - state.distance >= TUNING.route.upcomingCurveLookahead) {
+      break;
+    }
+    if (segment.start > state.distance && segment.speedLimit != null) {
+      nextCurve = segment;
+      break;
+    }
+  }
   const nextSignal = getNextSignal();
 
   const candidates = [];
@@ -2002,9 +2127,20 @@ function isInsideRedStopZone(signal, distance = state.distance) {
 
 function processSignals(dt) {
   state.signalStatus = null;
-  const nextRed = route.signals.find(
-    (signal) => signal.kind === "red" && signal.aspect === "red" && signal.distance >= state.distance,
-  );
+  let nextRed = null;
+  for (let index = state.nextSignalIndex || 0; index < route.signals.length; index += 1) {
+    const signal = route.signals[index];
+    if (signal.passed) {
+      continue;
+    }
+    if (signal.distance < state.distance) {
+      continue;
+    }
+    if (signal.kind === "red" && signal.aspect === "red") {
+      nextRed = signal;
+      break;
+    }
+  }
 
   if (!nextRed) {
     return false;
@@ -2042,11 +2178,17 @@ function processSignals(dt) {
 }
 
 function processSignalPasses() {
-  const justPassedSignals = route.signals.filter(
-    (signal) => !signal.passed && state.distance >= signal.distance,
-  );
+  while ((state.nextSignalIndex || 0) < route.signals.length) {
+    const signal = route.signals[state.nextSignalIndex];
+    if (!signal || signal.distance > state.distance) {
+      break;
+    }
 
-  for (const signal of justPassedSignals) {
+    state.nextSignalIndex += 1;
+    if (signal.passed) {
+      continue;
+    }
+
     signal.passed = true;
     const aspect = getSignalAspect(signal);
 
@@ -2345,6 +2487,10 @@ function finishRun() {
 }
 
 function updateUi() {
+  if (!route || !state) {
+    return;
+  }
+
   const nextStation = route.stations[state.stationIndex];
   const upcomingLimit = findUpcomingLimit();
   const shownLimit = upcomingLimit.limit;
@@ -2393,6 +2539,16 @@ function updateUi() {
   }
 }
 
+function refreshUi(dt = 0, force = false) {
+  uiRefreshCarry += dt;
+  if (!force && uiRefreshCarry < UI_REFRESH_INTERVAL) {
+    return;
+  }
+
+  uiRefreshCarry = 0;
+  updateUi();
+}
+
 function updateBar(element, value) {
   const center = 50;
   const magnitude = Math.abs(value) * 50;
@@ -2414,11 +2570,12 @@ function worldToScreen(point, camera, scale, width, height) {
   };
 }
 
-function drawBackground(width, height) {
-  const view = getViewMetrics(width, height);
+function drawBackground(frame) {
+  const { width, height, view, biomeBlend } = frame;
   const { camera, scale, anchorY } = view;
   const speedFactor = state ? clamp(state.speed / MAX_LINE_SPEED, 0, TUNING.visuals.backgroundSpeedMaxFactor) : 0;
   const boostedSpeedFactor = Math.pow(speedFactor, 0.72);
+  const terrainCornerStyle = getTerrainCornerStyle(0, 0, biomeBlend);
   const gradient = ctx.createLinearGradient(0, 0, 0, height);
   gradient.addColorStop(0, "#a6c57d");
   gradient.addColorStop(0.36, "#88aa68");
@@ -2448,10 +2605,10 @@ function drawBackground(width, height) {
         route.terrainTileCache.set(tileKey, tileStyle);
       }
 
-      const topLeft = getTerrainCornerStyle(cellGridX, cellGridY);
-      const topRight = getTerrainCornerStyle(cellGridX + 1, cellGridY);
-      const bottomLeft = getTerrainCornerStyle(cellGridX, cellGridY + 1);
-      const bottomRight = getTerrainCornerStyle(cellGridX + 1, cellGridY + 1);
+      const topLeft = terrainCornerStyle;
+      const topRight = terrainCornerStyle;
+      const bottomLeft = terrainCornerStyle;
+      const bottomRight = terrainCornerStyle;
 
       const topEdgeBase = mixPaletteColor(topLeft.baseColor, topRight.baseColor, 0.5);
       const bottomEdgeBase = mixPaletteColor(bottomLeft.baseColor, bottomRight.baseColor, 0.5);
@@ -2557,23 +2714,29 @@ function drawBackground(width, height) {
 }
 
 function getSceneryPoint(item) {
-  const point = evaluateRoute(item.distance);
-  const normalX = -Math.sin(point.heading);
-  const normalY = Math.cos(point.heading);
+  if (!item.worldPoint) {
+    const point = evaluateRoute(item.distance);
+    const normalX = -Math.sin(point.heading);
+    const normalY = Math.cos(point.heading);
+    item.worldPoint = {
+      x: point.x + normalX * item.offset,
+      y: point.y + normalY * item.offset,
+    };
+  }
 
-  return {
-    x: point.x + normalX * item.offset,
-    y: point.y + normalY * item.offset,
-  };
+  return item.worldPoint;
 }
 
 function drawScenery(view, width, height) {
   const { camera, scale } = view;
-  const animationTime = state.elapsed;
+  const startDistance = view.startDistance - 60;
+  const endDistance = view.endDistance + 60;
+  const sceneryStartIndex = findFirstSortedIndex(route.scenery, startDistance);
 
-  route.scenery.forEach((item) => {
-    if (item.distance < view.startDistance - 60 || item.distance > view.endDistance + 60) {
-      return;
+  for (let index = sceneryStartIndex; index < route.scenery.length; index += 1) {
+    const item = route.scenery[index];
+    if (item.distance > endDistance) {
+      break;
     }
 
     const point = getSceneryPoint(item);
@@ -2746,11 +2909,11 @@ function drawScenery(view, width, height) {
     }
 
     ctx.restore();
-  });
+  }
 }
 
-function drawTrack(width, height) {
-  const view = getViewMetrics(width, height);
+function drawTrack(frame) {
+  const { width, height, view } = frame;
   const { camera, scale, startDistance, endDistance } = view;
 
   drawScenery(view, width, height);
@@ -3083,11 +3246,11 @@ function drawRouteMarkers(view, width, height) {
   });
 }
 
-function drawTrain(width, height) {
-  const view = getViewMetrics(width, height);
+function drawTrain(frame) {
+  const { width, height, view, renderedUnits } = frame;
   const { camera, scale } = view;
   const derailment = state.derailment;
-  const renderUnits = getRenderedTrainUnits();
+  const renderUnits = renderedUnits;
 
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
@@ -3095,19 +3258,13 @@ function drawTrain(width, height) {
   for (let index = 0; index < renderUnits.length - 1; index += 1) {
     const currentUnit = renderUnits[index];
     const nextUnit = renderUnits[index + 1];
-    const currentRear = derailment
-      ? { x: currentUnit.rearX, y: currentUnit.rearY }
-      : evaluateRoute(currentUnit.rearDistance);
-    const nextFront = derailment
-      ? { x: nextUnit.frontX, y: nextUnit.frontY }
-      : evaluateRoute(nextUnit.frontDistance);
     const rearScreen = {
-      x: width * 0.5 + (currentRear.x - camera.x) * scale,
-      y: view.anchorY + (currentRear.y - camera.y) * scale,
+      x: width * 0.5 + (currentUnit.rearX - camera.x) * scale,
+      y: view.anchorY + (currentUnit.rearY - camera.y) * scale,
     };
     const frontScreen = {
-      x: width * 0.5 + (nextFront.x - camera.x) * scale,
-      y: view.anchorY + (nextFront.y - camera.y) * scale,
+      x: width * 0.5 + (nextUnit.frontX - camera.x) * scale,
+      y: view.anchorY + (nextUnit.frontY - camera.y) * scale,
     };
     ctx.beginPath();
     ctx.moveTo(rearScreen.x, rearScreen.y);
@@ -3181,6 +3338,18 @@ function drawTrain(width, height) {
 function drawHudOverlay(width, height) {
   const compactHud = width <= 820;
   drawRoutePredictor(width, height, compactHud);
+}
+
+function createRenderFrameContext(width, height) {
+  const trainPose = evaluateRoute(state.distance);
+  return {
+    width,
+    height,
+    trainPose,
+    view: getViewMetrics(width, height, trainPose),
+    renderedUnits: getRenderedTrainUnits(),
+    biomeBlend: getBiomeBlendAtDistance(state.distance),
+  };
 }
 
 function drawRoutePredictor(width, height, compactHud = false) {
@@ -3303,26 +3472,27 @@ function drawSpeedEffects(width, height) {
 function render() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
+  const frame = createRenderFrameContext(width, height);
 
-  drawBackground(width, height);
-  drawTrack(width, height);
-  drawTrain(width, height);
+  drawBackground(frame);
+  drawTrack(frame);
+  drawTrain(frame);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
-  renderDroneInset();
+  renderDroneInset(frame);
 }
 
 function update(dt) {
   if (!state.started || state.finished) {
     updateGameAudio(dt);
-    updateUi();
+    refreshUi(dt);
     return;
   }
 
   if (state.derailment) {
     updateDerailment(dt);
     updateGameAudio(dt);
-    updateUi();
+    refreshUi(dt);
     return;
   }
 
@@ -3332,23 +3502,23 @@ function update(dt) {
   updateDieselExhaust(dt);
   if (processSignalPasses()) {
     updateGameAudio(dt);
-    updateUi();
+    refreshUi(dt);
     return;
   }
   if (processSignals(dt)) {
     updateGameAudio(dt);
-    updateUi();
+    refreshUi(dt);
     return;
   }
   if (checkFailureConditions()) {
     updateGameAudio(dt);
-    updateUi();
+    refreshUi(dt);
     return;
   }
   updatePenalties(dt);
   updateStations();
   updateGameAudio(dt);
-  updateUi();
+  refreshUi(dt);
 }
 
 function loop(now) {
@@ -3364,6 +3534,9 @@ function startRun() {
     return;
   }
 
+  remainingStationsKey = "";
+  remainingStationEntries = [];
+  uiRefreshCarry = UI_REFRESH_INTERVAL;
   state = createInitialState();
   syncDroneInsetRoute();
   state.started = true;
@@ -3372,7 +3545,7 @@ function startRun() {
   state.message = "Departing Origin";
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
   updateGameAudio(0);
-  updateUi();
+  refreshUi(0, true);
 }
 
 restartButton.addEventListener("click", () => {
