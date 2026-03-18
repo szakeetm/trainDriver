@@ -41,7 +41,7 @@ const assistFrontMarker = document.getElementById("assistFrontMarker");
 const assistLegendMin = document.getElementById("assistLegendMin");
 const assistLegendMax = document.getElementById("assistLegendMax");
 
-const UI_REFRESH_INTERVAL = 0.1;
+const UI_REFRESH_INTERVAL = 0.06;
 
 let uiRefreshCarry = UI_REFRESH_INTERVAL;
 let remainingStationsKey = "";

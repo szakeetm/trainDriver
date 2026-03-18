@@ -1,6 +1,6 @@
 # Train Driver
 
-A browser-based train driving game built with plain HTML, CSS, and JavaScript.
+A static browser-based train driving game built with plain HTML, CSS, and JavaScript.
 
 You drive a 100 m consist across a procedurally generated route with stations, signals, curves, speed limits, biome-driven scenery, and derailment penalties for major mistakes.
 
@@ -8,13 +8,17 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 
 ![Train Driver screenshot](screens/screen1.png)
 
-## Features
+## Tech Stack
 
-- Procedural route generation with varied curve radii and station spacing
-- Signal system with green, yellow, and red aspects
-- Station stop assist and route-ahead predictor
-- Dynamic terrain and scenery themes that change along the route
-- Overspeed penalties and derailment on severe rule violations
+- Plain `index.html`, `styles.css`, and `game.js`
+- Vendored `three.min.js` plus `renderer3d.js` for the optional 3D inset view
+- No build step, package manager setup, or backend
+
+## Entry Points
+
+- `index.html`: app shell, HUD, canvas, and script loading order
+- `game.js`: main game logic, route generation, physics, rendering, input, and audio
+- `renderer3d.js`: Three.js-based 3D inset renderer
 
 ## Controls
 
@@ -24,14 +28,14 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 
 ## Run Locally
 
-GitHub Pages build: https://szakeetm.github.io/trainDriver/
+Open `index.html` directly in a browser.
 
-Open `index.html` in a browser.
+There is no install step and no build command.
 
-Gameplay tuning is built into [`game.js`](/Users/martonady/Repos/trainDriver/game.js).
+Gameplay tuning lives in [`game.js`](game.js).
 
-## Files
+## Testing
 
-- `index.html`: game shell and HUD markup
-- `styles.css`: layout and visual styling
-- `game.js`: route generation, rendering, signals, scenery, and game logic
+There is no automated test suite in this repo.
+
+Testing is currently manual in the browser.
