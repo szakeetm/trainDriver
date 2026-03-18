@@ -10,14 +10,19 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 
 ## Tech Stack
 
-- Plain `index.html`, `styles.css`, and `game.js`
+- Plain `index.html`, `styles.css`, and browser-loaded scripts in `js/`
 - Vendored `three.min.js` plus `renderer3d.js` for the optional 3D inset view
 - No build step, package manager setup, or backend
 
 ## Entry Points
 
 - `index.html`: app shell, HUD, canvas, and script loading order
-- `game.js`: main game logic, route generation, physics, rendering, input, and audio
+- `js/core.js`: DOM bindings, globals, and tuning constants
+- `js/audio.js`: Web Audio setup and runtime updates
+- `js/world.js`: route, biome, signal, and scenery generation
+- `js/simulation.js`: controls, physics, stations, and failure handling
+- `js/rendering.js`: 2D rendering and HUD overlays
+- `js/main.js`: game bootstrap and frame loop
 - `renderer3d.js`: Three.js-based 3D inset renderer
 
 ## Controls
@@ -32,7 +37,7 @@ Open `index.html` directly in a browser.
 
 There is no install step and no build command.
 
-Gameplay tuning lives in [`game.js`](game.js).
+Gameplay tuning and shared globals start in [`js/core.js`](js/core.js).
 
 ## Testing
 
