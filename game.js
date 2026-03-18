@@ -112,8 +112,8 @@ const DEFAULT_TUNING = {
   camera: {
     lookBehindMin: 150, // Distance in meters kept visible behind the train at zero speed.
     lookBehindBySpeed: 360, // Extra behind distance added as speed rises.
-    lookAheadMin: 420, // Distance in meters kept visible ahead of the train at zero speed.
-    lookAheadBySpeed: 1280, // Extra forward look-ahead added as speed rises.
+    lookAheadMin: 500, // Distance in meters kept visible ahead of the train at zero speed.
+    lookAheadBySpeed: 1800, // Extra forward look-ahead added as speed rises.
     leadDistanceMin: 90, // Minimum distance in meters that the camera focus point leads the train along the route.
     leadDistanceBySpeed: 520, // Extra forward lead distance added as speed rises so the view looks into the curve.
     trainScreenMargin: 96, // Minimum screen-space margin in pixels kept around the train when the camera leads ahead.

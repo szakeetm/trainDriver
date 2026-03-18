@@ -1,6 +1,6 @@
 # Train Driver
 
-A static browser-based train driving game built with plain HTML, CSS, and JavaScript.
+A static browser-based train driving game built with plain HTML, CSS, and JavaScript and WebGL.
 
 You drive a 100 m consist across a procedurally generated route with stations, signals, curves, speed limits, biome-driven scenery, and derailment penalties for major mistakes.
 
