@@ -185,28 +185,6 @@ function ensureGameAudioReady() {
   return gameAudio;
 }
 
-function resumeAudioContextInGesture(context, trigger = "manual") {
-  if (!context || typeof context.resume !== "function") {
-    return Promise.resolve(false);
-  }
-
-  if (context.state === "running") {
-    return Promise.resolve(true);
-  }
-
-  try {
-    return Promise.resolve(context.resume())
-      .then(() => true)
-      .catch((error) => {
-        console.warn("[audio] AudioContext resume failed.", error, trigger);
-        return false;
-      });
-  } catch (error) {
-    console.warn("[audio] AudioContext resume threw synchronously.", error, trigger);
-    return Promise.resolve(false);
-  }
-}
-
 async function rebuildGameAudioInGesture(trigger = "manual") {
   if (gameAudio?.context) {
     try {
@@ -223,11 +201,8 @@ async function rebuildGameAudioInGesture(trigger = "manual") {
   }
 
   try {
-    configureAudioSession();
-    const resumePromise = resumeAudioContextInGesture(audio.context, trigger);
-    const primePromise = primeHtmlAudioUnlock(trigger);
-    await resumePromise;
-    await primePromise;
+    await primeHtmlAudioUnlock(trigger);
+    await audio.context.resume();
     await warmUpAudioContext(audio.context);
   } catch (error) {
     console.error("[audio] Rebuilt context resume failed.", error);
@@ -258,12 +233,9 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
     }
 
     try {
-      configureAudioSession();
       if (audio.context.state !== "running") {
-        const resumePromise = resumeAudioContextInGesture(audio.context, trigger);
-        const primePromise = primeHtmlAudioUnlock(trigger);
-        await resumePromise;
-        await primePromise;
+        await primeHtmlAudioUnlock(trigger);
+        await audio.context.resume();
       }
 
       await warmUpAudioContext(audio.context);
@@ -271,11 +243,8 @@ async function unlockGameAudioFromGesture(event = null, options = {}) {
       if (audio.context.state !== "running") {
         await rebuildGameAudioInGesture(trigger);
         if (gameAudio?.context?.state !== "running") {
-          const retryTrigger = `${trigger}-reprime`;
-          const resumePromise = resumeAudioContextInGesture(gameAudio?.context, retryTrigger);
-          const primePromise = primeHtmlAudioUnlock(retryTrigger);
-          await resumePromise;
-          await primePromise;
+          await primeHtmlAudioUnlock(`${trigger}-reprime`);
+          await gameAudio?.context?.resume?.();
         }
       }
 
@@ -383,3 +352,4 @@ function updateGameAudio(dt = 0) {
     gameAudio = null;
   }
 }
+
