@@ -41,6 +41,7 @@ function loop(now) {
   const dt = Math.min((now - lastFrame) / 1000, 0.05);
   lastFrame = now;
   update(dt);
+  updateStationAssist();
   render();
   requestAnimationFrame(loop);
 }

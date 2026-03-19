@@ -1,3 +1,44 @@
+let lastAssistVisibility = null;
+let lastAssistStationTitle = "";
+let lastAssistDistanceText = "";
+let lastAssistMarkerLeft = "";
+
+function updateStationAssist() {
+  const assist = getStopAssistData();
+
+  if (assist) {
+    if (lastAssistVisibility !== true) {
+      stationAssist.classList.remove("hidden");
+      lastAssistVisibility = true;
+    }
+
+    if (lastAssistStationTitle !== assist.station.name) {
+      assistStationTitle.textContent = assist.station.name;
+      lastAssistStationTitle = assist.station.name;
+    }
+
+    const distanceText = assist.gap >= 0
+      ? `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m short of the stop mark.`
+      : `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m beyond the stop mark.`;
+    if (lastAssistDistanceText !== distanceText) {
+      assistDistanceText.textContent = distanceText;
+      lastAssistDistanceText = distanceText;
+    }
+
+    const markerLeft = `${assist.markerPercent}%`;
+    if (lastAssistMarkerLeft !== markerLeft) {
+      assistFrontMarker.style.left = markerLeft;
+      lastAssistMarkerLeft = markerLeft;
+    }
+    return;
+  }
+
+  if (lastAssistVisibility !== false) {
+    stationAssist.classList.add("hidden");
+    lastAssistVisibility = false;
+  }
+}
+
 function updateUi() {
   if (!route || !state) {
     return;
@@ -8,7 +49,6 @@ function updateUi() {
   const shownLimit = upcomingLimit.limit;
   const shownUpcomingLimit = upcomingLimit.upcomingLimit;
   const gap = nextStation ? getStationStopMetrics(nextStation).targetDistance - state.distance : 0;
-  const assist = getStopAssistData();
   const statusMessage = state.signalStatus ? state.signalStatus.message : state.message;
   const statusDetail = state.signalStatus ? state.signalStatus.detail : state.detail;
 
@@ -38,17 +78,7 @@ function updateUi() {
 
   accelerateButton.classList.toggle("active", keys.accelerate);
   brakeButton.classList.toggle("active", keys.brake);
-
-  if (assist) {
-    stationAssist.classList.remove("hidden");
-    assistStationTitle.textContent = assist.station.name;
-    assistDistanceText.textContent = assist.gap >= 0
-      ? `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m short of the stop mark.`
-      : `Locomotive front ${Math.abs(assist.gap).toFixed(1)} m beyond the stop mark.`;
-    assistFrontMarker.style.left = `${assist.markerPercent}%`;
-  } else {
-    stationAssist.classList.add("hidden");
-  }
+  updateStationAssist();
 }
 
 function refreshUi(dt = 0, force = false) {
