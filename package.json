@@ -1,0 +1,32 @@
+{
+  "name": "traindriver",
+  "version": "1.0.0",
+  "description": "A static browser-based train driving game built with plain HTML, CSS, and JavaScript and WebGL.",
+  "main": "playwright.config.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:win": "playwright test tests/win-with-signals.spec.js",
+    "test:win:watch": "playwright test tests/watch-win-with-signals.spec.js --headed",
+    "test:win:headed": "cross-env PLAYWRIGHT_TRAIN_DRIVER_MODE=watch playwright test tests/win-with-signals.spec.js --headed"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/szakeetm/trainDriver.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/szakeetm/trainDriver/issues"
+  },
+  "homepage": "https://github.com/szakeetm/trainDriver#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "cross-env": "^7.0.3"
+  }
+}

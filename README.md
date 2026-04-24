@@ -37,10 +37,40 @@ Open `index.html` directly in a browser.
 
 There is no install step and no build command.
 
+If you want to run the Playwright autopilot tests, serve the repo over HTTP instead of opening the file directly:
+
+```powershell
+python -m http.server 4173
+```
+
 Gameplay tuning and shared globals start in [`js/core.js`](js/core.js).
 
 ## Testing
 
-There is no automated test suite in this repo.
+Playwright is configured for automated route-win testing.
 
-Testing is currently manual in the browser.
+Install the test dependencies:
+
+```powershell
+npm install
+```
+
+If Playwright asks for browser binaries on a fresh machine, install them with:
+
+```powershell
+npx playwright install
+```
+
+Start the local static server in one terminal:
+
+```powershell
+python -m http.server 4173
+```
+
+Then run one of these in a second terminal:
+
+- `npm run test:win`: fast headless win test
+- `npm run test:win:watch`: headed visible autoplay demo
+- `npm run test:win:headed`: headed watch mode using the reusable win spec
+
+The visible modes drive the full route in a watchable browser window. The fast mode is intended for quick verification.
