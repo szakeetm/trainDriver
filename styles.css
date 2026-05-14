@@ -566,11 +566,11 @@ button {
 }
 
 .control-button.accel {
-  background: linear-gradient(135deg, #1890ff, #4dd0ff);
+  background: linear-gradient(135deg, #f26478, #ff9e6f);
 }
 
 .control-button.brake {
-  background: linear-gradient(135deg, #f26478, #ff9e6f);
+  background: linear-gradient(135deg, #1890ff, #4dd0ff);
 }
 
 .control-button.active {
