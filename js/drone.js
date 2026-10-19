@@ -40,8 +40,14 @@ function setDroneInsetMinimized(minimized) {
   droneInsetToggle.textContent = minimized ? "Expand" : "Minimize";
   droneInsetToggle.setAttribute("aria-expanded", minimized ? "false" : "true");
 
-  if (!minimized && droneInsetRenderer) {
-    droneInsetRenderer.resize();
+  if (!minimized) {
+    if (!droneInsetRenderer) {
+      initializeDroneInsetRenderer();
+    }
+    if (droneInsetRenderer) {
+      syncDroneInsetRoute();
+      droneInsetRenderer.resize();
+    }
   }
 }
 
@@ -134,7 +140,7 @@ function initializeDroneInsetResizeHandle() {
 }
 
 function syncDroneInsetRoute() {
-  if (!droneInsetRenderer || !route) {
+  if (!droneInsetRenderer || !route || isDroneInsetMinimized) {
     return;
   }
 

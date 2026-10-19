@@ -12,7 +12,8 @@
 
   function clearGroup(group) {
     while (group.children.length) {
-      const child = group.children.pop();
+      const child = group.children[group.children.length - 1];
+      group.remove(child);
       if (child.children && child.children.length) {
         clearGroup(child);
       }
@@ -24,7 +25,6 @@
       } else if (child.material) {
         child.material.dispose();
       }
-      group.remove(child);
     }
   }
 
@@ -384,6 +384,7 @@
       this.sunLight.shadow.camera.top = 320;
       this.sunLight.shadow.camera.bottom = -320;
       this.scene.add(this.sunLight);
+      this.root.add(this.sunLight.target);
 
       this.fillLight = new THREE.DirectionalLight(0x8cc8ff, 0.5);
       this.fillLight.position.set(-120, 140, -140);
@@ -437,6 +438,7 @@
       clearGroup(this.stationGroup);
       clearGroup(this.signalGroup);
       clearGroup(this.sceneryGroup);
+      clearGroup(this.exhaustGroup);
       clearGroup(this.trainGroup);
       this.signalRefs = [];
       this.stationRefs = [];
@@ -1346,7 +1348,6 @@
       this.camera.position.copy(this.cameraPosition);
       this.camera.lookAt(this.cameraTarget);
       this.sunLight.target.position.set(trainPose.x, 0, trainPose.y);
-      this.root.add(this.sunLight.target);
       this.ground.position.set(trainPose.x, -0.08, trainPose.y);
       this.updateGroundMotion(trainPose);
     }

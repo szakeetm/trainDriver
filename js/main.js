@@ -72,7 +72,6 @@ restartButton.addEventListener("click", () => {
 
 function initializeGame() {
   initializeDroneInsetResizeHandle();
-  initializeDroneInsetRenderer();
   initializeDroneInsetToggle();
   initializeAudioUnlock();
 

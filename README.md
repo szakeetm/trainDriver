@@ -45,6 +45,9 @@ python -m http.server 4173
 
 Gameplay tuning and shared globals start in [`js/core.js`](js/core.js).
 
+Agent architecture and workflow context is in [`AGENTS.md`](AGENTS.md).
+See [`docs/code-review.md`](docs/code-review.md) for optimization findings and validation.
+
 ## Testing
 
 Playwright is configured for automated route-win testing.
