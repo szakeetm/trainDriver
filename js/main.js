@@ -51,7 +51,6 @@ function startRun() {
   remainingStationEntries = [];
   uiRefreshCarry = UI_REFRESH_INTERVAL;
   state = createInitialState();
-  syncDroneInsetRoute();
   state.started = true;
   finishCard.classList.add("hidden");
   resizeCanvas();
@@ -67,8 +66,6 @@ restartButton.addEventListener("click", () => {
 });
 
 function initializeGame() {
-  initializeDroneInsetResizeHandle();
-  initializeDroneInsetToggle();
   initializeAudioUnlock();
 
   applyTuning();

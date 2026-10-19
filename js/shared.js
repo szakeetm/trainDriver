@@ -41,11 +41,11 @@ function formatHslColor(hue, saturation, lightness) {
 }
 
 function createStationVisual() {
-  const hue = Math.random() * 360;
+  const hue = worldRandom() * 360;
   return {
-    buildingColor: formatHslColor(hue, 52 + Math.random() * 14, 56 + Math.random() * 10),
-    roofColor: formatHslColor(hue, 28 + Math.random() * 10, 28 + Math.random() * 8),
-    buildingSide: Math.random() < 0.5 ? -1 : 1,
+    buildingColor: formatHslColor(hue, 52 + worldRandom() * 14, 56 + worldRandom() * 10),
+    roofColor: formatHslColor(hue, 28 + worldRandom() * 10, 28 + worldRandom() * 8),
+    buildingSide: worldRandom() < 0.5 ? -1 : 1,
   };
 }
 
@@ -143,8 +143,10 @@ function easeOutCubic(value) {
   return 1 - Math.pow(1 - value, 3);
 }
 
+let worldRandom = Math.random;
+
 function rand(min, max) {
-  return min + Math.random() * (max - min);
+  return min + worldRandom() * (max - min);
 }
 
 function hashNoise(x, y) {
@@ -153,7 +155,7 @@ function hashNoise(x, y) {
 }
 
 function choose(list) {
-  return list[Math.floor(Math.random() * list.length)];
+  return list[Math.floor(worldRandom() * list.length)];
 }
 
 function chooseDifferent(list, previous) {
@@ -326,9 +328,6 @@ function resizeCanvas() {
   canvas.height = Math.round(rect.height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  if (droneInsetRenderer) {
-    droneInsetRenderer.resize();
-  }
 }
 
 window.addEventListener("resize", resizeCanvas);
@@ -367,6 +366,10 @@ function getRenderedTrainUnits() {
         renderX: unit.pose.x,
         renderY: unit.pose.y,
         renderHeading: unit.pose.heading,
+        renderElevation: unit.pose.elevation,
+        renderPitch: Math.atan2(frontPose.elevation - rearPose.elevation, unit.length),
+        rearElevation: rearPose.elevation,
+        frontElevation: frontPose.elevation,
         rearX: rearPose.x,
         rearY: rearPose.y,
         frontX: frontPose.x,
@@ -389,6 +392,10 @@ function getRenderedTrainUnits() {
       renderX,
       renderY,
       renderHeading,
+      renderElevation: unit.baseElevation,
+      rearElevation: unit.baseElevation,
+      frontElevation: unit.baseElevation,
+      renderPitch: 0,
       rearX: renderX - Math.cos(renderHeading) * unit.length * 0.5,
       rearY: renderY - Math.sin(renderHeading) * unit.length * 0.5,
       frontX: renderX + Math.cos(renderHeading) * unit.length * 0.5,

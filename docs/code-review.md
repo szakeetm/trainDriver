@@ -1,5 +1,9 @@
 # Code review and optimization opportunities
 
+The isometric terrain version supersedes the 3D inset implementation described
+below. The inset and its lifecycle/sleeper tests have been removed. See
+[isometric-terrain.md](isometric-terrain.md) for the current renderer and validation.
+
 Reviewed 2026-10-19 across startup, world generation, simulation, input/audio,
 both renderers, and the Playwright harness. This is a code and performance review,
 not a security audit. No frame-rate benchmark was collected.

@@ -102,10 +102,3 @@ function updateMarker(element, value) {
   element.style.left = `${50 + value * 50}%`;
 }
 
-function worldToScreen(point, camera, scale, width, anchorY) {
-  return {
-    x: width * 0.5 + (point.x - camera.x) * scale,
-    y: anchorY + (point.y - camera.y) * scale,
-  };
-}
-

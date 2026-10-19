@@ -1,5 +1,5 @@
 function createInitialState() {
-  route = generateRoute();
+  route = generateRoute(new URLSearchParams(location.search).get("seed"));
   return {
     started: false,
     finished: false,
@@ -58,6 +58,7 @@ function spawnDieselExhaustPuff(unit, intensity) {
   state.exhaustPuffs.push({
     x: sourceX,
     y: sourceY,
+    elevation: unit.renderElevation ?? unit.pose.elevation,
     driftX: 0.18 - forwardX * (0.12 + intensity * 0.14) + normalX * sidewaysJitter,
     driftY: -0.08 - forwardY * (0.12 + intensity * 0.14) + normalY * sidewaysJitter,
     age: 0,
@@ -447,6 +448,7 @@ function beginDerailment(cause) {
     baseX: unit.pose.x,
     baseY: unit.pose.y,
     baseHeading: unit.pose.heading,
+    baseElevation: unit.pose.elevation,
     forwardThrow: rand(14, 34) * (1 + index * 0.08),
     lateralThrow: direction * rand(12, 28) * (1 + index * 0.12),
     spinRate: rand(-1.8, 1.8) + direction * rand(0.25, 0.85),

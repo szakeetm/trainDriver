@@ -2,11 +2,6 @@ const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
 const appShell = document.getElementById("appShell");
-const droneInset = document.getElementById("droneInset");
-const droneInsetMount = document.getElementById("droneInsetMount");
-const droneInsetStatus = document.getElementById("droneInsetStatus");
-const droneInsetToggle = document.getElementById("droneInsetToggle");
-const droneInsetResizeHandle = document.getElementById("droneInsetResizeHandle");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -85,21 +80,21 @@ const DEFAULT_TUNING = {
       {
         type: "locomotive", // Vehicle role used for rendering details.
         length: 24, // Vehicle length in meters along the track.
-        width: 10, // Vehicle body width in meters for top-down rendering.
+        width: 10, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#53c8ff", // Main fill color of the vehicle body.
         roofColor: "rgba(255,255,255,0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for top-down rendering.
+        width: 9, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#8da4bc", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for top-down rendering.
+        width: 9, // Vehicle body width in meters for isometric rendering.
         bodyColor: "#9fb7cf", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
@@ -109,19 +104,22 @@ const DEFAULT_TUNING = {
     couplerLineWidthMin: 2, // Minimum coupler line thickness in pixels.
     couplerLineWidthScale: 1.2, // Coupler thickness multiplier relative to zoom scale.
   },
+  terrain: {
+    cellSize: 32, // Heightfield grid spacing in meters.
+    relief: 64, // Landscape relief in meters, away from the railway.
+    corridorWidth: 24, // Flat railway corridor half-width in meters.
+    blendWidth: 150, // Distance over which earthworks blend into the landscape.
+    stationFlatLength: 240, // Level track on either side of each station.
+    maxGrade: 0.04, // Maximum generated rise per horizontal meter.
+    cacheLimit: 12000, // Maximum cached terrain vertices per route.
+  },
   camera: {
-    lookBehindMin: 150, // Distance in meters kept visible behind the train at zero speed.
-    lookBehindBySpeed: 360, // Extra behind distance added as speed rises.
-    lookAheadMin: 500, // Distance in meters kept visible ahead of the train at zero speed.
-    lookAheadBySpeed: 1800, // Extra forward look-ahead added as speed rises.
-    leadDistanceMin: 90, // Minimum distance in meters that the camera focus point leads the train along the route.
-    leadDistanceBySpeed: 520, // Extra forward lead distance added as speed rises so the view looks into the curve.
-    trainScreenMargin: 96, // Minimum screen-space margin in pixels kept around the train when the camera leads ahead.
-    lateralSpanMin: 10, // Base side-to-side world span used for zoom when stopped.
-    lateralSpanBySpeed: 280, // Extra side-to-side world span added as speed rises.
-    stoppedZoomMultiplier: 3, // Extra zoom applied at zero speed after span-based scaling is computed.
-    movingZoomMultiplier: 1.85, // Zoom multiplier once the train is up to speed, keeping more speed sensation at high velocity.
-    anchorY: 0.5, // Vertical screen anchor for the train, where 0 is top and 1 is bottom.
+    worldWidth: 520, // Horizontal world span used to fit the isometric viewport.
+    worldHeight: 440, // Vertical world span used to fit the isometric viewport.
+    speedZoomOut: 0.65, // Extra world span at maximum reference speed.
+    leadDistance: 45, // Camera lead along the track in meters when stopped.
+    leadDistanceBySpeed: 100, // Additional camera lead at maximum reference speed.
+    anchorY: 0.54, // Vertical camera anchor as a fraction of canvas height.
   },
   route: {
     stationSpacingMin: 2200, // Minimum distance in meters between stations.
@@ -304,8 +302,6 @@ const keys = {
 let route = null;
 let state = null;
 let lastFrame = performance.now();
-let isDroneInsetMinimized = true;
-let droneInsetRenderer = null;
 let gameAudio = null;
 let audioUnlockInitialized = false;
 let audioUnlockPromise = null;

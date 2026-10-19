@@ -1,765 +1,382 @@
+function projectPoint(point, frame) {
+  return worldToScreen(point, frame.view.camera, frame.view.scale, frame.width, frame.view.anchorY);
+}
+
+function fillPolygon(points, color, stroke = null) {
+  ctx.beginPath();
+  points.forEach((point, index) => index === 0 ? ctx.moveTo(point.x, point.y) : ctx.lineTo(point.x, point.y));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  if (stroke) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+  }
+}
+
+function isVisible(point, frame, margin = 100) {
+  return point.x >= -margin && point.x <= frame.width + margin
+    && point.y >= -margin && point.y <= frame.height + margin;
+}
+
 function drawBackground(frame) {
-  const { width, height, view, biomeBlend } = frame;
-  const { camera, scale, anchorY } = view;
-  const speedFactor = state ? clamp(state.speed / MAX_LINE_SPEED, 0, TUNING.visuals.backgroundSpeedMaxFactor) : 0;
-  const boostedSpeedFactor = Math.pow(speedFactor, 0.72);
-  const terrainCornerStyle = getTerrainCornerStyle(0, 0, biomeBlend);
-  const gradient = ctx.createLinearGradient(0, 0, 0, height);
-  gradient.addColorStop(0, "#a6c57d");
-  gradient.addColorStop(0.36, "#88aa68");
-  gradient.addColorStop(0.68, "#ccb57e");
-  gradient.addColorStop(1, "#769760");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  // Every tile uses the same biome palette; only its seeded tone varies.
-  const baseColor = paletteColorToCss(terrainCornerStyle.baseColor);
-  const altColor = paletteColorToCss(terrainCornerStyle.altColor);
-  const mixedBaseAlt = paletteColorToCss(mixPaletteColor(terrainCornerStyle.baseColor, terrainCornerStyle.altColor, 0.55));
-  const mixedAltDetail = paletteColorToCss(mixPaletteColor(terrainCornerStyle.altColor, terrainCornerStyle.detailColor, 0.35));
-  const mixedBaseDetail = paletteColorToCss(mixPaletteColor(terrainCornerStyle.baseColor, terrainCornerStyle.detailColor, 0.25));
-  const detailColor = paletteColorToCss(terrainCornerStyle.detailColor);
-  const riverMix = terrainCornerStyle.riverMix;
-  const riverColor = `rgba(84, 154, 194, ${(0.08 + riverMix * 0.14).toFixed(3)})`;
-
-  const cellSize = TUNING.visuals.terrainCellSize;
-  const leftWorld = camera.x - width * 0.5 / scale;
-  const rightWorld = camera.x + width * 0.5 / scale;
-  const topWorld = camera.y - anchorY / scale;
-  const bottomWorld = camera.y + (height - anchorY) / scale;
-  const startWorldX = Math.floor((leftWorld - cellSize) / cellSize) * cellSize;
-  const endWorldX = Math.ceil((rightWorld + cellSize) / cellSize) * cellSize;
-  const startWorldY = Math.floor((topWorld - cellSize) / cellSize) * cellSize;
-  const endWorldY = Math.ceil((bottomWorld + cellSize) / cellSize) * cellSize;
-
-  for (let worldY = startWorldY; worldY <= endWorldY; worldY += cellSize) {
-    for (let worldX = startWorldX; worldX <= endWorldX; worldX += cellSize) {
-      const cellGridX = Math.floor(worldX / cellSize);
-      const cellGridY = Math.floor(worldY / cellSize);
-      const tileKey = `${cellGridX},${cellGridY}`;
-      let tileStyle = route.terrainTileCache.get(tileKey);
-      if (!tileStyle) {
-        tileStyle = createTerrainTileStyle(cellGridX, cellGridY);
-        route.terrainTileCache.set(tileKey, tileStyle);
-      }
-
-      let tileColor;
-      if (tileStyle.biomeSeed > 0.72) {
-        tileColor = tileStyle.toneSeed > 0.5 ? mixedBaseAlt : altColor;
-      } else if (tileStyle.biomeSeed > 0.44) {
-        tileColor = tileStyle.toneSeed > 0.5 ? mixedAltDetail : altColor;
-      } else {
-        tileColor = tileStyle.toneSeed > 0.45 ? mixedBaseDetail : baseColor;
-      }
-      const screenX = width * 0.5 + (worldX - camera.x) * scale;
-      const screenY = anchorY + (worldY - camera.y) * scale;
-      const pixelSize = cellSize * scale;
-      const tileGradient = ctx.createLinearGradient(0, screenY, 0, screenY + pixelSize);
-      tileGradient.addColorStop(0, tileColor);
-      tileGradient.addColorStop(1, tileColor);
-      ctx.fillStyle = tileGradient;
-      ctx.fillRect(screenX, screenY, pixelSize + 1, pixelSize + 1);
-
-      const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale;
-      ctx.fillStyle = detailColor;
-      ctx.beginPath();
-      ctx.ellipse(
-        screenX + hashNoise(cellGridX + 2, cellGridY + 5) * pixelSize,
-        screenY + hashNoise(cellGridX + 8, cellGridY + 11) * pixelSize,
-        tuftSize,
-        tuftSize * 0.6,
-        hashNoise(cellGridX + 12, cellGridY + 15) * Math.PI,
-        0,
-        Math.PI * 2,
-      );
-      ctx.fill();
-
-      if (riverMix > 0) {
-        const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36;
-        const riverCenter = screenX + pixelSize * 0.5 + ribbon * scale;
-        ctx.fillStyle = riverColor;
-        ctx.fillRect(riverCenter - pixelSize * 0.18, screenY - 1, pixelSize * 0.36, pixelSize + 2);
+  ctx.fillStyle = "#78976b";
+  ctx.fillRect(0, 0, frame.width, frame.height);
+  // Cover the inverse viewport at both landscape height extremes. Extra cells
+  // prevent gaps while following the train over changing elevations.
+  const corners = [];
+  const extent = 60 + TUNING.terrain.relief * 1.35;
+  for (const elevation of [56 - extent, 56 + extent]) {
+    for (const x of [-64, frame.width + 64]) {
+      for (const y of [-64, frame.height + 64]) {
+        corners.push(screenToGround(x, y, frame.view, frame.width, elevation));
       }
     }
   }
-
-  if (speedFactor > TUNING.visuals.backgroundStreakThreshold) {
-    ctx.save();
-    ctx.strokeStyle = `rgba(190, 225, 255, ${0.04 + boostedSpeedFactor * 0.07})`;
-    ctx.lineWidth = 0.9 + boostedSpeedFactor * 0.45;
-    for (let index = 0; index < TUNING.visuals.backgroundStreakCount; index += 1) {
-      const phase = index % 2 === 0 ? 1 : -1;
-      const verticalOffset = Math.sin(state.distance * 0.012 + index * 0.9) * 10;
-      const laneY = ((index * TUNING.visuals.backgroundStreakSpacing)
-        + state.distance * TUNING.visuals.backgroundStreakTravel
-        + verticalOffset) % (height + 120) - 60;
-      const streakLength = TUNING.visuals.backgroundStreakBaseLength
-        + boostedSpeedFactor * TUNING.visuals.backgroundStreakLengthBySpeed;
-      const inset = 18 + index * 1.6;
-      ctx.beginPath();
-      ctx.moveTo(inset, laneY);
-      ctx.lineTo(inset + streakLength, laneY - streakLength * (0.18 + boostedSpeedFactor * 0.08) * phase);
-      ctx.moveTo(width - inset, laneY + 10);
-      ctx.lineTo(width - inset - streakLength, laneY + 10 - streakLength * (0.18 + boostedSpeedFactor * 0.08) * phase);
-      ctx.stroke();
+  const size = TUNING.terrain.cellSize;
+  const minX = Math.floor(Math.min(...corners.map((p) => p.x)) / size) - 1;
+  const maxX = Math.ceil(Math.max(...corners.map((p) => p.x)) / size) + 1;
+  const minY = Math.floor(Math.min(...corners.map((p) => p.y)) / size) - 1;
+  const maxY = Math.ceil(Math.max(...corners.map((p) => p.y)) / size) + 1;
+  const blend = frame.biomeBlend;
+  const primary = getBiomePalette(blend.primary).base;
+  const secondary = getBiomePalette(blend.secondary).base;
+  const base = primary.map((value, index) => lerp(value, secondary[index], blend.mix));
+  // Draw rows from far to near. All terrain shares vertices; triangles carry
+  // surface lighting rather than screen-space texture that would swim on hills.
+  for (let diagonal = minX + minY; diagonal <= maxX + maxY; diagonal += 1) {
+    for (let gx = Math.max(minX, diagonal - maxY); gx <= Math.min(maxX, diagonal - minY); gx += 1) {
+      const gy = diagonal - gx;
+      const points = [getTerrainVertex(gx, gy), getTerrainVertex(gx + 1, gy),
+        getTerrainVertex(gx + 1, gy + 1), getTerrainVertex(gx, gy + 1)];
+      const screen = points.map((p) => projectPoint(p, frame));
+      if (screen.every((p) => p.x < -2) || screen.every((p) => p.x > frame.width + 2)
+        || screen.every((p) => p.y < -2) || screen.every((p) => p.y > frame.height + 2)) continue;
+      for (const indices of [[0, 1, 2], [0, 2, 3]]) {
+        const [a, b, c] = indices.map((index) => points[index]);
+        const ux = b.x - a.x, uy = b.y - a.y, uz = b.elevation - a.elevation;
+        const vx = c.x - a.x, vy = c.y - a.y, vz = c.elevation - a.elevation;
+        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        const light = (nx * -0.45 + ny * -0.3 + nz * 0.84) / Math.hypot(nx, ny, nz);
+        const tone = 0.75 + light * 0.32 + hashNoise(gx, gy) * 0.035;
+        const color = `rgb(${base.slice(0, 3).map((value) => Math.round(clamp(value * tone, 0, 255))).join(",")})`;
+        fillPolygon(indices.map((index) => screen[index]), color, color);
+      }
     }
-    ctx.restore();
   }
+  // FIFO eviction bounds memory on long runs; route replacement drops all caches.
+  const cache = route.terrainHeightCache;
+  while (cache.size > TUNING.terrain.cacheLimit) cache.delete(cache.keys().next().value);
+}
 
-  const vignette = ctx.createRadialGradient(
-    width * 0.5,
-    height * 0.58,
-    Math.min(width, height) * 0.2,
-    width * 0.5,
-    height * 0.58,
-    Math.max(width, height) * 0.72,
-  );
-  vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
-  vignette.addColorStop(1, "rgba(3, 8, 14, 0.34)");
-  ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, width, height);
+function offsetRoutePoint(distance, offset = 0, lift = 0) {
+  const point = evaluateRoute(distance);
+  return { x: point.x - Math.sin(point.heading) * offset,
+    y: point.y + Math.cos(point.heading) * offset,
+    elevation: point.elevation + lift };
+}
+
+function strokeWorldLine(points, color, lineWidth, frame) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lineWidth;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const screen = projectPoint(point, frame);
+    if (index === 0) ctx.moveTo(screen.x, screen.y);
+    else ctx.lineTo(screen.x, screen.y);
+  });
+  ctx.stroke();
+}
+
+function drawTrack(frame) {
+  const { scale, startDistance, endDistance } = frame.view;
+  const step = TUNING.visuals.trackSampleStep;
+  const start = Math.max(-TRAIN_TOTAL_LENGTH - 60, Math.floor(startDistance / step) * step - (startDistance === 0 ? TRAIN_TOTAL_LENGTH + 60 : 0));
+  const samples = [];
+  for (let distance = start; distance < endDistance; distance += step) samples.push(distance);
+  samples.push(endDistance);
+  // Ground ribbons retain their projected width even on diagonal track.
+  for (let index = 1; index < samples.length; index += 1) {
+    const a = samples[index - 1], b = samples[index];
+    const center = projectPoint(evaluateRoute(a), frame);
+    if (!isVisible(center, frame, 80 * scale)) continue;
+    for (const [halfWidth, color] of [[11, "#b6aa86"], [5, "#68695e"]]) {
+      fillPolygon([offsetRoutePoint(a, -halfWidth), offsetRoutePoint(b, -halfWidth),
+        offsetRoutePoint(b, halfWidth), offsetRoutePoint(a, halfWidth)].map((p) => projectPoint(p, frame)), color);
+    }
+    if (Math.round(a / step) % 2 === 0) {
+      strokeWorldLine([offsetRoutePoint(a, -3.5, 0.2), offsetRoutePoint(a, 3.5, 0.2)], "#c4ab80", Math.max(1, scale * 1.6), frame);
+    }
+    for (const side of [-1, 1]) {
+      strokeWorldLine([offsetRoutePoint(a, side * TRACK_WIDTH * 0.5, 0.45),
+        offsetRoutePoint(b, side * TRACK_WIDTH * 0.5, 0.45)], "#d5e0dc", Math.max(1, scale * 0.65), frame);
+    }
+  }
 }
 
 function getSceneryPoint(item) {
   if (!item.worldPoint) {
-    const point = evaluateRoute(item.distance);
-    const normalX = -Math.sin(point.heading);
-    const normalY = Math.cos(point.heading);
-    item.worldPoint = {
-      x: point.x + normalX * item.offset,
-      y: point.y + normalY * item.offset,
-    };
+    const point = offsetRoutePoint(item.distance, item.offset);
+    point.elevation = getTerrainHeight(point.x, point.y);
+    item.worldPoint = point;
   }
-
   return item.worldPoint;
 }
 
-function drawScenery(view, width, height) {
-  const { camera, scale } = view;
-  const startDistance = view.startDistance - 60;
-  const endDistance = view.endDistance + 60;
-  const sceneryStartIndex = findFirstSortedIndex(route.scenery, startDistance);
+// A box follows its own longitudinal slope. Faces are sorted by world depth,
+// keeping the roof and the two visible sides consistent at every heading.
+function drawIsoBox(center, length, width, height, heading, colors, frame, pitch = 0) {
+  const fx = Math.cos(heading), fy = Math.sin(heading);
+  const nx = -fy, ny = fx;
+  const ground = [];
+  for (const [along, across] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    ground.push({ x: center.x + fx * along * length * 0.5 + nx * across * width * 0.5,
+      y: center.y + fy * along * length * 0.5 + ny * across * width * 0.5,
+      elevation: center.elevation + along * length * 0.5 * Math.tan(pitch) });
+  }
+  const bottom = ground.map((point) => projectPoint(point, frame));
+  const top = ground.map((point) => projectPoint({ ...point, elevation: point.elevation + height }, frame));
+  const faces = [];
+  for (let index = 0; index < 4; index += 1) {
+    const next = (index + 1) % 4;
+    // Only outward faces toward the camera (positive world x/y) are visible.
+    const dx = ground[next].x - ground[index].x;
+    const dy = ground[next].y - ground[index].y;
+    if (dy - dx <= 0) continue;
+    faces.push({ depth: ground[index].x + ground[index].y + ground[next].x + ground[next].y,
+      points: [bottom[index], bottom[next], top[next], top[index]],
+      color: index % 2 === 0 ? colors[1] : colors[2] });
+  }
+  faces.sort((a, b) => a.depth - b.depth).forEach((face) => fillPolygon(face.points, face.color, "rgba(20,35,27,0.2)"));
+  fillPolygon(top, colors[0], "rgba(255,255,255,0.3)");
+}
 
-  for (let index = sceneryStartIndex; index < route.scenery.length; index += 1) {
-    const item = route.scenery[index];
-    if (item.distance > endDistance) {
-      break;
-    }
+function drawTree(point, size, frame, tint = 0) {
+  const scale = frame.view.scale;
+  const base = projectPoint(point, frame);
+  ctx.fillStyle = "rgba(24,44,26,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(base.x + size * scale * 0.7, base.y + size * scale * 0.25, size * scale, size * scale * 0.35, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  drawIsoBox(point, 2, 2, size * 1.1, 0, ["#8b7554", "#735c40", "#574835"], frame);
+  for (let layer = 0; layer < 3; layer += 1) {
+    const radius = size * (1 - layer * 0.2);
+    const elevation = point.elevation + size * (0.6 + layer * 0.65);
+    const a = projectPoint({ x: point.x - radius, y: point.y, elevation }, frame);
+    const b = projectPoint({ x: point.x, y: point.y + radius, elevation }, frame);
+    const c = projectPoint({ x: point.x + radius, y: point.y, elevation }, frame);
+    const d = projectPoint({ x: point.x, y: point.y - radius, elevation }, frame);
+    const top = projectPoint({ ...point, elevation: elevation + size * 1.5 }, frame);
+    fillPolygon([a, d, top], tint > 0 ? "#5b8751" : "#4b794b");
+    fillPolygon([a, b, top], tint > 0 ? "#436d40" : "#365f40");
+    fillPolygon([b, c, top], tint > 0 ? "#315635" : "#284e37");
+  }
+}
 
+function queueScenery(frame, queue) {
+  for (const item of route.scenery) {
     const point = getSceneryPoint(item);
-    const screen = worldToScreen(point, camera, scale, width, view.anchorY);
-
-    if (screen.y < -80 || screen.y > height + 80 || screen.x < -80 || screen.x > width + 80) {
-      continue;
-    }
-
-    ctx.save();
-    ctx.translate(screen.x, screen.y);
-    ctx.rotate(item.rotation);
-
-    if (item.kind === "tree") {
-      const canopy = Math.max(10, scale * 10 * item.size);
-      const trunkHeight = Math.max(7, scale * 7 * item.size);
-      ctx.fillStyle = "rgba(15, 24, 32, 0.18)";
-      ctx.beginPath();
-      ctx.ellipse(0, canopy * 0.5, canopy * 0.9, canopy * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "#5b4234";
-      ctx.fillRect(-canopy * 0.12, canopy * 0.1, canopy * 0.24, trunkHeight);
-      ctx.fillStyle = item.tint > 0 ? "#3c8054" : "#2f6f49";
-      ctx.beginPath();
-      ctx.arc(0, 0, canopy, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(-canopy * 0.62, canopy * 0.1, canopy * 0.7, 0, Math.PI * 2);
-      ctx.arc(canopy * 0.62, canopy * 0.12, canopy * 0.66, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (item.kind === "bush") {
-      const bush = Math.max(8, scale * 7.5 * item.size);
-      ctx.fillStyle = item.tint > 0 ? "#4f8a52" : "#427446";
-      ctx.beginPath();
-      ctx.arc(-bush * 0.5, 0, bush * 0.72, 0, Math.PI * 2);
-      ctx.arc(bush * 0.45, 0, bush * 0.78, 0, Math.PI * 2);
-      ctx.arc(0, -bush * 0.18, bush * 0.86, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (item.kind === "rock") {
-      const rock = Math.max(9, scale * 7 * item.size);
-      ctx.fillStyle = "#758392";
-      ctx.beginPath();
-      ctx.moveTo(-rock, rock * 0.4);
-      ctx.lineTo(-rock * 0.45, -rock * 0.8);
-      ctx.lineTo(rock * 0.7, -rock * 0.55);
-      ctx.lineTo(rock, rock * 0.2);
-      ctx.lineTo(rock * 0.16, rock);
-      ctx.closePath();
-      ctx.fill();
-    } else if (item.kind === "hut") {
-      const hutWidth = Math.max(13, scale * 12 * item.size);
-      const hutHeight = Math.max(11, scale * 10 * item.size);
-      ctx.fillStyle = "#c6935f";
-      ctx.fillRect(-hutWidth / 2, -hutHeight / 2, hutWidth, hutHeight);
-      ctx.fillStyle = "#71492f";
-      ctx.beginPath();
-      ctx.moveTo(-hutWidth * 0.62, -hutHeight / 2);
-      ctx.lineTo(0, -hutHeight * 1.02);
-      ctx.lineTo(hutWidth * 0.62, -hutHeight / 2);
-      ctx.closePath();
-      ctx.fill();
-    } else if (item.kind === "barn") {
-      const barnWidth = Math.max(18, scale * 18 * item.size);
-      const barnHeight = Math.max(14, scale * 12 * item.size);
-      ctx.fillStyle = "#b34f43";
-      ctx.fillRect(-barnWidth / 2, -barnHeight / 2, barnWidth, barnHeight);
-      ctx.fillStyle = "#7c2c24";
-      ctx.beginPath();
-      ctx.moveTo(-barnWidth * 0.58, -barnHeight / 2);
-      ctx.lineTo(0, -barnHeight * 1.08);
-      ctx.lineTo(barnWidth * 0.58, -barnHeight / 2);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#f0d9b0";
-      ctx.fillRect(-barnWidth * 0.12, -barnHeight * 0.05, barnWidth * 0.24, barnHeight * 0.55);
-    } else if (item.kind === "billboard") {
-      const boardWidth = Math.max(16, scale * 18 * item.size);
-      const boardHeight = Math.max(10, scale * 9 * item.size);
-      ctx.fillStyle = "#3a2e27";
-      ctx.fillRect(-boardWidth * 0.35, boardHeight * 0.05, boardWidth * 0.08, boardHeight * 0.9);
-      ctx.fillRect(boardWidth * 0.27, boardHeight * 0.05, boardWidth * 0.08, boardHeight * 0.9);
-      ctx.fillStyle = item.tint > 0 ? "#ffe28a" : "#9ad7ff";
-      ctx.fillRect(-boardWidth / 2, -boardHeight / 2, boardWidth, boardHeight);
-      ctx.fillStyle = "rgba(25, 40, 56, 0.75)";
-      ctx.fillRect(-boardWidth * 0.34, -boardHeight * 0.18, boardWidth * 0.68, boardHeight * 0.18);
-    } else if (item.kind === "pond") {
-      const pondWidth = Math.max(18, scale * 20 * item.size);
-      const pondHeight = Math.max(12, scale * 12 * item.size);
-      ctx.fillStyle = "rgba(35, 98, 140, 0.24)";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, pondWidth * 0.9, pondHeight * 0.82, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(92, 177, 221, 0.72)";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, pondWidth * 0.72, pondHeight * 0.64, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (item.kind === "ruins") {
-      const ruinWidth = Math.max(14, scale * 14 * item.size);
-      const ruinHeight = Math.max(10, scale * 9 * item.size);
-      ctx.fillStyle = "#8a7a6a";
-      ctx.fillRect(-ruinWidth / 2, -ruinHeight / 2, ruinWidth, ruinHeight);
-      ctx.clearRect(-ruinWidth * 0.14, -ruinHeight * 0.1, ruinWidth * 0.28, ruinHeight * 0.42);
-      ctx.fillStyle = "#6b5c4f";
-      ctx.fillRect(-ruinWidth * 0.54, -ruinHeight * 0.54, ruinWidth * 0.18, ruinHeight * 1.02);
-      ctx.fillRect(ruinWidth * 0.28, -ruinHeight * 0.42, ruinWidth * 0.16, ruinHeight * 0.9);
-    } else if (item.kind === "cactus") {
-      const cactusHeight = Math.max(16, scale * 16 * item.size);
-      const cactusWidth = Math.max(5, scale * 4 * item.size);
-      ctx.fillStyle = "#3c7d4f";
-      ctx.fillRect(-cactusWidth / 2, -cactusHeight / 2, cactusWidth, cactusHeight);
-      ctx.fillRect(-cactusWidth * 1.35, -cactusHeight * 0.12, cactusWidth * 0.9, cactusHeight * 0.42);
-      ctx.fillRect(cactusWidth * 0.45, -cactusHeight * 0.02, cactusWidth * 0.9, cactusHeight * 0.34);
-    } else if (item.kind === "stump") {
-      const stumpWidth = Math.max(7, scale * 6 * item.size);
-      const stumpHeight = Math.max(5, scale * 4.5 * item.size);
-      ctx.fillStyle = "#7b5a3d";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, stumpWidth, stumpHeight, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(220, 190, 142, 0.55)";
-      ctx.beginPath();
-      ctx.ellipse(0, -stumpHeight * 0.1, stumpWidth * 0.58, stumpHeight * 0.44, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (item.kind === "hayBale") {
-      const baleWidth = Math.max(10, scale * 10 * item.size);
-      const baleHeight = Math.max(7, scale * 7 * item.size);
-      ctx.fillStyle = "#d7b55a";
-      ctx.beginPath();
-      ctx.roundRect(-baleWidth / 2, -baleHeight / 2, baleWidth, baleHeight, baleHeight * 0.35);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(132, 99, 43, 0.65)";
-      ctx.lineWidth = Math.max(1, scale * 0.55);
-      ctx.beginPath();
-      ctx.moveTo(-baleWidth * 0.16, -baleHeight * 0.4);
-      ctx.lineTo(-baleWidth * 0.16, baleHeight * 0.4);
-      ctx.moveTo(baleWidth * 0.18, -baleHeight * 0.4);
-      ctx.lineTo(baleWidth * 0.18, baleHeight * 0.4);
-      ctx.stroke();
-    } else if (item.kind === "silo") {
-      const siloWidth = Math.max(10, scale * 10 * item.size);
-      const siloHeight = Math.max(18, scale * 17 * item.size);
-      ctx.fillStyle = "#aab4bc";
-      ctx.fillRect(-siloWidth / 2, -siloHeight / 2, siloWidth, siloHeight);
-      ctx.fillStyle = "#7f8a95";
-      ctx.beginPath();
-      ctx.ellipse(0, -siloHeight / 2, siloWidth * 0.5, siloWidth * 0.36, 0, Math.PI, Math.PI * 2);
-      ctx.fill();
-    } else if (item.kind === "windmill") {
-      const mastHeight = Math.max(18, scale * 18 * item.size);
-      const bladeLength = Math.max(9, scale * 8 * item.size);
-      ctx.strokeStyle = "#c6d3db";
-      ctx.lineWidth = Math.max(1.2, scale * 0.8);
-      ctx.beginPath();
-      ctx.moveTo(0, mastHeight * 0.5);
-      ctx.lineTo(0, -mastHeight * 0.5);
-      ctx.stroke();
-      ctx.translate(0, -mastHeight * 0.48);
-      ctx.rotate(item.rotation * 2.4);
-      for (let bladeIndex = 0; bladeIndex < 4; bladeIndex += 1) {
-        ctx.rotate(Math.PI * 0.5);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(bladeLength, 0);
-        ctx.stroke();
-      }
-    }
-
-    ctx.restore();
-  }
-}
-
-function drawTrack(frame) {
-  const { width, height, view } = frame;
-  const { camera, scale, startDistance, endDistance } = view;
-
-  drawScenery(view, width, height);
-
-  const centerPoints = [];
-  const leftRail = [];
-  const rightRail = [];
-  const sampleStep = TUNING.visuals.trackSampleStep;
-  const sampleStart = Math.max(0, Math.floor(startDistance / sampleStep) * sampleStep);
-  const sleeperWorldStep = sampleStep * TUNING.visuals.sleeperStep;
-  const sleeperStart = Math.max(0, Math.floor(startDistance / sleeperWorldStep) * sleeperWorldStep);
-
-  for (let sample = sampleStart; sample <= endDistance; sample += sampleStep) {
-    const point = evaluateRoute(sample);
-    const normalX = -Math.sin(point.heading);
-    const normalY = Math.cos(point.heading);
-    centerPoints.push(worldToScreen(point, camera, scale, width, view.anchorY));
-    leftRail.push(
-      worldToScreen(
-        {
-          x: point.x + normalX * TRACK_WIDTH * 0.5,
-          y: point.y + normalY * TRACK_WIDTH * 0.5,
-        },
-        camera,
-        scale,
-        width,
-        view.anchorY,
-      ),
-    );
-    rightRail.push(
-      worldToScreen(
-        {
-          x: point.x - normalX * TRACK_WIDTH * 0.5,
-          y: point.y - normalY * TRACK_WIDTH * 0.5,
-        },
-        camera,
-        scale,
-        width,
-        view.anchorY,
-      ),
-    );
-  }
-
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-
-  ctx.strokeStyle = "rgba(194, 176, 132, 0.46)";
-  ctx.lineWidth = Math.max(
-    TUNING.visuals.terrainClearWidthMin,
-    TRACK_WIDTH * scale * TUNING.visuals.terrainClearWidthScale,
-  );
-  ctx.beginPath();
-  centerPoints.forEach((point, index) => {
-    if (index === 0) {
-      ctx.moveTo(point.x, point.y);
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
-  });
-  ctx.stroke();
-
-  ctx.strokeStyle = "rgba(17, 23, 31, 0.9)";
-  ctx.lineWidth = Math.max(
-    TUNING.visuals.trackBedWidthMin,
-    TRACK_WIDTH * scale * TUNING.visuals.trackBedWidthScale,
-  );
-  ctx.beginPath();
-  centerPoints.forEach((point, index) => {
-    if (index === 0) {
-      ctx.moveTo(point.x, point.y);
-    } else {
-      ctx.lineTo(point.x, point.y);
-    }
-  });
-  ctx.stroke();
-
-  ctx.strokeStyle = "#9bb4c6";
-  ctx.lineWidth = Math.max(
-    TUNING.visuals.railWidthMin,
-    TRACK_WIDTH * scale * TUNING.visuals.railWidthScale,
-  );
-  [leftRail, rightRail].forEach((rail) => {
-    ctx.beginPath();
-    rail.forEach((point, index) => {
-      if (index === 0) {
-        ctx.moveTo(point.x, point.y);
+    if (!isVisible(projectPoint(point, frame), frame, 120)) continue;
+    queue.push({ depth: point.x + point.y, sceneryBase: projectPoint(point, frame), draw: () => {
+      const size = item.size * 8;
+      if (["tree", "bush", "cactus", "stump"].includes(item.kind)) {
+        drawTree(point, item.kind === "bush" || item.kind === "stump" ? size * 0.4 : size, frame, item.tint);
+      } else if (item.kind === "pond") {
+        const radius = size * 2;
+        const points = Array.from({ length: 14 }, (_, index) => {
+          const angle = index / 14 * Math.PI * 2;
+          return projectPoint({ x: point.x + Math.cos(angle) * radius,
+            y: point.y + Math.sin(angle) * radius * 0.65, elevation: point.elevation + 0.2 }, frame);
+        });
+        fillPolygon(points, "#61999a", "#a6bb9a");
+      } else if (["rock", "ruins", "hayBale"].includes(item.kind)) {
+        drawIsoBox(point, size * 1.5, size, size * 0.75, item.rotation,
+          item.kind === "hayBale" ? ["#d6bd76", "#b69b54", "#988044"] : ["#a6aaa0", "#838c85", "#69776e"], frame);
       } else {
-        ctx.lineTo(point.x, point.y);
+        drawIsoBox(point, size * 2.4, size * 1.7, size * 1.4, item.rotation,
+          ["#9a6350", "#d1b38a", "#b59171"], frame);
+        drawIsoBox({ ...point, elevation: point.elevation + size * 1.4 }, size * 2.7, size * 1.95, 1.6,
+          item.rotation, ["#725346", "#5e473e", "#503f36"], frame);
       }
-    });
-    ctx.stroke();
-  });
-
-  ctx.strokeStyle = "rgba(224, 191, 125, 0.35)";
-  ctx.lineWidth = Math.max(
-    TUNING.visuals.sleeperWidthMin,
-    TRACK_WIDTH * scale * TUNING.visuals.sleeperWidthScale,
-  );
-  for (let sample = sleeperStart; sample <= endDistance; sample += sleeperWorldStep) {
-    const point = evaluateRoute(sample);
-    const normalX = -Math.sin(point.heading);
-    const normalY = Math.cos(point.heading);
-    const leftPoint = worldToScreen(
-      {
-        x: point.x + normalX * TRACK_WIDTH * 0.5,
-        y: point.y + normalY * TRACK_WIDTH * 0.5,
-      },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    const rightPoint = worldToScreen(
-      {
-        x: point.x - normalX * TRACK_WIDTH * 0.5,
-        y: point.y - normalY * TRACK_WIDTH * 0.5,
-      },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    ctx.beginPath();
-    ctx.moveTo(leftPoint.x, leftPoint.y);
-    ctx.lineTo(rightPoint.x, rightPoint.y);
-    ctx.stroke();
+    } });
   }
-
-  drawRouteMarkers(view, width, height);
 }
 
-function drawRouteMarkers(view, width, height) {
-  const { camera, scale } = view;
-  route.stations.slice(1).forEach((station, index) => {
+function drawGroundZone(start, end, halfWidth, color, frame) {
+  const points = [];
+  for (let d = start; d < end; d += 10) points.push(offsetRoutePoint(d, -halfWidth, 0.7));
+  points.push(offsetRoutePoint(end, -halfWidth, 0.7));
+  for (let d = end; d > start; d -= 10) points.push(offsetRoutePoint(d, halfWidth, 0.7));
+  points.push(offsetRoutePoint(start, halfWidth, 0.7));
+  fillPolygon(points.map((p) => projectPoint(p, frame)), color);
+}
+
+function queueRouteMarkers(frame, queue) {
+  for (let index = 0; index < route.stations.length; index += 1) {
+    const station = route.stations[index];
+    const metrics = getStationStopMetrics(station);
     const point = evaluateRoute(station.distance);
-    const stopMetrics = getStationStopMetrics(station);
-    const targetOffset = stopMetrics.targetDistance - station.distance;
-    const screen = worldToScreen(point, camera, scale, width, view.anchorY);
-    if (screen.y < -50 || screen.y > height + 50) {
-      return;
+    if (!isVisible(projectPoint(point, frame), frame, metrics.zoneLength * frame.view.scale)) continue;
+    const active = index === state.stationIndex;
+    drawGroundZone(metrics.targetDistance - metrics.tolerance, metrics.targetDistance + metrics.tolerance,
+      7, active ? "rgba(113,245,171,0.36)" : "rgba(113,245,171,0.15)", frame);
+    strokeWorldLine([offsetRoutePoint(metrics.targetDistance, -10, 0.8),
+      offsetRoutePoint(metrics.targetDistance, 10, 0.8)], "#e1ffbc", 2, frame);
+    const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
+    for (const side of [-1, 1]) {
+      const platform = offsetRoutePoint(station.distance, side * 13);
+      queue.push({ depth: platform.x + platform.y, draw: () => {
+        drawIsoBox(platform, metrics.zoneLength, 10, 2, point.heading,
+          [active ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"], frame);
+        strokeWorldLine([offsetRoutePoint(station.distance - metrics.zoneLength * 0.5, side * 8.5, 2.1),
+          offsetRoutePoint(station.distance + metrics.zoneLength * 0.5, side * 8.5, 2.1)], "#f2d87e", 2, frame);
+      } });
     }
-
-    const isActive = index + 1 === state.stationIndex;
-    const markerWidth = Math.max(22, stopMetrics.tolerance * scale * 2);
-    const markerHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
-    const markerRadius = Math.min(markerHeight * 0.5, 10);
-    const centerMarkerHeight = markerHeight + clamp(TRACK_WIDTH * scale * 3.8, 16, 30);
-    const platformLength = Math.max(markerWidth + clamp(26 * scale, 12, 36), stopMetrics.zoneLength * scale);
-    const platformWidth = clamp(TRACK_WIDTH * scale * 1.7, 8, 14);
-    const platformOffset = clamp(TRACK_WIDTH * scale * 1.85, 11, 20);
-    const buildingWidth = clamp(28 * scale, 18, 38);
-    const buildingDepth = clamp(18 * scale, 12, 24);
-    const buildingOffset = platformOffset + platformWidth * 0.5 + buildingDepth * 0.8;
-    const platformStartX = -platformLength * 0.5;
-    const buildingTrackOffset = -platformLength * 0.2;
-    const stationVisual = station.visual || createStationVisual();
-    const labelTrackOffset = buildingTrackOffset;
-    const labelSideOffset = stationVisual.buildingSide === -1 ? -(buildingOffset + buildingDepth + 12) : buildingOffset + buildingDepth + 12;
-
-    ctx.save();
-    ctx.translate(screen.x, screen.y);
-    ctx.rotate(point.heading);
-
-    ctx.fillStyle = isActive ? "rgba(224, 232, 238, 0.92)" : "rgba(205, 214, 220, 0.84)";
-    ctx.strokeStyle = isActive ? "rgba(248, 252, 255, 0.9)" : "rgba(228, 236, 242, 0.68)";
-    ctx.lineWidth = 1.5;
-    [-1, 1].forEach((side) => {
-      const platformY = side * platformOffset - platformWidth * 0.5;
-      ctx.beginPath();
-      ctx.roundRect(platformStartX, platformY, platformLength, platformWidth, Math.min(platformWidth * 0.45, 6));
-      ctx.fill();
-      ctx.stroke();
-    });
-
-    const buildingY = stationVisual.buildingSide * buildingOffset - buildingDepth * 0.5;
-    ctx.fillStyle = stationVisual.buildingColor;
-    ctx.strokeStyle = isActive ? "rgba(255, 255, 255, 0.9)" : "rgba(255, 255, 255, 0.58)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.roundRect(buildingTrackOffset - buildingWidth * 0.5, buildingY, buildingWidth, buildingDepth, 5);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = stationVisual.roofColor;
-    ctx.beginPath();
-    ctx.roundRect(
-      buildingTrackOffset - buildingWidth * 0.58,
-      buildingY - buildingDepth * 0.22,
-      buildingWidth * 1.16,
-      Math.max(4, buildingDepth * 0.3),
-      4,
-    );
-    ctx.fill();
-
-    ctx.fillStyle = isActive ? "rgba(133, 255, 182, 0.18)" : "rgba(133, 255, 182, 0.1)";
-    ctx.strokeStyle = isActive ? "rgba(133, 255, 182, 0.95)" : "rgba(133, 255, 182, 0.45)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(targetOffset * scale - markerWidth * 0.5, -markerHeight * 0.5, markerWidth, markerHeight, markerRadius);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.strokeStyle = isActive ? "rgba(217, 255, 231, 0.98)" : "rgba(217, 255, 231, 0.72)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(targetOffset * scale, -centerMarkerHeight * 0.5);
-    ctx.lineTo(targetOffset * scale, centerMarkerHeight * 0.5);
-    ctx.stroke();
-    ctx.restore();
-
-    const labelX = screen.x + Math.cos(point.heading) * labelTrackOffset - Math.sin(point.heading) * labelSideOffset;
-    const labelY = screen.y + Math.sin(point.heading) * labelTrackOffset + Math.cos(point.heading) * labelSideOffset;
-    ctx.fillStyle = "#101010";
-    ctx.font = "600 12px Inter, sans-serif";
-    ctx.textAlign = stationVisual.buildingSide > 0 ? "left" : "right";
-    ctx.textBaseline = "middle";
-    ctx.fillText(station.name, labelX, labelY);
-    ctx.textBaseline = "alphabetic";
-  });
-
-  route.segments.forEach((segment) => {
-    if (segment.speedLimit == null) {
-      return;
-    }
-
-    const signPoint = evaluateRoute(segment.start + 12);
-    const normalX = -Math.sin(signPoint.heading);
-    const normalY = Math.cos(signPoint.heading);
-    const markerPoint = {
-      x: signPoint.x - normalX * (TRACK_WIDTH * 0.9 + 14),
-      y: signPoint.y - normalY * (TRACK_WIDTH * 0.9 + 14),
-    };
-    const screen = worldToScreen(markerPoint, camera, scale, width, view.anchorY);
-    if (screen.y < -40 || screen.y > height + 40 || screen.x < -40 || screen.x > width + 40) {
-      return;
-    }
-
-    ctx.fillStyle = "rgba(255, 191, 82, 0.16)";
-    ctx.strokeStyle = "rgba(255, 191, 82, 0.92)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.roundRect(screen.x - 18, screen.y - 16, 36, 24, 8);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#ffe5b0";
-    ctx.font = "700 11px Inter, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText(`${toKph(segment.speedLimit)}`, screen.x, screen.y + 2);
-  });
-
-  route.signals.forEach((signal) => {
-    const basePoint = evaluateRoute(signal.distance);
-    const normalX = -Math.sin(basePoint.heading);
-    const normalY = Math.cos(basePoint.heading);
-    const signalPoint = {
-      x: basePoint.x + normalX * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
-      y: basePoint.y + normalY * signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset),
-    };
-    const screen = worldToScreen(signalPoint, camera, scale, width, view.anchorY);
-    if (screen.y < -60 || screen.y > height + 60 || screen.x < -60 || screen.x > width + 60) {
-      return;
-    }
-
+    const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);
+    queue.push({ depth: building.x + building.y, draw: () => {
+      drawIsoBox(building, 34, 20, 14, point.heading,
+        [visual.roofColor, visual.buildingColor, "#aa9275"], frame);
+      drawIsoBox({ ...building, elevation: building.elevation + 14 }, 39, 25, 3, point.heading,
+        [visual.roofColor, "#665b4c", "#514d43"], frame);
+    } });
+    frame.labels.push({ point: { ...building, elevation: building.elevation + 25 }, text: station.name,
+      color: active ? "#dcffbd" : "#edf3e1" });
+  }
+  for (const segment of route.segments) {
+    if (segment.speedLimit == null) continue;
+    const point = offsetRoutePoint(segment.start + 12, -18);
+    queueSign(point, `${toKph(segment.speedLimit)}`, "#ffd786", frame, queue);
+  }
+  for (const signal of route.signals) {
+    const point = offsetRoutePoint(signal.distance, signal.side * (TRACK_WIDTH * 0.8 + TUNING.signals.sideOffset));
+    if (!isVisible(projectPoint(point, frame), frame, 60)) continue;
     const aspect = getSignalAspect(signal);
-    const lightColor = aspect === "red" ? "#ff6a62" : aspect === "yellow" ? "#ffd85f" : "#7dff8e";
-    const mastHeight = 24;
-    ctx.save();
-    ctx.strokeStyle = "rgba(210, 228, 240, 0.65)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(screen.x, screen.y + 12);
-    ctx.lineTo(screen.x, screen.y - mastHeight);
-    ctx.stroke();
-
-    ctx.fillStyle = "rgba(9, 16, 24, 0.95)";
-    ctx.beginPath();
-    ctx.roundRect(screen.x - 9, screen.y - mastHeight - 16, 18, 24, 7);
-    ctx.fill();
-
-    ctx.shadowColor = lightColor;
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = lightColor;
-    ctx.beginPath();
-    ctx.arc(screen.x, screen.y - mastHeight - 4, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    if (signal.kind === "yellow") {
-      ctx.fillStyle = "rgba(255, 216, 95, 0.18)";
-      ctx.strokeStyle = "rgba(255, 216, 95, 0.85)";
-      ctx.beginPath();
-      ctx.roundRect(screen.x - 19, screen.y - mastHeight + 12, 38, 18, 7);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#ffeeb8";
-      ctx.font = "700 10px Inter, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(`${toKph(signal.speedLimit)}`, screen.x, screen.y - mastHeight + 25);
-    }
-
-    if (signal.kind === "red" && signal.aspect === "red") {
-      const stopMetrics = getRedStopMetrics(signal);
-      const stopZoneCenterDistance = (stopMetrics.zoneStart + stopMetrics.zoneEnd) * 0.5;
-      const stopZoneCenter = evaluateRoute(stopZoneCenterDistance);
-      const stopZoneScreen = worldToScreen(stopZoneCenter, camera, scale, width, view.anchorY);
-      const stopZoneLength = Math.max(26, stopMetrics.zoneLength * scale);
-      const stopZoneHeight = clamp(TRACK_WIDTH * scale * 2.4, 12, 20);
-
-      ctx.save();
-      ctx.translate(stopZoneScreen.x, stopZoneScreen.y);
-      ctx.rotate(stopZoneCenter.heading);
-      ctx.fillStyle = "rgba(255, 106, 98, 0.1)";
-      ctx.strokeStyle = "rgba(255, 146, 136, 0.7)";
+    const color = aspect === "red" ? "#ff6a62" : aspect === "yellow" ? "#ffd85f" : "#7dff8e";
+    queue.push({ depth: point.x + point.y, draw: () => {
+      const base = projectPoint(point, frame);
+      const top = projectPoint({ ...point, elevation: point.elevation + 20 }, frame);
+      ctx.strokeStyle = "#e1e2cd";
       ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.roundRect(-stopZoneLength * 0.5, -stopZoneHeight * 0.5, stopZoneLength, stopZoneHeight, stopZoneHeight * 0.5);
-      ctx.fill();
-      ctx.stroke();
-      ctx.restore();
-
+      ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+      ctx.fillStyle = "#263c34";
+      ctx.beginPath(); ctx.roundRect(top.x - 7, top.y - 10, 14, 21, 5); ctx.fill();
+      ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.arc(top.x, top.y, 4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+    } });
+    if (signal.kind === "yellow") frame.labels.push({ point: { ...point, elevation: point.elevation + 35 }, text: `${toKph(signal.speedLimit)} km/h`, color });
+    if (signal.kind === "red" && aspect === "red") {
+      const stop = getRedStopMetrics(signal);
+      drawGroundZone(stop.zoneStart, stop.zoneEnd, 7, "rgba(255,106,98,0.28)", frame);
       const gap = signal.distance - state.distance;
       if (gap >= 0 && gap <= TUNING.signals.redCountdownDisplayDistance) {
-        const remaining = Math.max(0, signal.clearAfter - signal.waitTimer);
-        ctx.fillStyle = "rgba(8, 14, 22, 0.88)";
-        ctx.beginPath();
-        ctx.roundRect(screen.x - 17, screen.y - mastHeight - 38, 34, 14, 6);
-        ctx.fill();
-        ctx.fillStyle = "#ffd7d1";
-        ctx.font = "700 10px Inter, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillText(`${remaining.toFixed(1)}s`, screen.x, screen.y - mastHeight - 28);
-
-        ctx.fillStyle = "rgba(255, 218, 213, 0.82)";
-        ctx.font = "600 10px Inter, sans-serif";
-        ctx.fillText("Stop zone", stopZoneScreen.x, stopZoneScreen.y - stopZoneHeight * 0.5 - 8);
+        frame.labels.push({ point: { ...point, elevation: point.elevation + 35 },
+          text: `Stop · ${Math.max(0, signal.clearAfter - signal.waitTimer).toFixed(1)}s`, color });
       }
     }
-    ctx.restore();
-  });
+  }
 }
 
-function drawTrain(frame) {
-  const { width, height, view, renderedUnits } = frame;
-  const { camera, scale } = view;
-  const derailment = state.derailment;
-  const renderUnits = renderedUnits;
+function queueSign(point, text, color, frame, queue) {
+  if (!isVisible(projectPoint(point, frame), frame, 60)) return;
+  queue.push({ depth: point.x + point.y, draw: () => {
+    const base = projectPoint(point, frame);
+    const top = projectPoint({ ...point, elevation: point.elevation + 15 }, frame);
+    ctx.strokeStyle = "#dddeca"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(top.x - 13, top.y - 10, 26, 19, 4); ctx.fill();
+    ctx.fillStyle = "#303b2e"; ctx.font = "700 11px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(text, top.x, top.y + 3);
+  } });
+}
 
-  ctx.save();
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.lineWidth = Math.max(2, scale * 1.2);
-  for (let index = 0; index < renderUnits.length - 1; index += 1) {
-    const currentUnit = renderUnits[index];
-    const nextUnit = renderUnits[index + 1];
-    const rearScreen = worldToScreen(
-      { x: currentUnit.rearX, y: currentUnit.rearY },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    const frontScreen = worldToScreen(
-      { x: nextUnit.frontX, y: nextUnit.frontY },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    ctx.beginPath();
-    ctx.moveTo(rearScreen.x, rearScreen.y);
-    ctx.lineTo(frontScreen.x, frontScreen.y);
-    ctx.stroke();
+function queueTrain(frame, queue) {
+  for (let index = 0; index < frame.renderedUnits.length; index += 1) {
+    const unit = frame.renderedUnits[index];
+    const point = { x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation + 1 };
+    const pitch = unit.renderPitch;
+    queue.push({ depth: point.x + point.y, draw: () => {
+      const warning = (state.overspeedTimer > 0.2 || state.derailment) && unit.type === "locomotive";
+      const body = warning ? "#ff9b6d" : unit.bodyColor;
+      drawIsoBox({ ...point, elevation: point.elevation - 0.6 }, unit.length * 0.86,
+        unit.width + 1.8, 1, unit.renderHeading, ["#3d4d47", "#293b34", "#1e302a"], frame, pitch);
+      drawIsoBox(point, unit.length, unit.width + 1, 4.6, unit.renderHeading,
+        [unit.roofColor, body, body], frame, pitch);
+      if (unit.type !== "locomotive") {
+        const fx = Math.cos(unit.renderHeading), fy = Math.sin(unit.renderHeading);
+        for (const side of [-1, 1]) {
+          const nx = -fy * side, ny = fx * side;
+          if (nx + ny < 0) continue;
+          for (let index = 0; index < 5; index += 1) {
+            const along = (index / 4 - 0.5) * unit.length * 0.7;
+            const corners = [[-1.6, 2.1], [1.6, 2.1], [1.6, 3.7], [-1.6, 3.7]].map(([offset, lift]) => ({
+              x: point.x + fx * (along + offset) + nx * (unit.width + 1) * 0.505,
+              y: point.y + fy * (along + offset) + ny * (unit.width + 1) * 0.505,
+              elevation: point.elevation + (along + offset) * Math.tan(pitch) + lift,
+            }));
+            fillPolygon(corners.map((corner) => projectPoint(corner, frame)), "#3e5e63");
+          }
+        }
+      }
+      const roof = { ...point, elevation: point.elevation + 4.6 };
+      if (unit.type === "locomotive") {
+        const cab = { x: roof.x + Math.cos(unit.renderHeading) * unit.length * 0.2,
+          y: roof.y + Math.sin(unit.renderHeading) * unit.length * 0.2,
+          elevation: roof.elevation + Math.tan(pitch) * unit.length * 0.2 };
+        drawIsoBox(cab, unit.length * 0.28, unit.width * 0.9, 2.4, unit.renderHeading,
+          ["#d3ddd1", "#476878", "#36545d"], frame, pitch);
+        const lamp = projectPoint({ x: unit.frontX, y: unit.frontY, elevation: unit.frontElevation + 3 }, frame);
+        ctx.fillStyle = "#fff1a5"; ctx.beginPath(); ctx.arc(lamp.x, lamp.y, 2.5, 0, Math.PI * 2); ctx.fill();
+      } else {
+        drawIsoBox(roof, unit.length * 0.84, unit.width * 0.72, 0.65, unit.renderHeading,
+          [unit.roofColor, "#748680", "#536963"], frame, pitch);
+      }
+    } });
+    const next = frame.renderedUnits[index + 1];
+    if (next) strokeWorldLine([{ x: unit.rearX, y: unit.rearY, elevation: unit.rearElevation + 1.5 },
+      { x: next.frontX, y: next.frontY, elevation: next.frontElevation + 1.5 }], "#33463e", Math.max(1, frame.view.scale), frame);
   }
-  ctx.restore();
+}
 
-  renderUnits.slice().reverse().forEach((unit) => {
-    const center = worldToScreen(
-      { x: unit.renderX, y: unit.renderY },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    const pixelLength = Math.max(TUNING.train.minPixelLength, unit.length * scale);
-    const pixelWidth = Math.max(TUNING.train.minPixelWidth, unit.width * scale);
-
+function drawWorld(frame) {
+  drawBackground(frame);
+  drawTrack(frame);
+  const queue = [];
+  queueRouteMarkers(frame, queue);
+  queueScenery(frame, queue);
+  queueTrain(frame, queue);
+  const trainScreens = frame.renderedUnits.map((unit) => projectPoint({
+    x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation }, frame));
+  const trainBounds = { left: Math.min(...trainScreens.map((p) => p.x)) - 25,
+    right: Math.max(...trainScreens.map((p) => p.x)) + 25,
+    top: Math.min(...trainScreens.map((p) => p.y)) - 20,
+    bottom: Math.max(...trainScreens.map((p) => p.y)) + 20 };
+  queue.sort((a, b) => a.depth - b.depth).forEach((entry) => {
     ctx.save();
-    ctx.translate(center.x, center.y);
-    ctx.rotate(unit.renderHeading + Math.PI / 2);
-    ctx.shadowColor = "rgba(0,0,0,0.28)";
-    ctx.shadowBlur = 18;
-    ctx.fillStyle = (state.overspeedTimer > 0.2 || derailment) && unit.type === "locomotive" ? "#ff9b6d" : unit.bodyColor;
-    ctx.strokeStyle = "rgba(255,255,255,0.78)";
-    ctx.lineWidth = 1.8;
-    ctx.beginPath();
-    ctx.roundRect(-pixelWidth / 2, -pixelLength / 2, pixelWidth, pixelLength, Math.max(6, pixelWidth * 0.35));
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = unit.roofColor;
-    ctx.fillRect(-pixelWidth * 0.28, -pixelLength * 0.32, pixelWidth * 0.56, pixelLength * 0.48);
-
-    if (unit.type === "locomotive") {
-      ctx.fillStyle = "rgba(255, 232, 160, 0.88)";
-      ctx.fillRect(-pixelWidth * 0.18, -pixelLength * 0.54, pixelWidth * 0.36, Math.max(5, pixelLength * 0.14));
-      ctx.fillStyle = "rgba(7, 21, 36, 0.78)";
-      ctx.fillRect(-pixelWidth * 0.24, -pixelLength * 0.18, pixelWidth * 0.48, pixelLength * 0.18);
-    } else {
-      ctx.fillStyle = "rgba(50, 73, 92, 0.45)";
-      ctx.fillRect(-pixelWidth * 0.16, -pixelLength * 0.42, pixelWidth * 0.32, pixelLength * 0.84);
-    }
-
+    if (entry.sceneryBase && entry.sceneryBase.x > trainBounds.left && entry.sceneryBase.x < trainBounds.right
+      && entry.sceneryBase.y > trainBounds.top && entry.sceneryBase.y - 100 < trainBounds.bottom) ctx.globalAlpha = 0.35;
+    entry.draw();
     ctx.restore();
   });
-
-  ctx.save();
-  ctx.globalCompositeOperation = "multiply";
-  state.exhaustPuffs.forEach((puff) => {
+  for (const puff of state.exhaustPuffs) {
     const progress = puff.age / puff.life;
-    const radius = Math.max(2.2, (puff.radius + puff.growth * progress) * scale);
-    const opacity = Math.max(0, (1 - progress) * puff.opacity);
-    if (opacity <= 0.002) {
-      return;
-    }
-
-    const { x: screenX, y: screenY } = worldToScreen(
-      { x: puff.x, y: puff.y },
-      camera,
-      scale,
-      width,
-      view.anchorY,
-    );
-    if (screenX < -radius || screenX > width + radius || screenY < -radius || screenY > height + radius) {
-      return;
-    }
-
-    const shade = Math.round(puff.shade + progress * 20);
-    ctx.fillStyle = `rgba(${shade}, ${shade}, ${shade + 5}, ${opacity.toFixed(3)})`;
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  ctx.restore();
+    const point = projectPoint({ x: puff.x, y: puff.y,
+      elevation: puff.elevation + 8 + progress * 15 }, frame);
+    ctx.fillStyle = `rgba(48,58,52,${Math.max(0, (1 - progress) * puff.opacity)})`;
+    ctx.beginPath(); ctx.arc(point.x, point.y, (puff.radius + puff.growth * progress) * frame.view.scale, 0, Math.PI * 2); ctx.fill();
+  }
+  // Labels stay readable above scenery and never rotate with the world.
+  ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
+  for (const label of frame.labels) {
+    const point = projectPoint(label.point, frame);
+    if (!isVisible(point, frame)) continue;
+    const width = ctx.measureText(label.text).width + 16;
+    ctx.fillStyle = "rgba(19,39,32,0.83)"; ctx.beginPath();
+    ctx.roundRect(point.x - width * 0.5, point.y - 16, width, 24, 6); ctx.fill();
+    ctx.fillStyle = label.color; ctx.fillText(label.text, point.x, point.y);
+  }
 }
 
 function drawHudOverlay(width, height) {
@@ -772,6 +389,7 @@ function createRenderFrameContext(width, height) {
   return {
     width,
     height,
+    labels: [],
     trainPose,
     view: getViewMetrics(width, height, trainPose),
     renderedUnits: getRenderedTrainUnits(),
@@ -901,11 +519,15 @@ function render() {
   const height = canvas.clientHeight;
   const frame = createRenderFrameContext(width, height);
 
-  drawBackground(frame);
-  drawTrack(frame);
-  drawTrain(frame);
+  drawWorld(frame);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
-  renderDroneInset(frame);
+  ctx.font = "600 11px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(18,36,29,0.8)";
+  const elevationY = width <= 820 ? 142 : 12;
+  ctx.fillRect(width - 210, elevationY, 198, 28);
+  ctx.fillStyle = "#edf3df";
+  ctx.fillText(`Elevation ${frame.trainPose.elevation.toFixed(0)} m · ${(frame.trainPose.grade * 100).toFixed(1)}% grade`, width - 22, elevationY + 18);
 }
 
