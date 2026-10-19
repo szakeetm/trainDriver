@@ -164,7 +164,10 @@ function generateRoute(seed = null) {
     // Index polyline edges by every bucket their bounds touch. Height queries
     // use nearest points on edges, avoiding scalloped earthworks between samples.
     for (const segment of generated.segments) {
-      for (let offset = 0; offset < segment.length; offset += 20) {
+      // The initial consist starts behind chainage zero. Extend its earthworks
+      // as well as the visible rails so the rear cars begin on supported track.
+      const firstOffset = segment.start === 0 ? -Math.ceil((TRAIN_TOTAL_LENGTH + 60) / 20) * 20 : 0;
+      for (let offset = firstOffset; offset < segment.length; offset += 20) {
         const a = evaluateSegment(segment, offset);
         const b = evaluateSegment(segment, Math.min(offset + 20, segment.length));
         const edge = { a, b, distance: segment.start + offset,

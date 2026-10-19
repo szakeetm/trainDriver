@@ -37,8 +37,8 @@ function screenToGround(x, y, view, width, elevation = view.camera.elevation) {
 }
 
 function evaluateSegment(segment, distanceIntoSegment) {
-  const d = clamp(distanceIntoSegment, 0, segment.length);
-  if (Math.abs(segment.curvature) < 1e-6) {
+  const d = Math.min(distanceIntoSegment, segment.length);
+  if (d < 0 || Math.abs(segment.curvature) < 1e-6) {
     return {
       x: segment.x0 + Math.cos(segment.heading0) * d,
       y: segment.y0 + Math.sin(segment.heading0) * d,

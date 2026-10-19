@@ -68,7 +68,7 @@ test('elevation is continuous, grade limited, station zones level, and earthwork
   const result = await page.evaluate(() => {
     let maxGrade = 0, maxJump = 0, maxCorridorError = 0;
     const elevations = [];
-    for (let distance = 0; distance < route.totalLength; distance += 10) {
+    for (let distance = -TRAIN_TOTAL_LENGTH; distance < route.totalLength; distance += 10) {
       const point = evaluateRoute(distance);
       elevations.push(point.elevation);
       maxGrade = Math.max(maxGrade, Math.abs(point.grade));
