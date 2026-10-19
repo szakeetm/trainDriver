@@ -53,10 +53,10 @@
             <h2 id="statusText">Waiting to depart</h2>
             <p id="subStatus">Start the run to roll out from the origin station.</p>
           </article>
-          <article class="stat-card speed-card">
-            <p class="label">Speed</p>
-            <h3><span id="speedKph">0</span> km/h</h3>
-            <p class="secondary">Line limit <span id="lineLimitKph">210</span> km/h</p>
+          <article class="stat-card stat-card-wide speed-card">
+            <p class="label">Speed / limit · km/h</p>
+            <h3 class="speed-readout"><span class="speed-current" id="speedKph">0</span><span class="speed-divider" aria-hidden="true">/</span><span class="speed-limit" id="lineLimitKph">—</span></h3>
+            <p class="secondary" id="lineLimitSecondary">Line unrestricted</p>
           </article>
           <article class="stat-card">
             <p class="label">Next station</p>

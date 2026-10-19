@@ -1116,3 +1116,33 @@ button {
     min-height: 0;
   }
 }
+
+/* Keep the primary driving readout prominent at every HUD breakpoint. */
+.stat-card.speed-card .speed-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px 10px;
+  font-size: clamp(2.75rem, 5vw, 3.5rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  white-space: nowrap;
+}
+
+.speed-card .speed-readout .speed-current {
+  font-size: 1em;
+  color: var(--text);
+}
+
+.speed-card .speed-readout .speed-divider {
+  font-size: 0.5em;
+  color: var(--muted);
+}
+
+.speed-card .speed-readout .speed-limit {
+  font-size: 0.65em;
+  color: var(--accent);
+}

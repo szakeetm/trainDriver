@@ -37,6 +37,8 @@ are documentation/media assets. `docs/` contains test findings and code review n
   Use `getStationStopMetrics()` for station stop targets and tolerances.
 - `createInitialState()` also replaces global `route`. Routes use `Math.random()`;
   failures need a reproducible random source or captured route to investigate reliably.
+  `startRun()` owns initial state creation for both startup and restart; avoid
+  generating an extra state/route before calling it.
 - Route segments, signals, and scenery are ordered by distance. Preserve ordering
   because bounded rendering and `findFirstSortedIndex()` rely on it.
   `evaluateRoute()` caches its last segment and falls back to binary search.
@@ -49,6 +51,8 @@ are documentation/media assets. `docs/` contains test findings and code review n
 - The inset starts minimized. WebGL creation is deferred until expansion, and
   hidden restarts defer route synchronization until expansion. Its `setRoute()`
   disposes old scene resources, including exhaust emitters, before rebuilding.
+  Sleepers are baked into meshes of up to 64 sleepers with bounding spheres for
+  spatial culling. Three.js is r128; do not assume newer instancing/bounds APIs.
 - Both renderers consume the train poses in `createRenderFrameContext()`.
   Keep derailment poses consistent between views. The 3D view currently builds
   only the first two train units; account for that when changing camera framing.
@@ -72,6 +76,8 @@ npm run test:win
 `npm test` also includes the 3D lifecycle regression and slower watch/demo spec.
 Run the focused lifecycle check with
 `npx playwright test tests/drone-lifecycle.spec.js`.
+`tests/rendering-optimizations.spec.js` checks startup generation count and
+batched sleeper placement, bounds, shadows, and resource cleanup.
 `npm run test:win:watch`
 and `npm run test:win:headed` display the route in a browser. Playwright expects
 an already-running server at `http://127.0.0.1:4173`; config does not start one.

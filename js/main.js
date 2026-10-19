@@ -47,10 +47,6 @@ function loop(now) {
 }
 
 function startRun() {
-  if (!state) {
-    return;
-  }
-
   remainingStationsKey = "";
   remainingStationEntries = [];
   uiRefreshCarry = UI_REFRESH_INTERVAL;
@@ -77,7 +73,6 @@ function initializeGame() {
 
   applyTuning();
   syncAssistLegend();
-  state = createInitialState();
   lastFrame = performance.now();
   startRun();
   requestAnimationFrame(loop);

@@ -12,6 +12,16 @@ function drawBackground(frame) {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
 
+  // Every tile uses the same biome palette; only its seeded tone varies.
+  const baseColor = paletteColorToCss(terrainCornerStyle.baseColor);
+  const altColor = paletteColorToCss(terrainCornerStyle.altColor);
+  const mixedBaseAlt = paletteColorToCss(mixPaletteColor(terrainCornerStyle.baseColor, terrainCornerStyle.altColor, 0.55));
+  const mixedAltDetail = paletteColorToCss(mixPaletteColor(terrainCornerStyle.altColor, terrainCornerStyle.detailColor, 0.35));
+  const mixedBaseDetail = paletteColorToCss(mixPaletteColor(terrainCornerStyle.baseColor, terrainCornerStyle.detailColor, 0.25));
+  const detailColor = paletteColorToCss(terrainCornerStyle.detailColor);
+  const riverMix = terrainCornerStyle.riverMix;
+  const riverColor = `rgba(84, 154, 194, ${(0.08 + riverMix * 0.14).toFixed(3)})`;
+
   const cellSize = TUNING.visuals.terrainCellSize;
   const leftWorld = camera.x - width * 0.5 / scale;
   const rightWorld = camera.x + width * 0.5 / scale;
@@ -33,54 +43,25 @@ function drawBackground(frame) {
         route.terrainTileCache.set(tileKey, tileStyle);
       }
 
-      const topLeft = terrainCornerStyle;
-      const topRight = terrainCornerStyle;
-      const bottomLeft = terrainCornerStyle;
-      const bottomRight = terrainCornerStyle;
-
-      const topEdgeBase = mixPaletteColor(topLeft.baseColor, topRight.baseColor, 0.5);
-      const bottomEdgeBase = mixPaletteColor(bottomLeft.baseColor, bottomRight.baseColor, 0.5);
-      const topEdgeAlt = mixPaletteColor(topLeft.altColor, topRight.altColor, 0.5);
-      const bottomEdgeAlt = mixPaletteColor(bottomLeft.altColor, bottomRight.altColor, 0.5);
-      const topEdgeDetail = mixPaletteColor(topLeft.detailColor, topRight.detailColor, 0.5);
-      const bottomEdgeDetail = mixPaletteColor(bottomLeft.detailColor, bottomRight.detailColor, 0.5);
-
-      let topColor = topEdgeBase;
-      let bottomColor = bottomEdgeBase;
+      let tileColor;
       if (tileStyle.biomeSeed > 0.72) {
-        topColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(topEdgeBase, topEdgeAlt, 0.55)
-          : topEdgeAlt;
-        bottomColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(bottomEdgeBase, bottomEdgeAlt, 0.55)
-          : bottomEdgeAlt;
+        tileColor = tileStyle.toneSeed > 0.5 ? mixedBaseAlt : altColor;
       } else if (tileStyle.biomeSeed > 0.44) {
-        topColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(topEdgeAlt, topEdgeDetail, 0.35)
-          : topEdgeAlt;
-        bottomColor = tileStyle.toneSeed > 0.5
-          ? mixPaletteColor(bottomEdgeAlt, bottomEdgeDetail, 0.35)
-          : bottomEdgeAlt;
+        tileColor = tileStyle.toneSeed > 0.5 ? mixedAltDetail : altColor;
       } else {
-        topColor = tileStyle.toneSeed > 0.45
-          ? mixPaletteColor(topEdgeBase, topEdgeDetail, 0.25)
-          : topEdgeBase;
-        bottomColor = tileStyle.toneSeed > 0.45
-          ? mixPaletteColor(bottomEdgeBase, bottomEdgeDetail, 0.25)
-          : bottomEdgeBase;
+        tileColor = tileStyle.toneSeed > 0.45 ? mixedBaseDetail : baseColor;
       }
       const screenX = width * 0.5 + (worldX - camera.x) * scale;
       const screenY = anchorY + (worldY - camera.y) * scale;
       const pixelSize = cellSize * scale;
       const tileGradient = ctx.createLinearGradient(0, screenY, 0, screenY + pixelSize);
-      tileGradient.addColorStop(0, paletteColorToCss(topColor));
-      tileGradient.addColorStop(1, paletteColorToCss(bottomColor));
+      tileGradient.addColorStop(0, tileColor);
+      tileGradient.addColorStop(1, tileColor);
       ctx.fillStyle = tileGradient;
       ctx.fillRect(screenX, screenY, pixelSize + 1, pixelSize + 1);
 
       const tuftSize = (6 + hashNoise(cellGridX + 14, cellGridY + 3) * 16) * scale;
-      const detailColor = mixPaletteColor(topEdgeDetail, bottomEdgeDetail, 0.5);
-      ctx.fillStyle = paletteColorToCss(detailColor);
+      ctx.fillStyle = detailColor;
       ctx.beginPath();
       ctx.ellipse(
         screenX + hashNoise(cellGridX + 2, cellGridY + 5) * pixelSize,
@@ -93,12 +74,10 @@ function drawBackground(frame) {
       );
       ctx.fill();
 
-      const riverMix = lerp(topLeft.riverMix, bottomRight.riverMix, 0.5);
       if (riverMix > 0) {
-        const waterMix = riverMix;
         const ribbon = Math.sin((worldY + worldX * 0.25) * 0.008) * cellSize * 0.36;
         const riverCenter = screenX + pixelSize * 0.5 + ribbon * scale;
-        ctx.fillStyle = `rgba(84, 154, 194, ${(0.08 + waterMix * 0.14).toFixed(3)})`;
+        ctx.fillStyle = riverColor;
         ctx.fillRect(riverCenter - pixelSize * 0.18, screenY - 1, pixelSize * 0.36, pixelSize + 2);
       }
     }

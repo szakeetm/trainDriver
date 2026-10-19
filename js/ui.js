@@ -55,7 +55,7 @@ function updateUi() {
   statusText.textContent = statusMessage;
   subStatus.textContent = statusDetail;
   speedKph.textContent = toKph(state.speed);
-  lineLimitKph.textContent = shownLimit == null ? "No limit" : toKph(shownLimit);
+  lineLimitKph.textContent = shownLimit == null ? "—" : toKph(shownLimit);
   lineLimitSecondary.textContent = shownLimit == null
     ? "Line unrestricted"
     : `Curve limit ${toKph(shownLimit)} km/h`;

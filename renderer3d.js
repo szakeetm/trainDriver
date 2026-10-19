@@ -530,15 +530,49 @@
         metalness: 0.02,
       });
       const sleeperStep = 18;
-      for (let distance = 0; distance <= route.totalLength; distance += sleeperStep) {
-        const point = sampleRoute(distance);
-        const sleeper = new THREE.Mesh(sleeperGeometry, sleeperMaterial);
-        sleeper.position.set(point.x, 0.1, point.y);
-        sleeper.rotation.y = Math.PI * 0.5 - point.heading;
-        sleeper.castShadow = true;
-        sleeper.receiveShadow = true;
-        this.trackGroup.add(sleeper);
+      // Bake small spatial batches so both camera and shadow frustums can cull
+      // distant sleepers. Three.js r128 does not bound instances automatically.
+      const sleepersPerChunk = 64;
+      const sleeperCount = Math.floor(route.totalLength / sleeperStep) + 1;
+      const sourcePositions = sleeperGeometry.getAttribute("position");
+      const sourceNormals = sleeperGeometry.getAttribute("normal");
+      const sourceIndices = sleeperGeometry.index;
+      const transform = new THREE.Object3D();
+      const vertex = new THREE.Vector3();
+      const normal = new THREE.Vector3();
+      for (let first = 0; first < sleeperCount; first += sleepersPerChunk) {
+        const count = Math.min(sleepersPerChunk, sleeperCount - first);
+        const positions = new Float32Array(count * sourcePositions.count * 3);
+        const normals = new Float32Array(positions.length);
+        const indices = new Uint16Array(count * sourceIndices.count);
+        for (let index = 0; index < count; index += 1) {
+          const point = sampleRoute((first + index) * sleeperStep);
+          transform.position.set(point.x, 0.1, point.y);
+          transform.rotation.y = Math.PI * 0.5 - point.heading;
+          transform.updateMatrix();
+          const vertexOffset = index * sourcePositions.count;
+          for (let source = 0; source < sourcePositions.count; source += 1) {
+            vertex.fromBufferAttribute(sourcePositions, source).applyMatrix4(transform.matrix);
+            normal.fromBufferAttribute(sourceNormals, source).transformDirection(transform.matrix);
+            vertex.toArray(positions, (vertexOffset + source) * 3);
+            normal.toArray(normals, (vertexOffset + source) * 3);
+          }
+          for (let source = 0; source < sourceIndices.count; source += 1) {
+            indices[index * sourceIndices.count + source] = vertexOffset + sourceIndices.getX(source);
+          }
+        }
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+        geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+        geometry.computeBoundingSphere();
+        const chunk = new THREE.Mesh(geometry, sleeperMaterial);
+        chunk.name = "sleepers";
+        chunk.castShadow = true;
+        chunk.receiveShadow = true;
+        this.trackGroup.add(chunk);
       }
+      sleeperGeometry.dispose();
     }
 
     createRibbonMesh(samples, width, y, material) {
