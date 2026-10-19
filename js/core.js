@@ -118,6 +118,7 @@ const DEFAULT_TUNING = {
   camera: {
     worldWidth: 520, // Horizontal world span used to fit the isometric viewport.
     worldHeight: 440, // Vertical world span used to fit the isometric viewport.
+    mobileZoom: 1.7, // Extra zoom for compact canvases up to 820 CSS pixels wide.
     speedZoomOut: 0.65, // Extra world span at maximum reference speed.
     leadDistance: 45, // Camera lead along the track in meters when stopped.
     leadDistanceBySpeed: 100, // Additional camera lead at maximum reference speed.

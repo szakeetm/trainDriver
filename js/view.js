@@ -12,6 +12,7 @@ function worldToScreen(point, camera, scale, width, anchorY) {
 function getViewMetrics(width, height, trainPose = evaluateRoute(state.distance)) {
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
   const scale = Math.min(width / TUNING.camera.worldWidth, height / TUNING.camera.worldHeight)
+    * (width <= 820 ? TUNING.camera.mobileZoom : 1)
     / (1 + speedFactor * TUNING.camera.speedZoomOut);
   const leadDistance = TUNING.camera.leadDistance + speedFactor * TUNING.camera.leadDistanceBySpeed;
   const camera = {

@@ -50,6 +50,35 @@ cutaway presentation rather than hiding the train behind foreground hills.
 
 ## Validation
 
+### iOS Safari startup investigation
+
+An iPhone 15 Pro Max on current iOS was reported to show a blank scene and
+unresponsive controls after the terrain migration, including after reload.
+The deployed files matched the workspace. A fresh Playwright WebKit session
+at 430 x 932 and DPR 3 started successfully; the physical-device failure has
+not been reproduced, so its exact cause is still unconfirmed.
+
+The compatibility changes remove the canvas bitmap's intrinsic size from layout,
+cap its backing store at DPR 2, 4096 pixels per dimension and 4 megapixels, and
+avoid clearing/reallocating it on unchanged resize events. A shared release query
+on CSS and scripts refreshes cached assets together after the migration; bump
+that key together when changing contracts between scripts. `js/diagnostics.js`
+loads before the game scripts and displays script loading/startup/runtime errors
+inside the scene so a remaining device-specific failure can be reported without
+a remote console.
+
+`tests/ios-safari.spec.js` covers painted pixels and control response at the
+phone's DPR, rotation, restart, unchanged resizes, stale unversioned assets,
+and readable failures. Run it in WebKit alongside the existing terrain checks:
+
+```powershell
+npx playwright install webkit
+npx playwright test tests/ios-safari.spec.js tests/isometric-terrain.spec.js tests/rendering-optimizations.spec.js --browser webkit --workers 1
+```
+
+All 14 focused tests passed in Playwright WebKit and installed Microsoft Edge.
+Playwright WebKit on Windows does not validate iOS hardware or Safari's browser UI.
+
 See `tests/isometric-terrain.spec.js` for reproducible projection, terrain,
 elevation, station, derailment, cache, input, and responsive-layout checks.
 `tests/rendering-optimizations.spec.js` retains the startup/restart generation

@@ -515,6 +515,36 @@ function drawSpeedEffects(width, height) {
   ctx.restore();
 }
 
+function drawElevationReadout(frame) {
+  const { width, trainPose } = frame;
+  const elevation = trainPose.elevation.toFixed(0);
+  const grade = (trainPose.grade * 100).toFixed(1);
+  if (width <= 820) {
+    ctx.save();
+    ctx.font = "600 10px sans-serif";
+    ctx.textAlign = "right";
+    const lines = [`Elevation ${elevation} m`, `Grade ${grade}%`];
+    const panelWidth = Math.ceil(Math.max(...lines.map(line => ctx.measureText(line).width))) + 20;
+    const panelX = width - panelWidth - 12;
+    // Share the top row when there is room beside the compact route predictor.
+    const panelY = panelX >= 234 ? 12 : 142;
+    ctx.fillStyle = "rgba(18,36,29,0.8)";
+    ctx.beginPath();
+    ctx.roundRect(panelX, panelY, panelWidth, 40, 8);
+    ctx.fill();
+    ctx.fillStyle = "#edf3df";
+    lines.forEach((line, index) => ctx.fillText(line, width - 22, panelY + 16 + index * 14));
+    ctx.restore();
+    return;
+  }
+  ctx.font = "600 11px sans-serif";
+  ctx.textAlign = "right";
+  ctx.fillStyle = "rgba(18,36,29,0.8)";
+  ctx.fillRect(width - 210, 12, 198, 28);
+  ctx.fillStyle = "#edf3df";
+  ctx.fillText(`Elevation ${elevation} m · ${grade}% grade`, width - 22, 30);
+}
+
 function render() {
   const width = canvas.clientWidth;
   const height = canvas.clientHeight;
@@ -523,12 +553,6 @@ function render() {
   drawWorld(frame);
   drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
-  ctx.font = "600 11px sans-serif";
-  ctx.textAlign = "right";
-  ctx.fillStyle = "rgba(18,36,29,0.8)";
-  const elevationY = width <= 820 ? 142 : 12;
-  ctx.fillRect(width - 210, elevationY, 198, 28);
-  ctx.fillStyle = "#edf3df";
-  ctx.fillText(`Elevation ${frame.trainPose.elevation.toFixed(0)} m · ${(frame.trainPose.grade * 100).toFixed(1)}% grade`, width - 22, elevationY + 18);
+  drawElevationReadout(frame);
 }
 
