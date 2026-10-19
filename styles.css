@@ -1119,12 +1119,14 @@ button {
 
 /* Keep the primary driving readout prominent at every HUD breakpoint. */
 .stat-card.speed-card .speed-readout {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: start;
   align-items: baseline;
-  gap: 0.35em;
+  gap: 2px 0.15em;
   width: 100%;
   margin: 6px 0;
-  padding: 8px 10px;
+  padding: 8px 0;
   font-size: clamp(2.75rem, 5vw, 3.5rem);
   font-weight: 800;
   font-variant-numeric: tabular-nums;
@@ -1133,6 +1135,7 @@ button {
 }
 
 .speed-card .speed-readout .speed-current {
+  grid-column: 1 / -1;
   font-size: 1em;
   color: var(--text);
 }

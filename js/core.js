@@ -31,7 +31,6 @@ const requestedMarker = document.getElementById("requestedMarker");
 const requestedLabel = document.getElementById("requestedLabel");
 const actualLabel = document.getElementById("actualLabel");
 const controlDelta = document.getElementById("controlDelta");
-const lineLimitSecondary = document.getElementById("lineLimitSecondary");
 const stationAssist = document.getElementById("stationAssist");
 const assistScale = document.getElementById("assistScale");
 const assistWindow = document.getElementById("assistWindow");

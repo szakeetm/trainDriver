@@ -86,9 +86,10 @@ and skipping 3D frame rendering while minimized. Preserve these.
 - `getStationStopTolerance()` returns a hardcoded 50 m while other station values
   live in tuning. Several legacy tuning helpers/constants appear unused; audit
   consumers before removing them or assuming a setting changes gameplay.
-- Fixed during the speedometer readability update: `lineLimitSecondary` now
-  references a separate label element. Previously, writing its text removed
-  the nested `#lineLimitKph` span and subsequent updates targeted a detached node.
+- Fixed during the speedometer readability update: the limit span stays in the
+  large readout. The redundant secondary limit label and its update code were
+  subsequently removed. Previously, updating the parent label removed the nested
+  `#lineLimitKph` span and subsequent updates targeted a detached node.
 
 Keep optimization separate from physics/scoring changes, and benchmark the
 expanded 3D path independently of the default 2D path.

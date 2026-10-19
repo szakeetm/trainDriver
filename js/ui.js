@@ -56,9 +56,6 @@ function updateUi() {
   subStatus.textContent = statusDetail;
   speedKph.textContent = toKph(state.speed);
   lineLimitKph.textContent = shownLimit == null ? "—" : toKph(shownLimit);
-  lineLimitSecondary.textContent = shownLimit == null
-    ? "Line unrestricted"
-    : `Curve limit ${toKph(shownLimit)} km/h`;
   distanceToStation.textContent = nextStation ? `${Math.max(0, roundDisplayDistance(gap))} m` : "Arrived";
   stationName.textContent = nextStation ? nextStation.name : "All stations served";
   const progressPercent = getGameProgressPercent();
