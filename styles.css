@@ -66,9 +66,24 @@ button {
 }
 
 #gameCanvas {
+  /* Keep the bitmap's intrinsic size out of flex/grid height calculation. */
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.game-error {
+  position: absolute;
+  inset: 16px 16px auto;
+  z-index: 10;
+  padding: 16px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+  background: var(--panel-strong);
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .station-assist {

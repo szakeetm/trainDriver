@@ -1,7 +1,7 @@
 const { test, expect } = require('@playwright/test');
 
 test('generates one route at startup and one per restart', async ({ page }) => {
-  await page.route('**/js/main.js', async (request) => {
+  await page.route('**/js/main.js*', async (request) => {
     const response = await request.fetch();
     await request.fulfill({
       response,

@@ -322,12 +322,19 @@ window.addEventListener("blur", () => {
 });
 
 function resizeCanvas() {
-  const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = Math.round(rect.width * dpr);
-  canvas.height = Math.round(rect.height * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
+  if (rect.width <= 0 || rect.height <= 0) return;
+  // Bound backing-store memory on high-density mobile screens and large tablets.
+  const scale = Math.min(window.devicePixelRatio || 1, 2,
+    4096 / rect.width, 4096 / rect.height,
+    Math.sqrt(4 * 1024 * 1024 / (rect.width * rect.height)));
+  const width = Math.max(1, Math.floor(rect.width * scale));
+  const height = Math.max(1, Math.floor(rect.height * scale));
+  // Assigning either dimension clears the scene and resets the context, even
+  // when unchanged. Safari can fire resize events as its browser chrome moves.
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  ctx.setTransform(width / canvas.clientWidth, 0, 0, height / canvas.clientHeight, 0, 0);
 }
 
 window.addEventListener("resize", resizeCanvas);
