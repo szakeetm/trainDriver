@@ -46,3 +46,16 @@ count regression. The former 3D sleeper/resource test no longer applies.
 A current desktop station approach is captured in
 [`screens/isometric.png`](../screens/isometric.png). Existing review notes in
 `code-review.md` document the previous renderer and are retained as history.
+
+Validated in headless installed Microsoft Edge using the local Playwright config,
+a running HTTP server at port 4173, and one worker:
+
+```powershell
+npx playwright test --config .playwright-local.config.cjs --workers 1
+```
+
+All 13 tests passed, including the slower watch/autoplay scenario and the fast
+zero-penalty route win. After the final origin earthworks extension, all 12
+focused rendering/input/physics/win tests passed again. JavaScript syntax checks
+and `git diff --check` passed. Desktop (1440 x 900) and mobile (390 x 844) station
+views were also inspected. No hardware-GPU frame-rate comparison was performed.
