@@ -409,6 +409,21 @@ function updateControls(dt) {
   state.actualControl += step;
 }
 
+// Assume equal mass per meter of vehicle length. Integrating each vehicle's
+// elevation difference averages the grade under the whole train, excluding gaps.
+function getConsistGrade(distance = state.distance) {
+  let front = distance;
+  let rise = 0;
+  let length = 0;
+  for (const unit of TRAIN_CONSIST) {
+    const rear = front - unit.length;
+    rise += getTrackElevation(front).elevation - getTrackElevation(rear).elevation;
+    length += unit.length;
+    front = rear - COUPLER_GAP;
+  }
+  return length > 0 ? rise / length : 0;
+}
+
 function updatePhysics(dt) {
   const speedRatio = clamp(
     state.speed / TUNING.physics.tractionFadeReferenceSpeed,
@@ -423,8 +438,13 @@ function updatePhysics(dt) {
   const braking = Math.max(0, -state.actualControl) * TUNING.physics.brakingForce;
   const drag = TUNING.physics.baseDrag + state.speed * state.speed * TUNING.physics.quadraticDrag;
 
-  let acceleration = traction - braking - drag;
-  if (state.speed < 0.08 && acceleration < 0) {
+  // visibleSpeedMultiplier remains a travel/presentation multiplier; gravity
+  // is an acceleration in game seconds and is applied exactly once.
+  const gradeAcceleration = -TUNING.physics.gravity * Math.sin(Math.atan(getConsistGrade()));
+  let acceleration = traction - braking - drag + gradeAcceleration;
+  // The game has no reverse gear. Uphill stalls stop at zero; released brakes
+  // on a descent allow rolling forward, and adequate braking holds the train.
+  if (state.speed <= 0 && acceleration < 0) {
     acceleration = 0;
   }
 

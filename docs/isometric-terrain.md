@@ -14,7 +14,8 @@ no longer loaded; the unused vendored bundle remains unchanged.
   signal distances retain their meaning.
 - Track elevation follows smooth station-to-station transitions, with level
   areas extending 240 m either side of a station. Generated grade is capped
-  at 4%. Terrain hills blend into a railway corridor through cuttings and fill.
+  at 8%, with alternating climbs and descents and station elevations between
+  35 and 280 m. Landscape relief is now 96 m. Terrain hills blend into a railway corridor through cuttings and fill.
 - `js/view.js` owns the fixed isometric projection and its ground inverse.
   Camera translation follows train position and elevation; zoom varies with speed.
 - Terrain is a shaded triangular heightfield with shared vertices. Its spatial
@@ -30,9 +31,20 @@ no longer loaded; the unused vendored bundle remains unchanged.
 
 ## Scope
 
-Elevation is visual only: traction, braking, station acceptance, signal rules,
-and simulation update ordering are unchanged. The HUD reports elevation and
-visual grade. Bridges, tunnels, and grade-separated crossings are not implemented.
+Elevation affects acceleration and braking. Gravity contributes
+`-9.81 * sin(atan(grade))` m/s², using the average rise/run beneath the complete
+consist. Vehicles are weighted by length (assuming equal mass per meter), with
+coupler gaps excluded. An ascending locomotive can therefore still receive
+help from coaches that remain on a descent, and vice versa at a crest.
+
+The existing speed/travel multiplier does not multiply gravity. Full power can
+start the train on the steepest generated climb, and full braking can stop and
+hold it on the steepest descent. Released brakes allow downhill rolling; uphill
+stalls stop at zero because reverse movement is not supported. Very slow trains
+now brake fully to zero rather than creeping indefinitely below 0.08 m/s.
+
+Station acceptance, signal rules, and simulation update ordering are unchanged.
+The HUD reports elevation and local track grade. Bridges, tunnels, and grade-separated crossings are not implemented.
 Depth ordering of intersecting large objects is approximate; terrain uses a
 cutaway presentation rather than hiding the train behind foreground hills.
 
@@ -47,6 +59,8 @@ A current desktop station approach is captured in
 [`screens/isometric.png`](../screens/isometric.png). Existing review notes in
 `code-review.md` document the previous renderer and are retained as history.
 
+### Initial isometric validation
+
 Validated in headless installed Microsoft Edge using the local Playwright config,
 a running HTTP server at port 4173, and one worker:
 
@@ -59,3 +73,42 @@ zero-penalty route win. After the final origin earthworks extension, all 12
 focused rendering/input/physics/win tests passed again. JavaScript syntax checks
 and `git diff --check` passed. Desktop (1440 x 900) and mobile (390 x 844) station
 views were also inspected. No hardware-GPU frame-rate comparison was performed.
+
+
+## Gradient physics regression coverage
+
+`tests/grade-physics.spec.js` checks generated climbs/descents and flat station
+areas, gravity under power/coasting/braking, consist averaging across a crest,
+longer downhill and shorter uphill stopping distances, downhill holding and
+rolling, uphill starts/stalls, and independence from the travel multiplier.
+Three fixed seeds (`alpine`, `ridge`, `valley`) must each finish without penalties,
+with no randomized retry. The test autopilot now compensates for gravity and
+aims inside the red stop zone rather than relying on residual low-speed creep.
+
+Gradient update validation: all 21 tests passed in headless Microsoft Edge using
+`npx playwright test --config .playwright-local.config.cjs --workers 1`, including
+all three fixed graded routes, the randomized win, and the slower autoplay demo.
+JavaScript syntax checks and `git diff --check` passed. A seeded 6.8% climb was
+also inspected visually without page errors.
+
+
+## Prop clearance
+
+Scenery is filtered after the complete route and its spatial index exist. Prop
+centers alone are insufficient: ponds have wide edges, buildings have roof
+overhangs, and tall foreground trees can project over rails despite clear bases.
+`getSceneryBounds()` supplies conservative footprint radii and heights, using
+the same size scale as the Canvas renderer. Placement checks both ground
+clearance and the full projected silhouette against every nearby track section,
+including sections distant in route chainage. Conflicting props are omitted;
+remaining scenery stays ordered and seeded generation stays reproducible.
+
+Clearance reserves the 11 m track-bed half-width plus 4 m of space and a 1 m
+allowance for curved-track sampling. The projected test uses a temporary spatial
+index, discarded after generation, and works at every zoom of the fixed camera.
+It does not add per-frame collision checks.
+
+`tests/scenery-clearance.spec.js` covers oversized ponds/roofs, foreground foliage,
+nearby track sections, and complete curved routes across six seeds. All 22
+focused scenery, rendering, input, physics, and win tests passed in headless Edge
+with one worker; syntax and whitespace checks also passed.

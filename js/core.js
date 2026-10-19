@@ -106,11 +106,13 @@ const DEFAULT_TUNING = {
   },
   terrain: {
     cellSize: 32, // Heightfield grid spacing in meters.
-    relief: 64, // Landscape relief in meters, away from the railway.
+    relief: 96, // Landscape relief in meters, away from the railway.
     corridorWidth: 24, // Flat railway corridor half-width in meters.
     blendWidth: 150, // Distance over which earthworks blend into the landscape.
     stationFlatLength: 240, // Level track on either side of each station.
-    maxGrade: 0.04, // Maximum generated rise per horizontal meter.
+    maxGrade: 0.08, // Maximum generated rise per horizontal meter (8%).
+    stationElevationMin: 35, // Lower station altitude in meters.
+    stationElevationMax: 280, // Upper station altitude in meters.
     cacheLimit: 12000, // Maximum cached terrain vertices per route.
   },
   camera: {
@@ -172,6 +174,7 @@ const DEFAULT_TUNING = {
     redStopCircleScale: 0.7, // Legacy setting; red signals now use the full pre-signal stop zone.
   },
   scenery: {
+    trackClearance: 16, // Track bed half-width (11 m), 4 m gap, and 1 m curve-sampling allowance.
     startDistance: 120, // First distance from origin where scenery generation begins.
     endMargin: 140, // Distance before route end where scenery generation stops.
     stationClearance: 120, // Keep this many meters around stations relatively clear of scenery.
@@ -220,6 +223,7 @@ const DEFAULT_TUNING = {
     powerBuildRate: 0.48, // Rate actual power builds when requesting acceleration.
   },
   physics: {
+    gravity: 9.81, // Gravitational acceleration in m/s² applied along the consist grade.
     tractionForce: 1.45, // Base acceleration force at full applied power before fade-off.
     tractionFadeReferenceSpeed: 80, // Speed in m/s used as the reference for traction fade.
     tractionFadeMaxRatio: 1.2, // Maximum normalized speed considered by the traction fade curve.

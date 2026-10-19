@@ -119,10 +119,12 @@ async function stepAutopilot(page, batchSteps) {
 
       if (redSignal) {
         const zoneStart = redSignal.distance - TUNING.signals.redStopWindow;
-        const gap = zoneStart - state.distance;
+        // Aim inside the acceptance zone so a real uphill stop cannot
+        // strand the controller a few meters before the waiting boundary.
+        const gap = zoneStart + 8 - state.distance;
         const gapToSignal = redSignal.distance - state.distance;
         if (gap > 0) {
-          const safeNow = Math.sqrt(Math.max(0, 2 * 3.4 * Math.max(0, gap - 8)));
+          const safeNow = Math.sqrt(Math.max(0, 2 * 3.4 * Math.max(0, gap)));
           desiredSpeed = Math.min(desiredSpeed, safeNow);
         } else {
           desiredSpeed = 0;
@@ -271,6 +273,16 @@ async function stepAutopilot(page, batchSteps) {
         }
       }
 
+      // Preserve the controller's acceleration/braking demand on gradients.
+      // Small creep requests otherwise stall uphill before red stop zones.
+      if (!handledRedWait && state.signalStatus?.message !== 'Stopped at red signal' && desiredSpeed >= 0.05) {
+        const gravity = -TUNING.physics.gravity * Math.sin(Math.atan(getConsistGrade()));
+        const demand = requested >= 0 ? requested * TUNING.physics.tractionForce
+          : requested * TUNING.physics.brakingForce;
+        const compensated = demand - gravity;
+        requested = compensated >= 0 ? compensated / TUNING.physics.tractionForce
+          : compensated / TUNING.physics.brakingForce;
+      }
       state.requestedControl = clampLocal(requested, -1, 1);
       keys.accelerate = false;
       keys.brake = false;

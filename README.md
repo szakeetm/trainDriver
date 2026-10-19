@@ -47,9 +47,10 @@ Append `?seed=alpine` (or any string) to replay the same landscape and route,
 including on restarts. Without a seed, each run gets a fresh world. Train colors
 and transient exhaust remain randomized.
 
-Elevation and grade are shown on the map. Hills do not change acceleration or
-braking in this version. Bridges, tunnels, and grade-separated crossings are
-outside this version's scope.
+Elevation and grade are shown on the map. Routes include climbs and descents
+up to 8%: climbs need more power, and descents need earlier braking. Keep brakes
+applied to hold the train on downhill track; uphill stalls stop without reversing.
+Bridges, tunnels, and grade-separated crossings are outside this version's scope.
 
 Gameplay tuning and shared globals start in [`js/core.js`](js/core.js).
 
@@ -81,7 +82,7 @@ python -m http.server 4173
 
 Then run one of these in a second terminal:
 
-- `npx playwright test tests/isometric-terrain.spec.js tests/rendering-optimizations.spec.js`: focused rendering regressions
+- `npx playwright test tests/isometric-terrain.spec.js tests/grade-physics.spec.js tests/rendering-optimizations.spec.js`: focused rendering regressions
 - `npm run test:win`: fast headless win test
 - `npm run test:win:watch`: headed visible autoplay demo
 - `npm run test:win:headed`: headed watch mode using the reusable win spec

@@ -52,12 +52,19 @@ are documentation/media assets. `docs/` contains test findings and code review n
   Keyboard and pointer holds share `keys`; blur clears held controls.
 - World `x/y` are horizontal meters; `elevation` is vertical meters. Track grade
   is rise/run and pitch is radians. Route distance remains horizontal chainage.
-  Elevation is visual only: `updatePhysics()` does not apply slope forces.
-- `getTrackElevation()` uses smooth transitions and level station zones.
+  `updatePhysics()` applies gravity along the average grade under the consist,
+  weighted by vehicle length (equal mass per meter, excluding coupler gaps).
+  `visibleSpeedMultiplier` scales travel only, not gravity. There is no reverse
+  movement: uphill stalls clamp at zero, downhill coasting rolls forward, and
+  sufficient braking holds the train.
+- `getTrackElevation()` uses smooth transitions up to 8% and level station zones.
   `getTerrainHeight()` blends surrounding hills into track earthworks, using a
   route-owned spatial index. Terrain vertices share a bounded route-owned cache.
 - Both regular and derailed poses include elevation. `createRenderFrameContext()`
   supplies all consist units, camera metrics, biome blend, and overlay labels.
+- Scenery clearance runs once after route/index generation. It checks full prop
+  footprints and projected height against all track sections, rejecting overlaps.
+  Keep `getSceneryBounds()` synchronized with the Canvas prop geometry.
 - Terrain draws first, then track ribbons and ground zones, then depth-sorted
   props/trains. Labels and HUD draw last. Foreground scenery fades near the train.
   Bridges, tunnels, and grade-separated crossings are not modeled; object sorting
@@ -86,6 +93,8 @@ Run focused rendering coverage with
 These check offline execution without WebGL, seeded generation, projection,
 continuous grade-limited elevation, flat station zones, track earthworks,
 train/derailment heights, cache replacement/bounds, and desktop/mobile resizing.
+`tests/grade-physics.spec.js` checks slope forces, braking distances, crest
+transitions, stationary behavior, and clean wins on three fixed graded routes.
 `tests/rendering-optimizations.spec.js` checks one route generation per start/restart.
 `npm run test:win:watch` and `npm run test:win:headed` display the route in a browser.
 Playwright expects an already-running server at `http://127.0.0.1:4173`;

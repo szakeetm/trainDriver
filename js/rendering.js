@@ -27,7 +27,8 @@ function drawBackground(frame) {
   // prevent gaps while following the train over changing elevations.
   const corners = [];
   const extent = 60 + TUNING.terrain.relief * 1.35;
-  for (const elevation of [56 - extent, 56 + extent]) {
+  const trackTop = Math.max(...route.elevationNodes.map((node) => node.elevation));
+  for (const elevation of [56 - extent, Math.max(56 + extent, trackTop + 1)]) {
     for (const x of [-64, frame.width + 64]) {
       for (const y of [-64, frame.height + 64]) {
         corners.push(screenToGround(x, y, frame.view, frame.width, elevation));
@@ -181,7 +182,7 @@ function queueScenery(frame, queue) {
     const point = getSceneryPoint(item);
     if (!isVisible(projectPoint(point, frame), frame, 120)) continue;
     queue.push({ depth: point.x + point.y, sceneryBase: projectPoint(point, frame), draw: () => {
-      const size = item.size * 8;
+      const { size } = getSceneryBounds(item);
       if (["tree", "bush", "cactus", "stump"].includes(item.kind)) {
         drawTree(point, item.kind === "bush" || item.kind === "stump" ? size * 0.4 : size, frame, item.tint);
       } else if (item.kind === "pond") {

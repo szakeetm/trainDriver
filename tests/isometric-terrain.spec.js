@@ -183,19 +183,3 @@ test('keyboard and pointer holds still drive controls and blur releases them', a
   expect(await page.evaluate(() => ({ ...keys }))).toEqual({ accelerate: false, brake: false });
   await page.mouse.up();
 });
-
-test('elevation leaves traction and braking physics unchanged', async ({ page }) => {
-  await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-  await page.goto('/?seed=alpine');
-  const result = await page.evaluate(() => {
-    const snapshot = { ...state };
-    const simulate = (distance, control) => {
-      Object.assign(state, snapshot, { distance, speed: 20, actualControl: control });
-      updatePhysics(0.05);
-      return { speed: state.speed, acceleration: state.acceleration };
-    };
-    const hill = route.stations[1].distance * 0.5;
-    return [-1, 0, 1].map(control => ({ flat: simulate(0, control), hill: simulate(hill, control) }));
-  });
-  for (const pair of result) expect(pair.flat).toEqual(pair.hill);
-});

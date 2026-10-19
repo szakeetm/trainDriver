@@ -145,20 +145,21 @@ function generateRoute(seed = null) {
     const generated = buildRoute();
     generated.seed = routeSeed;
     generated.terrainPhase = worldRandom() * 1000;
-    generated.elevationNodes = generated.stations.map((station, index) => ({
-      distance: station.distance,
-      elevation: index === 0 ? 60 : 35 + worldRandom() * 70,
-    }));
+    generated.elevationNodes = [{ distance: 0, elevation: 60 }];
+    // Alternate climbs and descents with substantial relief. Derive the rise
+    // from the available transition length so long sections are steep too.
+    for (let index = 1; index < generated.stations.length; index += 1) {
+      const previous = generated.elevationNodes[index - 1];
+      const distance = generated.stations[index].distance;
+      const run = Math.max(0, distance - previous.distance - TUNING.terrain.stationFlatLength * 2);
+      const maxRise = run * TUNING.terrain.maxGrade / 1.5;
+      const direction = index % 2 === 1 ? 1 : -1;
+      const elevation = clamp(previous.elevation + direction * maxRise * rand(0.65, 1),
+        TUNING.terrain.stationElevationMin, TUNING.terrain.stationElevationMax);
+      generated.elevationNodes.push({ distance, elevation });
+    }
     generated.elevationNodes.push({ distance: generated.totalLength,
       elevation: generated.elevationNodes[generated.elevationNodes.length - 1].elevation });
-    // Limit height differences so smoothstep transitions cannot exceed maxGrade.
-    for (let index = 1; index < generated.elevationNodes.length; index += 1) {
-      const previous = generated.elevationNodes[index - 1];
-      const node = generated.elevationNodes[index];
-      const run = Math.max(0, node.distance - previous.distance - TUNING.terrain.stationFlatLength * 2);
-      const rise = run * TUNING.terrain.maxGrade / 1.5;
-      node.elevation = clamp(node.elevation, previous.elevation - rise, previous.elevation + rise);
-    }
     generated.terrainHeightCache = new Map();
     generated.trackSpatialIndex = new Map();
     // Index polyline edges by every bucket their bounds touch. Height queries
@@ -181,6 +182,7 @@ function generateRoute(seed = null) {
         }
       }
     }
+    generated.scenery = filterSceneryForTrack(generated);
     return generated;
   } finally {
     worldRandom = previousRandom;
@@ -534,8 +536,8 @@ function generateScenery(stations, totalLength) {
 }
 
 // Route distance remains horizontal chainage so gameplay boundaries stay stable.
-function getTrackElevation(distance) {
-  const nodes = route.elevationNodes;
+function getTrackElevation(distance, routeData = route) {
+  const nodes = routeData.elevationNodes;
   if (!nodes) return { elevation: 0, grade: 0, pitch: 0 };
   const index = clamp(findFirstSortedIndex(nodes, distance) - 1, 0, nodes.length - 2);
   const a = nodes[index];
@@ -548,8 +550,8 @@ function getTrackElevation(distance) {
     grade, pitch: Math.atan(grade) };
 }
 
-function getTerrainHeight(x, y) {
-  const phase = route.terrainPhase;
+function getTerrainHeight(x, y, routeData = route) {
+  const phase = routeData.terrainPhase;
   const relief = TUNING.terrain.relief;
   const natural = 56 + relief * (Math.sin(x / 290 + phase) * Math.cos(y / 340 - phase) * 0.65
     + Math.sin(x / 110 + y / 170 + phase) * 0.2
@@ -562,7 +564,7 @@ function getTerrainHeight(x, y) {
   const bucketRadius = Math.ceil(TUNING.terrain.blendWidth / 160);
   for (let gx = bx - bucketRadius; gx <= bx + bucketRadius; gx += 1) {
     for (let gy = by - bucketRadius; gy <= by + bucketRadius; gy += 1) {
-      const edges = route.trackSpatialIndex.get(`${gx},${gy}`) || [];
+      const edges = routeData.trackSpatialIndex.get(`${gx},${gy}`) || [];
       for (const edge of edges) {
         const dx = edge.b.x - edge.a.x;
         const dy = edge.b.y - edge.a.y;
@@ -573,7 +575,7 @@ function getTerrainHeight(x, y) {
         if (gap < nearest || (gap === nearest && distance < nearestDistance)) {
           nearest = gap;
           nearestDistance = distance;
-          trackHeight = getTrackElevation(distance).elevation - 0.35;
+          trackHeight = getTrackElevation(distance, routeData).elevation - 0.35;
         }
       }
     }
@@ -592,4 +594,90 @@ function getTerrainVertex(gx, gy) {
     route.terrainHeightCache.set(key, point);
   }
   return point;
+}
+
+// Conservative bounds shared with Canvas prop sizing. Roof overhangs and pond
+// edges count, and trees include the full height of their highest foliage layer.
+function getSceneryBounds(item) {
+  const size = item.size * 8;
+  if (["tree", "bush", "cactus", "stump"].includes(item.kind)) {
+    const radius = size * (["bush", "stump"].includes(item.kind) ? 0.4 : 1);
+    return { size, radius, height: radius * 3.4 };
+  }
+  if (item.kind === "pond") return { size, radius: size * 2, height: 0.2 };
+  if (["rock", "ruins", "hayBale"].includes(item.kind)) {
+    return { size, radius: Math.hypot(size * 0.75, size * 0.5), height: size * 0.75 };
+  }
+  return { size, radius: Math.hypot(size * 1.35, size * 0.975), height: size * 1.4 + 1.6 };
+}
+
+function pointSegmentDistance(point, a, b) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+  return Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t);
+}
+
+function segmentDistance(a, b, c, d) {
+  const ux = b.x - a.x, uy = b.y - a.y;
+  const vx = d.x - c.x, vy = d.y - c.y;
+  const denominator = ux * vy - uy * vx;
+  if (Math.abs(denominator) > 1e-9) {
+    const dx = c.x - a.x, dy = c.y - a.y;
+    const t = (dx * vy - dy * vx) / denominator;
+    const u = (dx * uy - dy * ux) / denominator;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) return 0;
+  }
+  return Math.min(pointSegmentDistance(a, c, d), pointSegmentDistance(b, c, d),
+    pointSegmentDistance(c, a, b), pointSegmentDistance(d, a, b));
+}
+
+function filterSceneryForTrack(routeData) {
+  // A temporary index in fixed isometric space catches tall foreground props
+  // whose bases are clear in the world but whose silhouettes cover the rails.
+  const projectedIndex = new Map();
+  const bucketSize = 160;
+  const camera = { x: 0, y: 0, elevation: 0 };
+  const project = point => worldToScreen(point, camera, 1, 0, 0);
+  const visitBuckets = (index, minX, maxX, minY, maxY, visit) => {
+    for (let x = Math.floor(minX / bucketSize); x <= Math.floor(maxX / bucketSize); x += 1) {
+      for (let y = Math.floor(minY / bucketSize); y <= Math.floor(maxY / bucketSize); y += 1) {
+        if (visit(index, `${x},${y}`) === false) return false;
+      }
+    }
+    return true;
+  };
+  for (const edge of new Set([...routeData.trackSpatialIndex.values()].flat())) {
+    const a = project({ ...edge.a, ...getTrackElevation(edge.distance, routeData) });
+    const b = project({ ...edge.b, ...getTrackElevation(edge.distance + edge.length, routeData) });
+    const projected = { a, b };
+    visitBuckets(projectedIndex, Math.min(a.x, b.x), Math.max(a.x, b.x),
+      Math.min(a.y, b.y), Math.max(a.y, b.y), (index, key) => {
+        if (!index.has(key)) index.set(key, []);
+        index.get(key).push(projected);
+      });
+  }
+  return routeData.scenery.filter(item => {
+    // Sample the new route explicitly: global route can still refer to the old
+    // run here, and generation must never mutate or consult its geometry.
+    const segment = routeData.segments[findFirstSortedIndex(routeData.segments, item.distance, part => part.end)];
+    const pose = evaluateSegment(segment, item.distance - segment.start);
+    const point = { x: pose.x - Math.sin(pose.heading) * item.offset,
+      y: pose.y + Math.cos(pose.heading) * item.offset };
+    const { radius, height } = getSceneryBounds(item);
+    const clearance = radius + TUNING.scenery.trackClearance;
+    const clearGround = visitBuckets(routeData.trackSpatialIndex,
+      point.x - clearance, point.x + clearance, point.y - clearance, point.y + clearance,
+      (index, key) => !(index.get(key) || []).some(edge => pointSegmentDistance(point, edge.a, edge.b) < clearance));
+    if (!clearGround) return false;
+    point.elevation = getTerrainHeight(point.x, point.y, routeData);
+    const bottom = project(point);
+    const top = project({ ...point, elevation: point.elevation + height });
+    // Projection cannot enlarge a horizontal circle at scale 1. A capsule of
+    // this radius therefore contains the full projected prop at every zoom.
+    const clearView = visitBuckets(projectedIndex,
+      bottom.x - clearance, bottom.x + clearance, top.y - clearance, bottom.y + clearance,
+      (index, key) => !(index.get(key) || []).some(edge => segmentDistance(bottom, top, edge.a, edge.b) < clearance));
+    if (clearView) item.worldPoint = point;
+    return clearView;
+  });
 }
