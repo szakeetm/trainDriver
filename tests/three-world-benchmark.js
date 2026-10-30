@@ -3,7 +3,8 @@ const { chromium } = require('playwright');
 
 async function benchmark() {
   const browser = await chromium.launch({ args: ['--use-angle=d3d11', '--enable-gpu'] });
-  const report = { baselineCommit: 'ee52655', browser: await browser.version(), results: [] };
+  const report = { baselineCommit: '3c1c1a4', variant: 'Three world visual parity work',
+    browser: await browser.version(), results: [] };
   try {
     const session = await browser.newBrowserCDPSession();
     const info = await session.send('SystemInfo.getInfo');

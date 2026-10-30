@@ -483,6 +483,9 @@ button {
   padding: 12px 14px;
   color: white;
   touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .control-button.accel {

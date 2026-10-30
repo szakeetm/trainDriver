@@ -35,6 +35,10 @@ are documentation/media assets. `docs/` contains test findings and code review n
 - `DEFAULT_TUNING` in `core.js` is the source for gameplay configuration.
   `applyTuning()` clones it and derives constants and randomized consist colors.
   Some behavior still uses hardcoded values; inspect the actual consumer before tuning.
+- `train.bodyHeight` controls the rendered body height in both world renderers.
+  Consist widths exclude the 1m body-shell margin (chassis adds 1.8m). Windows,
+  headlights, roof/cab bases, and exhaust clearance follow body height. These
+  visual proportions do not change vehicle lengths, coupler gaps, or physics.
 - Distances and train lengths are in meters, speeds in meters/second, time in
   seconds, headings in radians. HUD speed uses `KPH_PER_MPS = 3.6`.
   `visibleSpeedMultiplier` also scales distance advancement in physics.
@@ -101,6 +105,14 @@ are documentation/media assets. `docs/` contains test findings and code review n
   must be invalidated after exhaust so the final puff is erased. Text/HUD remain
   Canvas/DOM. Optional library-load errors fall back without a fatal banner;
   asynchronous startup failures are forwarded to the normal diagnostics.
+- The Three world adds 0.6px world outlines and outward-face masking, retaining
+  all side faces only for vehicle meshes. Static boxes omit invisible sides.
+  `paintRouteMarker()` and `paintTreeShadow()` are shared Canvas/atlas painters;
+  GPU signs, signal glow, and tree shadows use one 512x256 RGBA texture. The
+  backing-store ratio controls glow width; ratio changes dispose/rebuild the
+  atlas, while route restart retains it. Transparent texels discard before depth
+  writes. Stop zones triangulate in fixed isometric projection to avoid concave
+  triangle-fan wedges. Partially transparent overlaps still use geometric depth.
 
 ## Running and verification
 
@@ -154,8 +166,14 @@ different quantities. Phone viewport results still use the host GPU.
 For the Three world, run `tests/three-world.spec.js` and
 `node tests/three-world-benchmark.js`. Compare with the current WebGL2+Canvas
 world in the same page; do not compare only to older software-rendered timing
-reports. Three uses geometric object depth and simplified outlines/shadows,
-so it is visually close rather than pixel-identical.
+reports. Three uses geometric object depth; its antialiasing and translucent
+overlaps can differ, so it is visually close rather than pixel-identical.
+
+`tests/three-world-parity.spec.js` compares isolated production Canvas/GPU
+fixtures for shadows/foliage, vehicle color/faces, rounded markers/glow, pond and
+box edges, curved zones, DPR changes, and texture lifetime. Parity includes
+restored outlines/shadows; line endpoints/antialiasing and transparent painter
+ordering can still differ. See `docs/threejs-parity.md` for measured costs.
 
 For rendering changes, check seeded flat/graded track, stations, signals,
 derailments, resize, restart, and mobile layouts. Inspect page errors and terrain

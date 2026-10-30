@@ -71,6 +71,7 @@ const DEFAULT_TUNING = {
   },
   train: {
     trackWidth: 4, // Distance between rails used for drawing the track.
+    bodyHeight: 7.2, // Rendered body height above the chassis, shared by both world renderers.
     couplerGap: 4, // Gap in meters between each vehicle in the consist.
     maxPowerKw: 5500, // Full traction output represented when the power controller reaches 100%.
     maxBrakePressureBar: 6.5, // Full brake pipe pressure reduction represented when braking reaches 100%.
@@ -79,21 +80,21 @@ const DEFAULT_TUNING = {
       {
         type: "locomotive", // Vehicle role used for rendering details.
         length: 24, // Vehicle length in meters along the track.
-        width: 10, // Vehicle body width in meters for isometric rendering.
+        width: 6, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#53c8ff", // Main fill color of the vehicle body.
         roofColor: "rgba(255,255,255,0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for isometric rendering.
+        width: 5.5, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#8da4bc", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
-        width: 9, // Vehicle body width in meters for isometric rendering.
+        width: 5.5, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#9fb7cf", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },

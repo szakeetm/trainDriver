@@ -257,10 +257,7 @@ function drawIsoBox(center, length, width, height, heading, colors, frame, pitch
 function drawTree(point, size, frame, tint = 0) {
   const scale = frame.view.scale;
   const base = projectPoint(point, frame);
-  ctx.fillStyle = "rgba(24,44,26,0.18)";
-  ctx.beginPath();
-  ctx.ellipse(base.x + size * scale * 0.7, base.y + size * scale * 0.25, size * scale, size * scale * 0.35, -0.3, 0, Math.PI * 2);
-  ctx.fill();
+  paintTreeShadow(ctx, base.x, base.y, size * scale);
   drawIsoBox(point, 2, 2, size * 1.1, 0, ["#8b7554", "#735c40", "#574835"], frame);
   for (let layer = 0; layer < 3; layer += 1) {
     const radius = size * (1 - layer * 0.2);
@@ -274,6 +271,13 @@ function drawTree(point, size, frame, tint = 0) {
     fillPolygon([a, b, top], tint > 0 ? "#436d40" : "#365f40");
     fillPolygon([b, c, top], tint > 0 ? "#315635" : "#284e37");
   }
+}
+
+function paintTreeShadow(painter, x, y, size) {
+  painter.fillStyle = "rgba(24,44,26,0.18)";
+  painter.beginPath();
+  painter.ellipse(x + size * 0.7, y + size * 0.25, size, size * 0.35, -0.3, 0, Math.PI * 2);
+  painter.fill();
 }
 
 function queueScenery(frame, queue) {
@@ -361,10 +365,7 @@ function queueRouteMarkers(frame, queue) {
       ctx.strokeStyle = "#e1e2cd";
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
-      ctx.fillStyle = "#263c34";
-      ctx.beginPath(); ctx.roundRect(top.x - 7, top.y - 10, 14, 21, 5); ctx.fill();
-      ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = 8;
-      ctx.beginPath(); ctx.arc(top.x, top.y, 4, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+      paintRouteMarker(ctx, top.x, top.y, "signal", color);
     } });
     if (signal.kind === "yellow") frame.labels.push({ point: { ...point, elevation: point.elevation + 35 }, text: `${toKph(signal.speedLimit)} km/h`, color });
     if (signal.kind === "red" && aspect === "red") {
@@ -379,6 +380,21 @@ function queueRouteMarkers(frame, queue) {
   }
 }
 
+// Shared by the reference Canvas world and the retained GPU sprite atlas.
+// shadowScale accounts for atlas rasterization; Canvas shadowBlur itself does
+// not follow the context transform, unlike the panel and lens geometry.
+function paintRouteMarker(painter, x, y, kind, color, shadowScale = 1) {
+  if (kind === "sign") {
+    painter.fillStyle = color;
+    painter.beginPath(); painter.roundRect(x - 13, y - 10, 26, 19, 4); painter.fill();
+    return;
+  }
+  painter.fillStyle = "#263c34";
+  painter.beginPath(); painter.roundRect(x - 7, y - 10, 14, 21, 5); painter.fill();
+  painter.fillStyle = color; painter.shadowColor = color; painter.shadowBlur = 8 * shadowScale;
+  painter.beginPath(); painter.arc(x, y, 4, 0, Math.PI * 2); painter.fill(); painter.shadowBlur = 0;
+}
+
 function queueSign(point, text, color, frame, queue) {
   if (!isVisible(projectPoint(point, frame), frame, 60)) return;
   queue.push({ depth: point.x + point.y, draw: () => {
@@ -386,13 +402,14 @@ function queueSign(point, text, color, frame, queue) {
     const top = projectPoint({ ...point, elevation: point.elevation + 15 }, frame);
     ctx.strokeStyle = "#dddeca"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(base.x, base.y); ctx.lineTo(top.x, top.y); ctx.stroke();
-    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(top.x - 13, top.y - 10, 26, 19, 4); ctx.fill();
+    paintRouteMarker(ctx, top.x, top.y, "sign", color);
     ctx.fillStyle = "#303b2e"; ctx.font = "700 11px sans-serif"; ctx.textAlign = "center";
     ctx.fillText(text, top.x, top.y + 3);
   } });
 }
 
 function queueTrain(frame, queue) {
+  const bodyHeight = TUNING.train.bodyHeight;
   for (let index = 0; index < frame.renderedUnits.length; index += 1) {
     const unit = frame.renderedUnits[index];
     const point = { x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation + 1 };
@@ -402,7 +419,7 @@ function queueTrain(frame, queue) {
       const body = warning ? "#ff9b6d" : unit.bodyColor;
       drawIsoBox({ ...point, elevation: point.elevation - 0.6 }, unit.length * 0.86,
         unit.width + 1.8, 1, unit.renderHeading, ["#3d4d47", "#293b34", "#1e302a"], frame, pitch);
-      drawIsoBox(point, unit.length, unit.width + 1, 4.6, unit.renderHeading,
+      drawIsoBox(point, unit.length, unit.width + 1, bodyHeight, unit.renderHeading,
         [unit.roofColor, body, body], frame, pitch);
       if (unit.type !== "locomotive") {
         const fx = Math.cos(unit.renderHeading), fy = Math.sin(unit.renderHeading);
@@ -411,7 +428,8 @@ function queueTrain(frame, queue) {
           if (nx + ny < 0) continue;
           for (let index = 0; index < 5; index += 1) {
             const along = (index / 4 - 0.5) * unit.length * 0.7;
-            const corners = [[-1.6, 2.1], [1.6, 2.1], [1.6, 3.7], [-1.6, 3.7]].map(([offset, lift]) => ({
+            const corners = [[-1.6, bodyHeight * 0.45], [1.6, bodyHeight * 0.45],
+              [1.6, bodyHeight * 0.8], [-1.6, bodyHeight * 0.8]].map(([offset, lift]) => ({
               x: point.x + fx * (along + offset) + nx * (unit.width + 1) * 0.505,
               y: point.y + fy * (along + offset) + ny * (unit.width + 1) * 0.505,
               elevation: point.elevation + (along + offset) * Math.tan(pitch) + lift,
@@ -420,14 +438,15 @@ function queueTrain(frame, queue) {
           }
         }
       }
-      const roof = { ...point, elevation: point.elevation + 4.6 };
+      const roof = { ...point, elevation: point.elevation + bodyHeight };
       if (unit.type === "locomotive") {
         const cab = { x: roof.x + Math.cos(unit.renderHeading) * unit.length * 0.2,
           y: roof.y + Math.sin(unit.renderHeading) * unit.length * 0.2,
           elevation: roof.elevation + Math.tan(pitch) * unit.length * 0.2 };
         drawIsoBox(cab, unit.length * 0.28, unit.width * 0.9, 2.4, unit.renderHeading,
           ["#d3ddd1", "#476878", "#36545d"], frame, pitch);
-        const lamp = projectPoint({ x: unit.frontX, y: unit.frontY, elevation: unit.frontElevation + 3 }, frame);
+        const lamp = projectPoint({ x: unit.frontX, y: unit.frontY,
+          elevation: unit.frontElevation + 1 + bodyHeight * 0.45 }, frame);
         ctx.fillStyle = "#fff1a5"; ctx.beginPath(); ctx.arc(lamp.x, lamp.y, 2.5, 0, Math.PI * 2); ctx.fill();
       } else {
         drawIsoBox(roof, unit.length * 0.84, unit.width * 0.72, 0.65, unit.renderHeading,
@@ -464,7 +483,7 @@ function drawWorld(frame) {
   for (const puff of state.exhaustPuffs) {
     const progress = puff.age / puff.life;
     const point = projectPoint({ x: puff.x, y: puff.y,
-      elevation: puff.elevation + 8 + progress * 15 }, frame);
+      elevation: puff.elevation + TUNING.train.bodyHeight + 3.4 + progress * 15 }, frame);
     ctx.fillStyle = `rgba(48,58,52,${Math.max(0, (1 - progress) * puff.opacity)})`;
     ctx.beginPath(); ctx.arc(point.x, point.y, (puff.radius + puff.growth * progress) * frame.view.scale, 0, Math.PI * 2); ctx.fill();
   }

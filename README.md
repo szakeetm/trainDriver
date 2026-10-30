@@ -18,6 +18,9 @@ vehicles, and exhaust use retained GPU geometry on the same WebGL context as
 the existing terrain. Text and HUD remain on Canvas/DOM. The existing local
 Three.js r128 bundle loads only in this mode. See
 [the Three.js comparison](docs/threejs-experiment.md) for measurements and tradeoffs.
+The parity pass restores shadows, outlines, rounded markers/glow, and
+warning colors, and fixes curved stop-zone filling. See
+[the parity report](docs/threejs-parity.md) for validation and remaining differences.
 
 You drive a 100 m consist across a procedurally generated route with stations, signals, curves, speed limits, isometric hills, elevated track, biome-driven scenery, and derailment penalties for major mistakes.
 
