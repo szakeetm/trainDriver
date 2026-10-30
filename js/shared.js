@@ -331,6 +331,7 @@ function resizeCanvas() {
   if (canvas.width !== width) canvas.width = width;
   if (canvas.height !== height) canvas.height = height;
   ctx.setTransform(width / canvas.clientWidth, 0, 0, height / canvas.clientHeight, 0, 0);
+  if (typeof resizeTerrainSurface === "function") resizeTerrainSurface(width, height);
 }
 
 window.addEventListener("resize", resizeCanvas);

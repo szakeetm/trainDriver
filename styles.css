@@ -65,13 +65,22 @@ button {
   box-shadow: var(--shadow);
 }
 
-#gameCanvas {
+#gameCanvas,
+#terrainCanvas {
   /* Keep the bitmap's intrinsic size out of flex/grid height calculation. */
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+}
+
+#terrainCanvas {
+  pointer-events: none;
+}
+
+#terrainCanvas[hidden] {
+  display: none;
 }
 
 .game-error {

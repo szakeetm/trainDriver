@@ -441,7 +441,7 @@ function queueTrain(frame, queue) {
 }
 
 function drawWorld(frame) {
-  drawBackground(frame);
+  drawTerrainBackground(frame);
   drawTrack(frame);
   const queue = [];
   queueRouteMarkers(frame, queue);

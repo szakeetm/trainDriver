@@ -4,12 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Train Driver</title>
-    <link rel="stylesheet" href="styles.css?v=terrain-repairs-1" />
+    <link rel="stylesheet" href="styles.css?v=webgl2-experiment-1" />
   </head>
   <body>
     <div class="app-shell" id="appShell">
       <main class="game-panel">
         <div class="canvas-wrap">
+          <canvas id="terrainCanvas" aria-hidden="true" hidden></canvas>
           <canvas id="gameCanvas" aria-label="Isometric train driving game with elevated terrain"></canvas>
           <div class="station-assist hidden" id="stationAssist" aria-live="polite">
             <p class="eyebrow">Stop assist</p>
@@ -115,15 +116,16 @@
     </div>
 
     <!-- Bump this release key together when changing the shared script contract. -->
-    <script src="js/diagnostics.js?v=terrain-repairs-1"></script>
-    <script src="js/core.js?v=terrain-repairs-1"></script>
-    <script src="js/audio.js?v=terrain-repairs-1"></script>
-    <script src="js/shared.js?v=terrain-repairs-1"></script>
-    <script src="js/view.js?v=terrain-repairs-1"></script>
-    <script src="js/world.js?v=terrain-repairs-1"></script>
-    <script src="js/simulation.js?v=terrain-repairs-1"></script>
-    <script src="js/ui.js?v=terrain-repairs-1"></script>
-    <script src="js/rendering.js?v=terrain-repairs-1"></script>
-    <script src="js/main.js?v=terrain-repairs-1"></script>
+    <script src="js/diagnostics.js?v=webgl2-experiment-1"></script>
+    <script src="js/core.js?v=webgl2-experiment-1"></script>
+    <script src="js/audio.js?v=webgl2-experiment-1"></script>
+    <script src="js/shared.js?v=webgl2-experiment-1"></script>
+    <script src="js/view.js?v=webgl2-experiment-1"></script>
+    <script src="js/world.js?v=webgl2-experiment-1"></script>
+    <script src="js/simulation.js?v=webgl2-experiment-1"></script>
+    <script src="js/ui.js?v=webgl2-experiment-1"></script>
+    <script src="js/rendering.js?v=webgl2-experiment-1"></script>
+    <script src="js/terrain-webgl2.js?v=webgl2-experiment-1"></script>
+    <script src="js/main.js?v=webgl2-experiment-1"></script>
   </body>
 </html>

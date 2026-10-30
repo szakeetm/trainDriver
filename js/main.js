@@ -52,6 +52,7 @@ function startRun() {
   remainingStationEntries = [];
   uiRefreshCarry = UI_REFRESH_INTERVAL;
   state = createInitialState();
+  if (webglTerrain) webglTerrain.resetRoute(route);
   state.started = true;
   finishCard.classList.add("hidden");
   resizeCanvas();
@@ -71,6 +72,7 @@ function initializeGame() {
   initializeAudioUnlock();
 
   applyTuning();
+  setTerrainRendererMode(new URLSearchParams(location.search).get("renderer") || "webgl2");
   syncAssistLegend();
   lastFrame = performance.now();
   startRun();

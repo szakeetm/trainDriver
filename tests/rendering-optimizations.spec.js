@@ -24,7 +24,7 @@ test('generates one route at startup and one per restart', async ({ page }) => {
 
 test('terrain projects each shared vertex once and retains bounded route-owned lighting', async ({ page }) => {
   await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-  await page.goto('/?seed=alpine');
+  await page.goto('/?seed=alpine&renderer=canvas');
   await page.addScriptTag({ content: `window.drawBackgroundReference = ${terrainReference.toString()};` });
   const result = await page.evaluate(() => {
     const project = projectPoint;
@@ -55,8 +55,16 @@ test('terrain projects each shared vertex once and retains bounded route-owned l
 });
 
 test('optimized terrain matches the reference through hills, palette changes, eviction, and resize', async ({ page }) => {
-  await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-  await page.goto('/?seed=alpine');
+  await page.addInitScript(() => {
+    window.requestAnimationFrame = () => 0;
+    // Keep both sides of the pixel oracle on the same backend. Repeated reads
+    // otherwise switch hardware Canvas to software partway through the test.
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (kind, options) {
+      return original.call(this, kind, kind === '2d' ? { ...options, willReadFrequently: true } : options);
+    };
+  });
+  await page.goto('/?seed=alpine&renderer=canvas');
   await page.addScriptTag({ content: `window.drawBackgroundReference = ${terrainReference.toString()};` });
   for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 932, height: 430 }]) {
     await page.setViewportSize(viewport);
@@ -93,7 +101,7 @@ test('optimized terrain matches the reference through hills, palette changes, ev
 
 test('exhaust defers pose sampling until a puff is due and uses locomotive elevation', async ({ page }) => {
   await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-  await page.goto('/?seed=alpine');
+  await page.goto('/?seed=alpine&renderer=canvas');
   const result = await page.evaluate(() => {
     const evaluate = evaluateRoute;
     let samples = 0;
@@ -116,7 +124,7 @@ test('exhaust defers pose sampling until a puff is due and uses locomotive eleva
 
 test('stationary terrain reuses its bitmap without retaining an old route or viewport', async ({ page }) => {
   await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-  await page.goto('/?seed=alpine');
+  await page.goto('/?seed=alpine&renderer=canvas');
   const result = await page.evaluate(() => {
     const frame = createRenderFrameContext(canvas.clientWidth, canvas.clientHeight);
     drawBackground(frame);

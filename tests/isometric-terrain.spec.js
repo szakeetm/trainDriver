@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-test('runs without inset, WebGL, or Three.js and also opens offline', async ({ page }) => {
+test('falls back without inset, WebGL, or Three.js and also opens offline', async ({ page }) => {
   const errors = [];
   const resources = [];
   page.on('pageerror', error => errors.push(error.message));

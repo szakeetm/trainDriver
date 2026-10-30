@@ -10,7 +10,7 @@ async function benchmark() {
     for (const viewport of [{ width: 1440, height: 900, dpr: 1 }, { width: 390, height: 844, dpr: 2 }]) {
       const page = await browser.newPage({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.dpr });
       await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
-      await page.goto('http://127.0.0.1:4173/?seed=alpine');
+      await page.goto('http://127.0.0.1:4173/?seed=alpine&renderer=canvas');
       await page.addScriptTag({ content: `window.drawBackgroundReference = ${terrainReference.toString()};` });
       for (const scenario of [{ fraction: 0, speed: 0 }, { fraction: 0.4, speed: 24 }, { fraction: 0.8, speed: 72 }]) {
         results.push(await page.evaluate(({ viewport, scenario }) => {

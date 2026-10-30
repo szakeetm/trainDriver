@@ -2,6 +2,16 @@
 
 A static browser-based train driving game built with plain HTML, CSS, Canvas 2D, and JavaScript.
 
+The app renders terrain with **WebGL 2**, retaining Canvas 2D
+for trains, scenery, and labels. It automatically falls back to Canvas terrain
+when WebGL 2 is unavailable. Gameplay and audio are shared between renderers.
+
+- `index.html?renderer=webgl2&seed=alpine`: WebGL terrain (the default)
+- `index.html?renderer=canvas&seed=alpine`: the existing Canvas terrain
+
+See [the experiment report](docs/webgl2-experiment.md) for scope, validation,
+and controlled performance comparisons. The prototype is not a full 3D port.
+
 You drive a 100 m consist across a procedurally generated route with stations, signals, curves, speed limits, isometric hills, elevated track, biome-driven scenery, and derailment penalties for major mistakes.
 
 [Play it on GitHub Pages](https://szakeetm.github.io/trainDriver/)
@@ -22,6 +32,7 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 - `js/world.js`: seeded routes, track elevations, terrain, biomes, signals, and scenery
 - `js/simulation.js`: controls, physics, stations, and failure handling
 - `js/rendering.js`: heightfield shading, depth-sorted scenery/trains, and HUD overlays
+- `js/terrain-webgl2.js`: experimental chunked GPU terrain, mode selection, and fallback
 - `js/main.js`: game bootstrap and frame loop
 - `js/view.js`: isometric projection and camera
 
@@ -109,3 +120,15 @@ node tests/terrain-benchmark.js
 
 The benchmark includes cold caches, stopped views, and moving cameras at
 desktop DPR 1 and phone DPR 2. It measures CPU submission time, not hardware FPS.
+
+Compare the current Canvas backend with the WebGL 2 prototype on Windows:
+
+```powershell
+node tests/webgl2-benchmark.js
+```
+
+This selects hardware Direct3D 11 in Chromium, records the actual GPU/backend,
+and reports cold terrain, moving/stopped submission, full-frame submission,
+animation pacing, GPU queries when available, and separate capture completion
+diagnostics. Set `TRAIN_DRIVER_BROWSER=msedge` to use installed Edge instead.
+Phone-sized results use the host GPU and are not physical-phone measurements.

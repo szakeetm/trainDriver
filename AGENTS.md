@@ -3,7 +3,8 @@
 ## Project and execution
 
 This is a static train driving game using classic browser JavaScript, Canvas 2D,
-and Web Audio. The main view is an isometric Canvas heightfield; the 3D inset
+and Web Audio. A WebGL 2 terrain canvas
+sits beneath the Canvas world. The main view is an isometric heightfield; the 3D inset
 was removed. There is no application build,
 backend, bundler, or framework. Open `index.html` directly to play; use HTTP for
 browser tests. npm dependencies are development tools only.
@@ -22,7 +23,8 @@ Scripts share a global lexical scope. Top-level `let`/`const` bindings such as
 6. `js/simulation.js`: state creation, physics, controls, signals, stations, failure.
 7. `js/ui.js`: DOM HUD and station assist.
 8. `js/rendering.js`: terrain mesh, track ribbons, depth-sorted props/trains, labels, HUD.
-9. `js/main.js`: initialization, restart, update, animation loop.
+9. `js/terrain-webgl2.js`: experimental terrain backend, chunk resources, renderer selection/fallback.
+10. `js/main.js`: initialization, restart, update, animation loop.
 
 `styles.css` contains layout and responsive styling; `screens/` and `cover.jpg`
 are documentation/media assets. `docs/` contains test findings and code review notes.
@@ -82,8 +84,12 @@ are documentation/media assets. `docs/` contains test findings and code review n
   Bridges, tunnels, and grade-separated crossings are not modeled; object sorting
   is approximate for intersecting large geometry.
 - Browser audio requires a user gesture; preserve the unlock/retry paths.
-  No WebGL context or Three.js scripts are loaded. The unused vendored
-  `three.min.js` remains untouched.
+- This branch defaults to WebGL 2 terrain; `?renderer=canvas` avoids creating a
+  WebGL context. Unsupported WebGL falls back to Canvas. Context loss hides the
+  GPU surface and enables Canvas; restoration rebuilds shaders/buffers. A route
+  change releases GPU chunk buffers. The cache is capped at 48 chunks of 16x16
+  cells; cell-depth ordering preserves the terrain cutaway presentation.
+  The unused vendored `three.min.js` remains untouched and is not loaded.
 
 ## Running and verification
 
@@ -125,6 +131,14 @@ deterministic segment boundaries. Rendering optimization tests compare pixels
 against `tests/terrain-reference.js` and exercise cache lifetime/eviction.
 Run `node tests/terrain-benchmark.js` with the server running for controlled
 cold/warm, stopped/moving CPU submission measurements.
+
+For the WebGL experiment, run `tests/webgl2-terrain.spec.js` for GPU coverage,
+offline/unavailable fallback, buffer lifetime/bounds, context restoration, and
+visual tolerance checks. `node tests/webgl2-benchmark.js` compares both backends
+in hardware Chromium/D3D11 and records renderer/GPU metadata; it refuses silent
+software comparisons unless `TRAIN_DRIVER_ALLOW_SOFTWARE` is set. Report
+submission, frame pacing, GPU timing, and capture-completion diagnostics as
+different quantities. Phone viewport results still use the host GPU.
 
 For rendering changes, check seeded flat/graded track, stations, signals,
 derailments, resize, restart, and mobile layouts. Inspect page errors and terrain

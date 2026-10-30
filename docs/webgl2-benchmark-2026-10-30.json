@@ -1,0 +1,1028 @@
+{
+  "browser": "147.0.7727.15",
+  "launch": {
+    "args": [
+      "--use-angle=d3d11",
+      "--enable-gpu"
+    ]
+  },
+  "backend": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+  "results": [
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scenario": {
+        "name": "stopped",
+        "fraction": 0,
+        "speed": 0
+      },
+      "seed": "alpine",
+      "startDistance": 0,
+      "setup": {
+        "initializationMs": 26.399999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        1134,
+        882
+      ],
+      "backing": [
+        1134,
+        882
+      ],
+      "coldTerrainMs": {
+        "canvas": 4.399999976158142,
+        "webgl2": 4.600000023841858
+      },
+      "medianMs": {
+        "canvasTerrain": 0.009999999403953552,
+        "webgl2Terrain": 0.01499999761581421,
+        "canvasFrame": 0.41000000238418577,
+        "webgl2Frame": 0.4149999976158142
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.700000000000045,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.5,
+          "p95CpuMs": 0.7000000476837158
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.800000000000182,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.5,
+          "p95CpuMs": 0.6000000238418579
+        }
+      },
+      "gpuTerrainMs": 0.538656,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 80,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          0.010000002384185792,
+          0.009999999403953552,
+          0.004999998211860657,
+          0.01499999761581421,
+          0.005000001192092896,
+          0.015000000596046448,
+          0.009999999403953552
+        ],
+        "webgl2Terrain": [
+          0.01499999761581421,
+          0.009999999403953552,
+          0.05,
+          0.010000002384185792,
+          0.054999998211860655,
+          0.005000001192092896,
+          0.0449999988079071
+        ],
+        "canvasFrame": [
+          0.4300000011920929,
+          0.5400000005960465,
+          0.41000000238418577,
+          0.375,
+          0.43499999940395356,
+          0.3850000023841858,
+          0.35
+        ],
+        "webgl2Frame": [
+          0.5150000005960464,
+          0.44000000059604644,
+          0.4149999976158142,
+          0.3800000011920929,
+          0.4,
+          0.42999999821186063,
+          0.3800000011920929
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 40.743500000000495,
+        "webgl2": 31.96820000000025
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scenario": {
+        "name": "moving",
+        "fraction": 0.4,
+        "speed": 24
+      },
+      "seed": "alpine",
+      "startDistance": 8291.541432350874,
+      "setup": {
+        "initializationMs": 26.399999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        1134,
+        882
+      ],
+      "backing": [
+        1134,
+        882
+      ],
+      "coldTerrainMs": {
+        "canvas": 3,
+        "webgl2": 3.800000011920929
+      },
+      "medianMs": {
+        "canvasTerrain": 1.1700000017881393,
+        "webgl2Terrain": 0.04000000059604645,
+        "canvasFrame": 1.95,
+        "webgl2Frame": 0.7349999994039536
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1.899999976158142,
+          "p95CpuMs": 2.100000023841858
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.799999999999272,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.800000011920929,
+          "p95CpuMs": 1.199999988079071
+        }
+      },
+      "gpuTerrainMs": 0.063488,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 160,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          1.155000001192093,
+          1.0849999994039536,
+          1.1900000005960465,
+          1.1700000017881393,
+          4.989999997615814,
+          1.0650000005960465,
+          4.9
+        ],
+        "webgl2Terrain": [
+          0.06500000059604645,
+          0.015000000596046448,
+          0.04000000059604645,
+          0.004999998211860657,
+          0.04500000178813934,
+          0.009999999403953552,
+          0.0550000011920929
+        ],
+        "canvasFrame": [
+          2.1650000005960464,
+          1.8650000005960465,
+          1.95,
+          2.035000002384186,
+          1.844999998807907,
+          1.8150000005960465,
+          2.05
+        ],
+        "webgl2Frame": [
+          0.8599999994039536,
+          0.7349999994039536,
+          0.7550000011920929,
+          0.7599999994039536,
+          0.6400000005960464,
+          0.6449999988079071,
+          0.6949999988079071
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 37.27419999999984,
+        "webgl2": 33.60500000000138
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scenario": {
+        "name": "fast",
+        "fraction": 0.8,
+        "speed": 72
+      },
+      "seed": "alpine",
+      "startDistance": 16583.082864701748,
+      "setup": {
+        "initializationMs": 26.399999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        1134,
+        882
+      ],
+      "backing": [
+        1134,
+        882
+      ],
+      "coldTerrainMs": {
+        "canvas": 4.699999988079071,
+        "webgl2": 5.699999988079071
+      },
+      "medianMs": {
+        "canvasTerrain": 4.215000000596047,
+        "webgl2Terrain": 0.0550000011920929,
+        "canvasFrame": 3.1,
+        "webgl2Frame": 0.9
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.69999999999891,
+          "p95IntervalMs": 16.799999999999272,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 2.900000035762787,
+          "p95CpuMs": 3.399999976158142
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.700000000000728,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1,
+          "p95CpuMs": 1.199999988079071
+        }
+      },
+      "gpuTerrainMs": 0.450592,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 30,
+        "chunkLimit": 48,
+        "bufferBytes": 921600,
+        "drawCalls": 25,
+        "buildCount": 290,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          3.7,
+          4.32000000178814,
+          7.854999998211861,
+          2.144999998807907,
+          4.215000000596047,
+          2.05,
+          4.340000000596047
+        ],
+        "webgl2Terrain": [
+          0.075,
+          0.015000000596046448,
+          0.0449999988079071,
+          0.06500000059604645,
+          0.0550000011920929,
+          0.015000000596046448,
+          0.06499999761581421
+        ],
+        "canvasFrame": [
+          2.980000001192093,
+          2.9349999994039537,
+          3.2700000017881394,
+          3.1,
+          5.434999999403954,
+          3.130000001192093,
+          2.9450000017881393
+        ],
+        "webgl2Frame": [
+          1.0149999976158142,
+          0.875,
+          0.9,
+          0.9849999994039536,
+          0.9049999982118606,
+          0.8700000017881393,
+          0.85
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 55.92100000000028,
+        "webgl2": 38.964500000000044
+      }
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900,
+        "dpr": 1
+      },
+      "scenario": {
+        "name": "biome-transition",
+        "biomeBoundary": true,
+        "speed": 24
+      },
+      "seed": "alpine",
+      "startDistance": 3704.368469659239,
+      "setup": {
+        "initializationMs": 26.399999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        1134,
+        882
+      ],
+      "backing": [
+        1134,
+        882
+      ],
+      "coldTerrainMs": {
+        "canvas": 2.700000047683716,
+        "webgl2": 3.600000023841858
+      },
+      "medianMs": {
+        "canvasTerrain": 1.3199999988079072,
+        "webgl2Terrain": 0.025,
+        "canvasFrame": 2.2,
+        "webgl2Frame": 0.5300000011920929
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.69999999999891,
+          "p95IntervalMs": 16.799999999999272,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1.899999976158142,
+          "p95CpuMs": 2.199999988079071
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.700000000000728,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.6000000238418579,
+          "p95CpuMs": 0.800000011920929
+        }
+      },
+      "gpuTerrainMs": 0.49536,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 370,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          1.455000001192093,
+          1.325,
+          1.294999998807907,
+          1.225,
+          1.3199999988079072,
+          1.3150000005960465,
+          1.3599999994039536
+        ],
+        "webgl2Terrain": [
+          0.07999999821186066,
+          0.015000000596046448,
+          0.029999998211860657,
+          0.005000001192092896,
+          0.025,
+          0.015000000596046448,
+          0.025
+        ],
+        "canvasFrame": [
+          2.2,
+          2.05,
+          5.45,
+          1.85,
+          5.875,
+          1.925,
+          4.040000000596047
+        ],
+        "webgl2Frame": [
+          0.55,
+          0.5400000005960465,
+          0.5050000011920929,
+          0.5300000011920929,
+          0.4900000005960464,
+          0.55,
+          0.4800000011920929
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 45.110100000001694,
+        "webgl2": 34.190200000000914
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "dpr": 2
+      },
+      "scenario": {
+        "name": "stopped",
+        "fraction": 0,
+        "speed": 0
+      },
+      "seed": "alpine",
+      "startDistance": 0,
+      "setup": {
+        "initializationMs": 12.899999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        372,
+        454
+      ],
+      "backing": [
+        744,
+        907
+      ],
+      "coldTerrainMs": {
+        "canvas": 1.699999988079071,
+        "webgl2": 3.800000011920929
+      },
+      "medianMs": {
+        "canvasTerrain": 0.004999998211860657,
+        "webgl2Terrain": 0.005000001192092896,
+        "canvasFrame": 0.33499999940395353,
+        "webgl2Frame": 0.33499999940395353
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.699999999999932,
+          "p95IntervalMs": 16.799999999999955,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.5,
+          "p95CpuMs": 0.6000000238418579
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.700000000000273,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.5,
+          "p95CpuMs": 0.699999988079071
+        }
+      },
+      "gpuTerrainMs": 1.03728,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 80,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          0.009999999403953552,
+          0.015000000596046448,
+          0.004999998211860657,
+          0.005000001192092896,
+          0,
+          0.004999998211860657,
+          0
+        ],
+        "webgl2Terrain": [
+          0.005000001192092896,
+          0.005000001192092896,
+          0.034999999403953555,
+          0.005000001192092896,
+          0.019999998807907104,
+          0.005000001192092896,
+          0.029999998211860657
+        ],
+        "canvasFrame": [
+          0.40999999940395354,
+          0.31500000059604644,
+          0.3550000011920929,
+          0.3199999988079071,
+          0.3,
+          0.33499999940395353,
+          0.3800000011920929
+        ],
+        "webgl2Frame": [
+          0.4800000011920929,
+          0.33499999940395353,
+          0.3449999988079071,
+          0.3,
+          0.325,
+          0.34500000178813933,
+          0.30999999940395356
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 59.4262000000017,
+        "webgl2": 46.57790000000023
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "dpr": 2
+      },
+      "scenario": {
+        "name": "moving",
+        "fraction": 0.4,
+        "speed": 24
+      },
+      "seed": "alpine",
+      "startDistance": 8291.541432350874,
+      "setup": {
+        "initializationMs": 12.899999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        372,
+        454
+      ],
+      "backing": [
+        744,
+        907
+      ],
+      "coldTerrainMs": {
+        "canvas": 2.299999952316284,
+        "webgl2": 4.300000011920929
+      },
+      "medianMs": {
+        "canvasTerrain": 0.775,
+        "webgl2Terrain": 0.025,
+        "canvasFrame": 1.525,
+        "webgl2Frame": 0.6200000017881393
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1.4000000357627869,
+          "p95CpuMs": 1.9000000357627869
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.699999999999818,
+          "p95IntervalMs": 16.799999999999272,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.800000011920929,
+          "p95CpuMs": 1
+        }
+      },
+      "gpuTerrainMs": 0.062016,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 160,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          0.8099999994039535,
+          0.775,
+          0.775,
+          0.675,
+          1.0100000023841857,
+          0.6099999994039536,
+          3.355000001192093
+        ],
+        "webgl2Terrain": [
+          0.05,
+          0.015000000596046448,
+          0.030000001192092896,
+          0.009999999403953552,
+          0.0449999988079071,
+          0.010000002384185792,
+          0.025
+        ],
+        "canvasFrame": [
+          1.525,
+          1.3150000005960465,
+          1.15,
+          1.375,
+          3.4550000011920927,
+          2.3650000005960465,
+          4.1
+        ],
+        "webgl2Frame": [
+          0.825,
+          0.7599999994039536,
+          0.6,
+          0.6449999988079071,
+          0.5649999976158142,
+          0.5299999982118606,
+          0.6200000017881393
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 49.31680000000051,
+        "webgl2": 46.80550000000221
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "dpr": 2
+      },
+      "scenario": {
+        "name": "fast",
+        "fraction": 0.8,
+        "speed": 72
+      },
+      "seed": "alpine",
+      "startDistance": 16583.082864701748,
+      "setup": {
+        "initializationMs": 12.899999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        372,
+        454
+      ],
+      "backing": [
+        744,
+        907
+      ],
+      "coldTerrainMs": {
+        "canvas": 3.899999976158142,
+        "webgl2": 7.099999964237213
+      },
+      "medianMs": {
+        "canvasTerrain": 3.525,
+        "webgl2Terrain": 0.020000001788139342,
+        "canvasFrame": 3.1849999994039537,
+        "webgl2Frame": 0.9149999976158142
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.69999999999891,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 2.100000023841858,
+          "p95CpuMs": 2.699999988079071
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.69999999999891,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1,
+          "p95CpuMs": 1.600000023841858
+        }
+      },
+      "gpuTerrainMs": 0.042144,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 25,
+        "chunkLimit": 48,
+        "bufferBytes": 768000,
+        "drawCalls": 25,
+        "buildCount": 285,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          1.0900000005960464,
+          1.8849999994039535,
+          3.525,
+          4.230000001192093,
+          4.5050000011920925,
+          2.75,
+          6.830000001192093
+        ],
+        "webgl2Terrain": [
+          0.034999999403953555,
+          0.020000001788139342,
+          0.04000000059604645,
+          0.01499999761581421,
+          0.0449999988079071,
+          0.020000001788139342,
+          0.019999998807907104
+        ],
+        "canvasFrame": [
+          1.905000001192093,
+          9.32999999821186,
+          3.1849999994039537,
+          5.444999998807907,
+          5.159999999403953,
+          2.130000001192093,
+          2.1
+        ],
+        "webgl2Frame": [
+          0.9149999976158142,
+          1.1650000005960464,
+          0.7350000023841858,
+          1.05,
+          1.0299999982118606,
+          0.8799999982118607,
+          0.8400000005960464
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 50.09600000000137,
+        "webgl2": 51.14879999999903
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844,
+        "dpr": 2
+      },
+      "scenario": {
+        "name": "biome-transition",
+        "biomeBoundary": true,
+        "speed": 24
+      },
+      "seed": "alpine",
+      "startDistance": 3704.368469659239,
+      "setup": {
+        "initializationMs": 12.899999976158142,
+        "renderer": "ANGLE (NVIDIA, NVIDIA GeForce RTX 2060 (0x00001E89) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "timerQuery": true,
+        "attributes": {
+          "alpha": false,
+          "antialias": true,
+          "depth": true,
+          "desynchronized": false,
+          "failIfMajorPerformanceCaveat": false,
+          "powerPreference": "high-performance",
+          "premultipliedAlpha": true,
+          "preserveDrawingBuffer": false,
+          "stencil": false,
+          "xrCompatible": false
+        }
+      },
+      "canvas": [
+        372,
+        454
+      ],
+      "backing": [
+        744,
+        907
+      ],
+      "coldTerrainMs": {
+        "canvas": 1.5,
+        "webgl2": 3.800000011920929
+      },
+      "medianMs": {
+        "canvasTerrain": 0.8400000005960464,
+        "webgl2Terrain": 0.015000000596046448,
+        "canvasFrame": 1.2649999976158142,
+        "webgl2Frame": 0.44000000059604644
+      },
+      "pacing": {
+        "canvas": {
+          "medianIntervalMs": 16.69999999999891,
+          "p95IntervalMs": 16.799999999999272,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 1.300000011920929,
+          "p95CpuMs": 1.699999988079071
+        },
+        "webgl2": {
+          "medianIntervalMs": 16.69999999999709,
+          "p95IntervalMs": 16.700000000000728,
+          "intervalsOver25ms": 0,
+          "measuredIntervals": 90,
+          "medianCpuMs": 0.5999999642372131,
+          "p95CpuMs": 0.800000011920929
+        }
+      },
+      "gpuTerrainMs": 0.076704,
+      "resources": {
+        "requested": "webgl2",
+        "active": "webgl2",
+        "reason": null,
+        "chunkCount": 16,
+        "chunkLimit": 48,
+        "bufferBytes": 491520,
+        "drawCalls": 16,
+        "buildCount": 365,
+        "contextLost": false
+      },
+      "samples": {
+        "canvasTerrain": [
+          0.8,
+          0.7800000011920929,
+          0.9900000005960464,
+          9.080000001192094,
+          0.9099999994039536,
+          0.8400000005960464,
+          0.7849999994039536
+        ],
+        "webgl2Terrain": [
+          0.05999999940395355,
+          0.01499999761581421,
+          0.030000001192092896,
+          0.009999999403953552,
+          0.015000000596046448,
+          0.009999999403953552,
+          0.0899999976158142
+        ],
+        "canvasFrame": [
+          1.1449999988079071,
+          1.1900000005960465,
+          1.2649999976158142,
+          1.294999998807907,
+          2.4149999976158143,
+          1.2900000005960464,
+          1.1349999994039535
+        ],
+        "webgl2Frame": [
+          0.44000000059604644,
+          0.5199999988079071,
+          0.43499999940395356,
+          0.4550000011920929,
+          0.4550000011920929,
+          0.3949999988079071,
+          0.42000000178813934
+        ]
+      },
+      "completedCaptureMs": {
+        "canvas": 49.973900000004505,
+        "webgl2": 53.06109999999899
+      }
+    }
+  ],
+  "devices": [
+    {
+      "vendorId": 4318,
+      "deviceId": 7817,
+      "subSysId": 928322658,
+      "revision": 161,
+      "vendorString": "",
+      "deviceString": "NVIDIA GeForce RTX 2060",
+      "driverVendor": "NVIDIA",
+      "driverVersion": "32.0.15.9174"
+    },
+    {
+      "vendorId": 32902,
+      "deviceId": 32103,
+      "subSysId": 216076328,
+      "revision": 6,
+      "vendorString": "",
+      "deviceString": "Intel(R) Graphics",
+      "driverVendor": "",
+      "driverVersion": "32.0.101.8991"
+    },
+    {
+      "vendorId": 5140,
+      "deviceId": 140,
+      "subSysId": 0,
+      "revision": 0,
+      "vendorString": "",
+      "deviceString": "Microsoft Basic Render Driver",
+      "driverVendor": "",
+      "driverVersion": "10.0.26100.9711"
+    }
+  ],
+  "featureStatus": {
+    "2d_canvas": "enabled",
+    "direct_rendering_display_compositor": "disabled_off_ok",
+    "gpu_compositing": "enabled",
+    "multiple_raster_threads": "enabled_on",
+    "opengl": "enabled_on",
+    "rasterization": "enabled",
+    "raw_draw": "disabled_off_ok",
+    "skia_graphite": "disabled_off",
+    "trees_in_viz": "disabled_off",
+    "video_decode": "enabled",
+    "video_encode": "enabled",
+    "webgl": "enabled",
+    "webgpu": "enabled",
+    "webnn": "enabled_on"
+  }
+}
