@@ -1,7 +1,6 @@
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 
-const appShell = document.getElementById("appShell");
 const finishCard = document.getElementById("finishCard");
 const finishTitle = document.getElementById("finishTitle");
 const finishStats = document.getElementById("finishStats");
@@ -48,7 +47,7 @@ const DEFAULT_TUNING = {
     overspeedFailMarginKph: 10, // Extra km/h above a curve limit before the run fails.
   },
   stations: {
-    total: 6, // Number of scored stops after the origin.
+    total: 6, // Total stations including the origin (five scored stops).
     // Pool of names used when generating the station sequence.
     names: [
       "Birch Point",
@@ -62,7 +61,7 @@ const DEFAULT_TUNING = {
       "Maple Quay",
     ],
     stopWindow: 42.9, // Front-of-train tolerance in meters for a successful station stop.
-    passMargin: 120, // How far past a station the train can roll before it counts as missed.
+    missPenalty: 60, // Penalty seconds for overrunning a station's acceptance window.
     stopSpeed: 0.35, // Maximum speed in m/s that still counts as stopped at a station.
     assistRange: 120, // Distance in meters from a station where the stop-assist overlay appears.
     assistZoom: 120, // Half-width of the stop-assist meter scale in meters.
@@ -99,10 +98,6 @@ const DEFAULT_TUNING = {
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
     ],
-    minPixelLength: 14, // Smallest rendered train length in pixels when zoomed far out.
-    minPixelWidth: 8, // Smallest rendered train width in pixels when zoomed far out.
-    couplerLineWidthMin: 2, // Minimum coupler line thickness in pixels.
-    couplerLineWidthScale: 1.2, // Coupler thickness multiplier relative to zoom scale.
   },
   terrain: {
     cellSize: 32, // Heightfield grid spacing in meters.
@@ -160,19 +155,17 @@ const DEFAULT_TUNING = {
     endMargin: 260, // Keep signals this far away from the route end.
     yellowChance: 0.32, // Chance that a spawned signal is yellow rather than green.
     redChance: 0.16, // Chance that a spawned signal is red rather than green.
-    yellowSpeedLimitMin: 20, // Minimum speed limit in m/s imposed after passing a yellow signal.
-    yellowSpeedLimitMax: 34, // Maximum speed limit in m/s imposed after passing a yellow signal.
-    yellowBlockLengthMin: 420, // Minimum distance in meters that a yellow restriction remains active after passing it.
-    yellowBlockLengthMax: 1100, // Maximum distance in meters that a yellow restriction remains active after passing it.
+    yellowSpeedLimitMin: 20, // Minimum speed limit in m/s checked when passing a yellow signal.
+    yellowSpeedLimitMax: 34, // Maximum speed limit in m/s checked when passing a yellow signal.
+    yellowBlockLengthMin: 420, // Legacy generated block metadata; yellow limits are checked only at the signal.
+    yellowBlockLengthMax: 1100, // Legacy generated block metadata; retained to preserve the seeded random stream.
     redApproachDistance: 650, // Distance in meters ahead of a red signal where the HUD starts warning about it.
     redStopWindow: 100, // Distance in meters before a red signal where stopping counts as waiting at the signal.
     redStopSpeed: 0.25, // Maximum speed in m/s that still counts as stopped at a red signal.
     redHoldMin: 2.5, // Minimum seconds that a red signal stays at stop once the train is waiting.
     redHoldMax: 5.5, // Maximum seconds that a red signal stays at stop once the train is waiting.
-    redPassMargin: 14, // Distance in meters past a red signal before it counts as a failure.
     sideOffset: 20, // Extra lateral offset in meters used to draw signals beside the track.
     redCountdownDisplayDistance: 220, // Distance in meters ahead of a red signal where the over-signal countdown becomes visible.
-    redStopCircleScale: 0.7, // Legacy setting; red signals now use the full pre-signal stop zone.
   },
   scenery: {
     trackClearance: 16, // Track bed half-width (11 m), 4 m gap, and 1 m curve-sampling allowance.
@@ -250,25 +243,7 @@ const DEFAULT_TUNING = {
     routePredictorWidth: 360, // Width in pixels of the lower-left route predictor panel.
     routePredictorHeight: 172, // Height in pixels of the lower-left route predictor panel.
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
-    terrainCellSize: 74, // Base size in pixels of terrain texture cells in the world backdrop.
-    terrainClearWidthMin: 36, // Minimum width in pixels of the cleared corridor around the track.
-    terrainClearWidthScale: 7.6, // Cleared corridor width multiplier relative to zoom scale.
-    backgroundGridStep: 48, // Vertical spacing in pixels between faint background scanlines.
-    backgroundSpeedMaxFactor: 1.35, // Max normalized speed used by background motion effects.
-    backgroundStreakThreshold: 0.12, // Minimum normalized speed before background streaks appear.
-    backgroundStreakCount: 20, // Number of background streaks rendered per frame.
-    backgroundStreakSpacing: 76, // Vertical spacing between successive background streaks.
-    backgroundStreakTravel: 4.8, // How quickly background streaks advance with train distance.
-    backgroundStreakBaseLength: 20, // Base length in pixels of each background streak.
-    backgroundStreakLengthBySpeed: 42, // Extra streak length added as speed rises.
     trackSampleStep: 10, // Route sampling step in meters when drawing the track.
-    trackBedWidthMin: 7, // Minimum width in pixels of the dark track bed.
-    trackBedWidthScale: 1.25, // Track-bed width multiplier relative to zoom scale.
-    railWidthMin: 1.6, // Minimum width in pixels of each rail line.
-    railWidthScale: 0.34, // Rail width multiplier relative to zoom scale.
-    sleeperStep: 2, // How many track samples to skip between sleeper lines.
-    sleeperWidthMin: 2.2, // Minimum width in pixels of sleeper strokes.
-    sleeperWidthScale: 0.24, // Sleeper width multiplier relative to zoom scale.
     speedEffectThreshold: 0.16, // Minimum normalized speed before foreground speed streaks appear.
     speedEffectMaxFactor: 1.35, // Max normalized speed used by foreground speed streak intensity.
     speedEffectCount: 14, // Number of foreground speed streaks rendered per frame.
@@ -286,7 +261,6 @@ const DEFAULT_TUNING = {
 let TUNING = DEFAULT_TUNING;
 let MAX_LINE_SPEED = 0;
 let STATION_WINDOW = 0;
-let STATION_PASS_MARGIN = 0;
 let STATION_STOP_SPEED = 0;
 let STATION_ASSIST_RANGE = 0;
 let STATION_ASSIST_ZOOM = 0;

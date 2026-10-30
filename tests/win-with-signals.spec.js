@@ -13,11 +13,10 @@ function getModeConfig() {
       autopilot: getAutopilotConfig({
         batchSteps: 8,
         postStepDelayMs: 5,
-        renderEverySteps: 2,
+        renderEverySteps: 8,
         settleDelayMs: 1200,
         keepBrowserOpenMs: 2000,
         tickLogEvery: 300,
-        timeWarpStops: false,
       }),
     };
   }
@@ -29,18 +28,11 @@ function getModeConfig() {
 }
 
 test('wins the full route with signals enabled', async ({ page }) => {
-  await page.goto('/index.html');
+  await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
+  await page.goto('/index.html?seed=signal-run');
   const modeConfig = getModeConfig();
 
-  let result = null;
-  for (let attempt = 1; attempt <= 6; attempt += 1) {
-    result = await runAutopilot(page, modeConfig.autopilot);
-    if (result.success) {
-      break;
-    }
-  }
-
-  expect(result, 'expected autopilot to eventually produce a clean win').toBeTruthy();
+  const result = await runAutopilot(page, modeConfig.autopilot);
   expect(result.success, JSON.stringify(result, null, 2)).toBe(true);
   await expect(page.locator('#finishTitle')).toHaveText('Run complete');
   await expect(page.locator('#penaltyTime')).toHaveText('0');

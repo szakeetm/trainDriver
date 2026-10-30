@@ -17,7 +17,8 @@ function evaluateRoute(distance) {
   let segmentIndex = route.lastSegmentIndex || 0;
   let segment = segments[segmentIndex];
 
-  if (!segment || clampedDistance < segment.start || clampedDistance > segment.end) {
+  if (!segment || clampedDistance < segment.start
+    || (clampedDistance >= segment.end && segmentIndex < segments.length - 1)) {
     let low = 0;
     let high = segments.length - 1;
 
@@ -26,7 +27,7 @@ function evaluateRoute(distance) {
       const candidate = segments[mid];
       if (clampedDistance < candidate.start) {
         high = mid - 1;
-      } else if (clampedDistance > candidate.end) {
+      } else if (clampedDistance >= candidate.end && mid < segments.length - 1) {
         low = mid + 1;
       } else {
         segmentIndex = mid;
@@ -161,6 +162,10 @@ function generateRoute(seed = null) {
     generated.elevationNodes.push({ distance: generated.totalLength,
       elevation: generated.elevationNodes[generated.elevationNodes.length - 1].elevation });
     generated.terrainHeightCache = new Map();
+    generated.terrainCellCache = new Map();
+    generated.terrainProjectionVersion = 0;
+    generated.terrainPaletteVersion = 0;
+    generated.terrainBackdrop = null;
     generated.trackSpatialIndex = new Map();
     // Index polyline edges by every bucket their bounds touch. Height queries
     // use nearest points on edges, avoiding scalloped earthworks between samples.
@@ -332,19 +337,6 @@ const BIOME_PALETTES = {
 
 function getBiomePalette(theme) {
   return BIOME_PALETTES[theme] || BIOME_PALETTES.default;
-}
-
-function formatBiomeName(theme) {
-  return theme.charAt(0).toUpperCase() + theme.slice(1);
-}
-
-function getCurrentBiomeLabel(distance = state.distance) {
-  const blend = getBiomeBlendAtDistance(distance);
-  if (blend.primary !== blend.secondary && blend.mix > 0.22 && blend.mix < 0.78) {
-    return `${formatBiomeName(blend.primary)} to ${formatBiomeName(blend.secondary)}`;
-  }
-
-  return formatBiomeName(blend.mix >= 0.5 ? blend.secondary : blend.primary);
 }
 
 function smoothstep(edge0, edge1, value) {
@@ -590,7 +582,8 @@ function getTerrainVertex(gx, gy) {
   let point = route.terrainHeightCache.get(key);
   if (!point) {
     const size = TUNING.terrain.cellSize;
-    point = { x: gx * size, y: gy * size, elevation: getTerrainHeight(gx * size, gy * size) };
+    point = { x: gx * size, y: gy * size, elevation: getTerrainHeight(gx * size, gy * size),
+      key, screen: { x: 0, y: 0 }, projectionVersion: -1 };
     route.terrainHeightCache.set(key, point);
   }
   return point;

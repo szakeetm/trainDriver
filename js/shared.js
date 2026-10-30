@@ -12,30 +12,6 @@ function cloneConfigValue(value) {
   return value;
 }
 
-function mergeConfig(base, overrides) {
-  const result = cloneConfigValue(base);
-
-  if (!overrides || typeof overrides !== "object") {
-    return result;
-  }
-
-  Object.entries(overrides).forEach(([key, value]) => {
-    if (Array.isArray(value)) {
-      result[key] = cloneConfigValue(value);
-      return;
-    }
-
-    if (value && typeof value === "object" && result[key] && typeof result[key] === "object" && !Array.isArray(result[key])) {
-      result[key] = mergeConfig(result[key], value);
-      return;
-    }
-
-    result[key] = value;
-  });
-
-  return result;
-}
-
 function formatHslColor(hue, saturation, lightness) {
   return `hsl(${Math.round(hue)} ${Math.round(saturation)}% ${Math.round(lightness)}%)`;
 }
@@ -79,7 +55,6 @@ function applyTuning() {
 
   MAX_LINE_SPEED = TUNING.limits.maxLineSpeed;
   STATION_WINDOW = TUNING.stations.stopWindow;
-  STATION_PASS_MARGIN = TUNING.stations.passMargin;
   STATION_STOP_SPEED = TUNING.stations.stopSpeed;
   STATION_ASSIST_RANGE = TUNING.stations.assistRange;
   STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
@@ -101,11 +76,7 @@ function getStationZoneLength() {
 }
 
 function getStationStopTolerance() {
-  return 50;
-}
-
-function getZoneSlackTolerance(zoneLength = getStationZoneLength()) {
-  return Math.max(0, (zoneLength - TRAIN_TOTAL_LENGTH) * 0.5);
+  return STATION_WINDOW;
 }
 
 function getStationStopMetrics(station) {
@@ -188,7 +159,7 @@ function getGameProgressPercent() {
     return 0;
   }
 
-  if (state.finished) {
+  if (state.finished && !state.failed) {
     return 100;
   }
 
@@ -251,43 +222,68 @@ function syncAssistLegend() {
   assistScale.style.setProperty("--assist-window-width", `${acceptancePercent}%`);
 }
 
-function setButtonHold(button, key) {
-  const engage = (event) => {
-    if (event) {
-      event.preventDefault();
-    }
-    keys[key] = true;
-  };
-  const release = () => {
-    keys[key] = false;
-  };
+const heldControlInputs = { accelerate: new Set(), brake: new Set() };
 
-  button.addEventListener("pointerdown", (event) => {
-    engage(event);
-    if (typeof button.setPointerCapture === "function") {
-      try {
-        button.setPointerCapture(event.pointerId);
-      } catch (error) {
-        // Ignore unsupported pointer-capture cases and fall back to regular events.
+function setControlInput(key, source, held) {
+  const inputs = heldControlInputs[key];
+  if (held) inputs.add(source);
+  else inputs.delete(source);
+  keys[key] = inputs.size > 0;
+}
+
+function clearHeldControls() {
+  for (const key of Object.keys(heldControlInputs)) {
+    heldControlInputs[key].clear();
+    keys[key] = false;
+  }
+}
+
+function setButtonHold(button, key) {
+  if (window.PointerEvent) {
+    button.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      event.preventDefault();
+      setControlInput(key, `pointer-${event.pointerId}`, true);
+      if (typeof button.setPointerCapture === "function") {
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Synthetic events and older browsers may not support capture.
+        }
       }
-    }
-  });
-  button.addEventListener("pointerup", release);
-  button.addEventListener("pointerleave", release);
-  button.addEventListener("pointercancel", release);
-  button.addEventListener("lostpointercapture", release);
-  button.addEventListener("mousedown", engage);
-  button.addEventListener("mouseup", (event) => {
-    unlockGameAudioFromGesture(event, { forceRetry: true });
-    release();
-  });
-  button.addEventListener("mouseleave", release);
-  button.addEventListener("touchstart", engage, { passive: false });
-  button.addEventListener("touchend", (event) => {
-    unlockGameAudioFromGesture(event, { forceRetry: true });
-  }, { passive: true });
-  button.addEventListener("touchend", release, { passive: true });
-  button.addEventListener("touchcancel", release, { passive: true });
+    });
+    const release = (event) => setControlInput(key, `pointer-${event.pointerId}`, false);
+    button.addEventListener("pointerup", (event) => {
+      release(event);
+      unlockGameAudioFromGesture(event, { forceRetry: true });
+    });
+    button.addEventListener("pointerleave", release);
+    button.addEventListener("pointercancel", release);
+    button.addEventListener("lostpointercapture", release);
+  } else {
+    button.addEventListener("mousedown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      setControlInput(key, "mouse", true);
+    });
+    button.addEventListener("mouseup", (event) => {
+      setControlInput(key, "mouse", false);
+      unlockGameAudioFromGesture(event, { forceRetry: true });
+    });
+    button.addEventListener("mouseleave", () => setControlInput(key, "mouse", false));
+    button.addEventListener("touchstart", (event) => {
+      event.preventDefault();
+      for (const touch of event.changedTouches) setControlInput(key, `touch-${touch.identifier}`, true);
+    }, { passive: false });
+    const releaseTouches = (event) => {
+      for (const touch of event.changedTouches) setControlInput(key, `touch-${touch.identifier}`, false);
+    };
+    button.addEventListener("touchend", (event) => {
+      releaseTouches(event);
+      unlockGameAudioFromGesture(event, { forceRetry: true });
+    }, { passive: true });
+    button.addEventListener("touchcancel", releaseTouches, { passive: true });
+  }
   button.addEventListener("click", (event) => {
     unlockGameAudioFromGesture(event, { forceRetry: true });
   });
@@ -297,28 +293,28 @@ setButtonHold(accelerateButton, "accelerate");
 setButtonHold(brakeButton, "brake");
 
 window.addEventListener("keydown", (event) => {
-  if (["ArrowUp", "w", "W"].includes(event.key)) {
-    keys.accelerate = true;
+  if (event.key === "ArrowUp") {
+    setControlInput("accelerate", "keyboard", true);
     event.preventDefault();
   }
-  if (["ArrowDown", "s", "S"].includes(event.key)) {
-    keys.brake = true;
+  if (event.key === "ArrowDown") {
+    setControlInput("brake", "keyboard", true);
     event.preventDefault();
   }
 });
 
 window.addEventListener("keyup", (event) => {
-  if (["ArrowUp", "w", "W"].includes(event.key)) {
-    keys.accelerate = false;
+  if (event.key === "ArrowUp") {
+    setControlInput("accelerate", "keyboard", false);
   }
-  if (["ArrowDown", "s", "S"].includes(event.key)) {
-    keys.brake = false;
+  if (event.key === "ArrowDown") {
+    setControlInput("brake", "keyboard", false);
   }
 });
 
-window.addEventListener("blur", () => {
-  keys.accelerate = false;
-  keys.brake = false;
+window.addEventListener("blur", clearHeldControls);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) clearHeldControls();
 });
 
 function resizeCanvas() {

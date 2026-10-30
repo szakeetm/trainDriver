@@ -47,6 +47,7 @@ function loop(now) {
 }
 
 function startRun() {
+  clearHeldControls();
   remainingStationsKey = "";
   remainingStationEntries = [];
   uiRefreshCarry = UI_REFRESH_INTERVAL;
@@ -58,6 +59,7 @@ function startRun() {
   state.detail = "The 100 m consist accelerates hard enough, but brake lag still demands planning.";
   updateGameAudio(0);
   refreshUi(0, true);
+  updateStationAssist();
 }
 
 restartButton.addEventListener("click", () => {

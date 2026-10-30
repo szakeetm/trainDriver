@@ -294,8 +294,7 @@ function updateGameAudio(dt = 0) {
 
   try {
     const activeRun = state.started && !state.finished;
-    const moving = state.speed > 0.12 || Math.abs(state.actualControl) > 0.03;
-    const masterLevel = activeRun || moving ? 1 : 0;
+    const masterLevel = activeRun ? 1 : 0;
     setAudioParam(gameAudio.master.gain, masterLevel, 0.2);
 
     const routeInfo = route ? evaluateRoute(state.distance) : null;

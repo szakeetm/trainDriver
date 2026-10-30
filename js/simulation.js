@@ -80,20 +80,17 @@ function updateDieselExhaust(dt) {
   }
 
   const intensity = state.derailment ? 0 : getDieselExhaustIntensity();
-  const locomotiveUnit = intensity > 0 ? getTrainUnits()[0] : null;
-  const locomotive = locomotiveUnit
-    ? {
-      ...locomotiveUnit,
-      renderX: locomotiveUnit.pose.x,
-      renderY: locomotiveUnit.pose.y,
-      renderHeading: locomotiveUnit.pose.heading,
-    }
-    : null;
-  if (locomotive && locomotive.type === "locomotive" && intensity > 0) {
+  if (intensity > 0 && TRAIN_CONSIST[0]?.type === "locomotive") {
     state.exhaustSpawnCarry += (2 + intensity * 6) * dt;
-    while (state.exhaustSpawnCarry >= 1) {
-      state.exhaustSpawnCarry -= 1;
-      spawnDieselExhaustPuff(locomotive, intensity);
+    if (state.exhaustSpawnCarry >= 1) {
+      const unit = TRAIN_CONSIST[0];
+      const pose = evaluateRoute(state.distance - unit.length * 0.5);
+      const locomotive = { ...unit, renderX: pose.x, renderY: pose.y,
+        renderHeading: pose.heading, renderElevation: pose.elevation };
+      while (state.exhaustSpawnCarry >= 1) {
+        state.exhaustSpawnCarry -= 1;
+        spawnDieselExhaustPuff(locomotive, intensity);
+      }
     }
   } else {
     state.exhaustSpawnCarry = 0;
@@ -126,33 +123,6 @@ function getEffectiveSpeedLimitInfo(distance = state.distance) {
     source,
     signal: null,
   };
-}
-
-function getNextSignal() {
-  const startIndex = Math.max(
-    state.nextSignalIndex || 0,
-    findFirstSortedIndex(route.signals, state.distance - TUNING.signals.redPassMargin),
-  );
-
-  for (let index = startIndex; index < route.signals.length; index += 1) {
-    const signal = route.signals[index];
-    if (signal.passed) {
-      continue;
-    }
-
-    if (signal.kind === "red" && signal.aspect === "red") {
-      if (signal.distance >= state.distance - TUNING.signals.redPassMargin) {
-        return signal;
-      }
-      continue;
-    }
-
-    if (signal.distance > state.distance) {
-      return signal;
-    }
-  }
-
-  return null;
 }
 
 function getUpcomingRouteEntries() {
@@ -199,52 +169,6 @@ function getUpcomingRouteEntries() {
   return entries
     .sort((a, b) => a.distance - b.distance)
     .slice(0, TUNING.visuals.routePredictorMaxEntries);
-}
-
-function findUpcomingLimit() {
-  const current = getEffectiveSpeedLimitInfo();
-  let nextCurve = null;
-  const segmentStartIndex = findFirstSortedIndex(route.segments, state.distance, (segment) => segment.start);
-  for (let index = segmentStartIndex; index < route.segments.length; index += 1) {
-    const segment = route.segments[index];
-    if (segment.start - state.distance >= TUNING.route.upcomingCurveLookahead) {
-      break;
-    }
-    if (segment.start > state.distance && segment.speedLimit != null) {
-      nextCurve = segment;
-      break;
-    }
-  }
-  const nextSignal = getNextSignal();
-
-  const candidates = [];
-  if (nextCurve) {
-    candidates.push({
-      type: "curve",
-      distance: nextCurve.start - state.distance,
-      limit: nextCurve.speedLimit,
-    });
-  }
-  if (nextSignal && nextSignal.distance > state.distance && nextSignal.distance - state.distance < TUNING.route.upcomingCurveLookahead) {
-    candidates.push({
-      type: nextSignal.kind,
-      distance: nextSignal.distance - state.distance,
-      limit: nextSignal.kind === "yellow" ? nextSignal.speedLimit : null,
-      signal: nextSignal,
-    });
-  }
-
-  const next = candidates.sort((a, b) => a.distance - b.distance)[0] || null;
-
-  return {
-    limit: current.limit,
-    source: current.source,
-    signal: current.signal,
-    distance: next ? next.distance : null,
-    upcomingLimit: next ? next.limit : null,
-    upcomingType: next ? next.type : null,
-    upcomingSignal: next ? next.signal || null : null,
-  };
 }
 
 function getRedStopZone(signal) {
@@ -315,7 +239,7 @@ function processSignals(dt) {
 function processSignalPasses() {
   while ((state.nextSignalIndex || 0) < route.signals.length) {
     const signal = route.signals[state.nextSignalIndex];
-    if (!signal || signal.distance > state.distance) {
+    if (!signal || signal.distance >= state.distance) {
       break;
     }
 
@@ -344,7 +268,7 @@ function processSignalPasses() {
 
 function getStopAssistData() {
   const nextStation = route.stations[state.stationIndex];
-  if (!state.started || state.finished || !nextStation) {
+  if (!state.started || state.finished || state.derailment || !nextStation) {
     return null;
   }
 
@@ -485,6 +409,8 @@ function beginDerailment(cause) {
   };
   state.requestedControl = 0;
   state.actualControl = 0;
+  state.signalStatus = null;
+  uiRefreshCarry = UI_REFRESH_INTERVAL;
   state.message = "Derailment";
   state.detail = "The consist has left the track. Run is ending.";
 }
@@ -531,11 +457,6 @@ function checkFailureConditions() {
   return false;
 }
 
-function currentSegmentInfo() {
-  const info = evaluateRoute(state.distance);
-  return info;
-}
-
 function updatePenalties(dt) {
   const current = getEffectiveSpeedLimitInfo();
   if (current.limit == null) {
@@ -556,6 +477,26 @@ function updatePenalties(dt) {
 }
 
 function updateStations() {
+  // No reverse gear: once the front is beyond the acceptance window, the
+  // station cannot be recovered. Account for every overrun before choosing
+  // the new target, including the final stop in this same update.
+  let missedStation = null;
+  while (state.stationIndex < route.stations.length) {
+    const station = route.stations[state.stationIndex];
+    const metrics = getStationStopMetrics(station);
+    const gap = metrics.targetDistance - state.distance;
+    if (gap >= -metrics.tolerance) break;
+    state.stationResults.push({ name: station.name, error: -gap, missed: true });
+    state.penalties += TUNING.stations.missPenalty;
+    state.lastStopError = null;
+    state.stationIndex += 1;
+    missedStation = station;
+  }
+  if (missedStation) {
+    state.message = `Missed ${missedStation.name}`;
+    state.detail = `A ${TUNING.stations.missPenalty} s penalty applies per missed stop. Next station is now targeted.`;
+    uiRefreshCarry = UI_REFRESH_INTERVAL;
+  }
   const nextStation = route.stations[state.stationIndex];
   if (!nextStation) {
     if (!state.finished) {
@@ -577,6 +518,7 @@ function updateStations() {
     });
     state.lastStopError = error;
     state.stationIndex += 1;
+    uiRefreshCarry = UI_REFRESH_INTERVAL;
     state.message = `Stopped at ${nextStation.name}`;
     state.detail = error < 4 ? "Excellent stop." : error < 10 ? "Solid stop." : "Safe, but you can be more precise.";
     state.requestedControl = 0;
@@ -588,18 +530,8 @@ function updateStations() {
     return;
   }
 
-  if (gap < -STATION_PASS_MARGIN) {
-    state.stationResults.push({
-      name: nextStation.name,
-      error: Math.abs(gap),
-      missed: true,
-    });
-    state.penalties += 20;
-    state.lastStopError = null;
-    state.stationIndex += 1;
-    state.message = `Missed ${nextStation.name}`;
-    state.detail = "Heavy delay penalty applied. Start braking sooner on the next stop.";
-  } else if (gap < 600 && gap > -60) {
+  if (missedStation) return;
+  if (gap < 600 && gap > -stopMetrics.tolerance) {
     state.message = `Approaching ${nextStation.name}`;
     state.detail = "A 100 m train takes space. Start easing off well before the station target.";
   } else if (gap >= 600) {
@@ -609,12 +541,16 @@ function updateStations() {
 }
 
 function finishRun() {
+  state.signalStatus = null;
+  uiRefreshCarry = UI_REFRESH_INTERVAL;
   finishCard.classList.remove("hidden");
   finishTitle.textContent = state.failed
     ? "Run failed"
     : state.stationResults.some((result) => result.missed)
       ? "Run finished with delays"
       : "Run complete";
+  state.message = finishTitle.textContent;
+  if (state.failed) state.detail = state.failReason;
 
   const successfulStops = state.stationResults.filter((result) => !result.missed);
   const meanError = successfulStops.length

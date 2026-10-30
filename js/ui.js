@@ -45,9 +45,7 @@ function updateUi() {
   }
 
   const nextStation = route.stations[state.stationIndex];
-  const upcomingLimit = findUpcomingLimit();
-  const shownLimit = upcomingLimit.limit;
-  const shownUpcomingLimit = upcomingLimit.upcomingLimit;
+  const shownLimit = getEffectiveSpeedLimitInfo().limit;
   const gap = nextStation ? getStationStopMetrics(nextStation).targetDistance - state.distance : 0;
   const statusMessage = state.signalStatus ? state.signalStatus.message : state.message;
   const statusDetail = state.signalStatus ? state.signalStatus.detail : state.detail;
@@ -75,7 +73,6 @@ function updateUi() {
 
   accelerateButton.classList.toggle("active", keys.accelerate);
   brakeButton.classList.toggle("active", keys.brake);
-  updateStationAssist();
 }
 
 function refreshUi(dt = 0, force = false) {

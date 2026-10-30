@@ -3,68 +3,37 @@ function getAutopilotConfig(overrides = {}) {
     dt: 0.05,
     cruiseSpeed: 24,
     maxSteps: 36000,
-        batchSteps: 600,
-    renderEverySteps: 1,
+    batchSteps: 600,
+    renderEverySteps: 600,
+    postStepDelayMs: 0,
     settleDelayMs: 0,
     keepBrowserOpenMs: 0,
     tickLogEvery: 1200,
-    timeWarpStops: false,
-    stationWarpDistance: 0,
-    redWarpDistance: 0,
     ...overrides,
   };
 }
 
 async function initializeAutopilot(page, config) {
-  await page.evaluate((rawConfig) => {
+  await page.evaluate(rawConfig => {
+    startRun();
     window.__trainDriverAutopilot = {
-      config: {
-        dt: 0.05,
-        cruiseSpeed: 24,
-        maxSteps: 36000,
-        batchSteps: 600,
-        postStepDelayMs: 0,
-        renderEverySteps: 1,
-        settleDelayMs: 0,
-        keepBrowserOpenMs: 0,
-        tickLogEvery: 1200,
-        timeWarpStops: false,
-        stationWarpDistance: 0,
-        redWarpDistance: 0,
-        ...rawConfig,
-      },
+      config: rawConfig,
       logs: [],
       totalSteps: 0,
-      lastStationIndex: 0,
+      lastStationIndex: state.stationIndex,
     };
-
-    startRun();
-    keys.accelerate = false;
-    keys.brake = false;
-    state.requestedControl = 0;
-    state.actualControl = 0;
-    state.signalStatus = null;
-    window.__trainDriverAutopilot.lastStationIndex = state.stationIndex;
-    refreshUi(0, true);
-    updateStationAssist();
     render();
   }, config);
 }
 
 async function stepAutopilot(page, batchSteps) {
-  return page.evaluate((stepsToRun) => {
-    const controller = window.__trainDriverAutopilot;
-    if (!controller) {
-      throw new Error('Autopilot state not initialized.');
-    }
-
-    const { config, logs } = controller;
-    const clampLocal = (value, min, max) => Math.max(min, Math.min(max, value));
-    const toKphLocal = (mps) => mps * 3.6;
+  return page.evaluate(stepsToRun => {
+    const driver = window.__trainDriverAutopilot;
+    const { config, logs } = driver;
     const snapshot = () => ({
       elapsed: Number(state.elapsed.toFixed(1)),
       distance: Number(state.distance.toFixed(1)),
-      speedKph: Number(toKphLocal(state.speed).toFixed(1)),
+      speedKph: Number((state.speed * 3.6).toFixed(1)),
       stationIndex: state.stationIndex,
       nextStation: route.stations[state.stationIndex]?.name ?? null,
       message: state.message,
@@ -72,325 +41,102 @@ async function stepAutopilot(page, batchSteps) {
       penalties: Number(state.penalties.toFixed(1)),
     });
 
-    const nextLimitedSegment = () => route.segments.find((segment) => segment.start > state.distance && segment.speedLimit != null) ?? null;
-    const nextYellow = () => route.signals.find(
-      (signal, index) => index >= (state.nextSignalIndex || 0) && !signal.passed && signal.kind === 'yellow' && signal.distance > state.distance,
-    ) ?? null;
-    const nextRed = () => route.signals.find(
-      (signal, index) => index >= (state.nextSignalIndex || 0) && !signal.passed && signal.kind === 'red' && signal.aspect === 'red'
-        && signal.distance >= state.distance - TUNING.signals.redPassMargin,
-    ) ?? null;
-
-    for (let step = 0; step < stepsToRun && controller.totalSteps < config.maxSteps && !state.finished; step += 1) {
-      controller.totalSteps += 1;
-
-      const station = route.stations[state.stationIndex] ?? null;
-      const stationMetrics = station ? getStationStopMetrics(station) : null;
-      const stationGap = stationMetrics ? stationMetrics.targetDistance - state.distance : Infinity;
-      const currentLimit = getEffectiveSpeedLimitInfo();
-      const limitedSegment = nextLimitedSegment();
-      const yellowSignal = nextYellow();
-      const redSignal = nextRed();
-
+    for (let step = 0; step < stepsToRun && driver.totalSteps < config.maxSteps && !state.finished; step++) {
+      driver.totalSteps++;
+      const multiplier = TUNING.physics.visibleSpeedMultiplier;
+      const planningDeceleration = 0.65;
+      const responseSeconds = 6;
+      // Include response lag in the braking envelope. The driver only requests
+      // power/braking; speed, position, clearance, and scoring belong to update().
+      const approachSpeed = (gap, targetSpeed = 0) => {
+        const remaining = Math.max(0, gap / multiplier - state.speed * responseSeconds);
+        return Math.sqrt(targetSpeed * targetSpeed + 2 * planningDeceleration * remaining);
+      };
       let desiredSpeed = config.cruiseSpeed;
-      let handledRedWait = false;
-
-      if (currentLimit.limit != null) {
-        desiredSpeed = Math.min(desiredSpeed, Math.max(0, currentLimit.limit - 1.8));
-      }
-
-      if (limitedSegment) {
-        const gap = limitedSegment.start - state.distance;
-        const safeNow = Math.sqrt(Math.max(0, limitedSegment.speedLimit * limitedSegment.speedLimit + 2 * 3.0 * Math.max(0, gap - 10)));
-        desiredSpeed = Math.min(desiredSpeed, safeNow - 1.3);
-        if (gap < 10) {
-          state.speed = Math.min(state.speed, Math.max(0, limitedSegment.speedLimit - 1.6));
+      const currentLimit = getEffectiveSpeedLimitInfo().limit;
+      if (currentLimit != null) desiredSpeed = Math.min(desiredSpeed, Math.max(0, currentLimit - 1.5));
+      for (const segment of route.segments) {
+        const gap = segment.start - state.distance;
+        if (gap > 2000) break;
+        if (gap > 0 && segment.speedLimit != null) {
+          desiredSpeed = Math.min(desiredSpeed, approachSpeed(gap, Math.max(0, segment.speedLimit - 1.5)));
         }
       }
-
-      if (yellowSignal) {
-        const gap = yellowSignal.distance - state.distance;
-        const safeNow = Math.sqrt(Math.max(0, yellowSignal.speedLimit * yellowSignal.speedLimit + 2 * 3.2 * Math.max(0, gap - 16)));
-        desiredSpeed = Math.min(desiredSpeed, safeNow - 2.0);
-        if (gap < 8) {
-          state.speed = Math.min(state.speed, Math.max(0, yellowSignal.speedLimit - 1.8));
+      let waitingAtRed = false;
+      for (let index = state.nextSignalIndex; index < route.signals.length; index++) {
+        const signal = route.signals[index];
+        const gap = signal.distance - state.distance;
+        if (gap > 2000) break;
+        if (signal.passed || gap < 0) continue;
+        if (signal.kind === 'yellow') {
+          desiredSpeed = Math.min(desiredSpeed, approachSpeed(gap, Math.max(0, signal.speedLimit - 1.5)));
+        } else if (signal.kind === 'red' && signal.aspect === 'red') {
+          desiredSpeed = Math.min(desiredSpeed, approachSpeed(gap - TUNING.signals.redStopWindow * 0.5));
+          waitingAtRed = isInsideRedStopZone(signal) && state.speed <= TUNING.signals.redStopSpeed;
+          break;
         }
       }
-
-      if (redSignal) {
-        const zoneStart = redSignal.distance - TUNING.signals.redStopWindow;
-        // Aim inside the acceptance zone so a real uphill stop cannot
-        // strand the controller a few meters before the waiting boundary.
-        const gap = zoneStart + 8 - state.distance;
-        const gapToSignal = redSignal.distance - state.distance;
-        if (gap > 0) {
-          const safeNow = Math.sqrt(Math.max(0, 2 * 3.4 * Math.max(0, gap)));
-          desiredSpeed = Math.min(desiredSpeed, safeNow);
-        } else {
-          desiredSpeed = 0;
-        }
-
-        if (config.timeWarpStops && gapToSignal < config.redWarpDistance) {
-          state.distance = clampLocal(zoneStart + 8, zoneStart + 2, redSignal.distance - 3);
-          state.speed = 0.12;
-          state.requestedControl = 0;
-          state.actualControl = Math.min(0, state.actualControl);
-        }
-
-        if (!config.timeWarpStops && gapToSignal < 220) {
-          desiredSpeed = Math.min(desiredSpeed, Math.max(0, (gapToSignal - 18) / 16));
-        }
-        if (!config.timeWarpStops && gapToSignal < 90) {
-          desiredSpeed = Math.min(desiredSpeed, Math.max(0, (gapToSignal - 10) / 34));
-        }
-        if (!config.timeWarpStops && gapToSignal < 55) {
-          desiredSpeed = Math.min(desiredSpeed, Math.max(0, (gapToSignal - 8) / 70));
-        }
-        if (!config.timeWarpStops && gapToSignal < 28) {
-          desiredSpeed = Math.min(desiredSpeed, Math.max(0, (gapToSignal - 4) / 130));
-        }
-        if (!config.timeWarpStops && gapToSignal < 650) {
-          desiredSpeed = Math.min(desiredSpeed, 18);
-        }
-        if (!config.timeWarpStops && gapToSignal < 500) {
-          desiredSpeed = Math.min(desiredSpeed, 13);
-        }
-        if (!config.timeWarpStops && gapToSignal < 360) {
-          desiredSpeed = Math.min(desiredSpeed, 8);
-        }
-        if (!config.timeWarpStops && gapToSignal < 240) {
-          desiredSpeed = Math.min(desiredSpeed, 4.5);
-        }
-        if (!config.timeWarpStops && gapToSignal < 150) {
-          desiredSpeed = Math.min(desiredSpeed, 1.6);
-        }
-        if (!config.timeWarpStops && gapToSignal < 110) {
-          desiredSpeed = Math.min(desiredSpeed, 0.7);
-        }
-        if (!config.timeWarpStops && gapToSignal < 85) {
-          desiredSpeed = Math.min(desiredSpeed, 0.22);
-        }
-
-        if (
-          isInsideRedStopZone(redSignal, state.distance)
-          && state.speed <= Math.max(TUNING.signals.redStopSpeed + 0.03, 0.2)
-        ) {
-          state.speed = Math.min(state.speed, 0.12);
-          state.requestedControl = 0;
-          state.actualControl = Math.min(0, state.actualControl);
-          state.signalStatus = null;
-          state.elapsed += config.dt;
-          processSignals(config.dt);
-          updatePenalties(config.dt);
-          updateStations();
-          handledRedWait = true;
-          if (redSignal.aspect === 'green') {
-            state.speed = 0;
-          }
-        }
+      const station = route.stations[state.stationIndex];
+      if (station) {
+        const gap = getStationStopMetrics(station).targetDistance - state.distance;
+        desiredSpeed = Math.min(desiredSpeed, approachSpeed(gap));
       }
 
-      if (stationMetrics) {
-        if (stationGap > 0) {
-          const safeNow = Math.sqrt(Math.max(0, 2 * 3.2 * Math.max(0, stationGap - 20)));
-          desiredSpeed = Math.min(desiredSpeed, safeNow);
-        } else {
-          desiredSpeed = 0;
-        }
+      const gradeForce = -TUNING.physics.gravity * Math.sin(Math.atan(getConsistGrade()));
+      const drag = TUNING.physics.baseDrag + state.speed * state.speed * TUNING.physics.quadraticDrag;
+      const predictedSpeed = state.speed + state.acceleration * 3;
+      const demand = (desiredSpeed - predictedSpeed) * 0.7 - gradeForce + drag;
+      const fadeRatio = Math.min(state.speed / TUNING.physics.tractionFadeReferenceSpeed, 1);
+      const traction = TUNING.physics.tractionForce * Math.max(TUNING.physics.tractionMinFactor,
+        1 - Math.pow(fadeRatio, TUNING.physics.tractionFadeExponent) * TUNING.physics.tractionFadeAmount);
+      state.requestedControl = waitingAtRed ? -1 : clamp(demand / (demand >= 0 ? traction : TUNING.physics.brakingForce), -1, 1);
+      update(config.dt);
 
-        if (stationGap < 800) desiredSpeed = Math.min(desiredSpeed, Math.max(0, stationGap / 18));
-        if (stationGap < 320) desiredSpeed = Math.min(desiredSpeed, Math.max(0, stationGap / 34));
-        if (stationGap < 140) desiredSpeed = Math.min(desiredSpeed, Math.max(0, stationGap / 58));
-        if (stationGap < 36) desiredSpeed = Math.min(desiredSpeed, Math.max(0, stationGap / 120));
-
-        if (config.timeWarpStops && stationGap > 0 && stationGap < config.stationWarpDistance) {
-          state.distance = stationMetrics.targetDistance;
-          state.speed = 0.12;
-          state.requestedControl = 0;
-          state.actualControl = Math.min(0, state.actualControl);
-        }
-
-        if (Math.abs(stationGap) < 18 && state.speed < 3) {
-          state.distance = stationMetrics.targetDistance;
-          state.speed = 0.12;
-          state.requestedControl = 0;
-          state.actualControl = Math.min(0, state.actualControl);
-        }
-      }
-
-      desiredSpeed = clampLocal(desiredSpeed, 0, config.cruiseSpeed);
-      const error = desiredSpeed - state.speed;
-      let requested = 0;
-
-      if (handledRedWait || state.signalStatus?.message === 'Stopped at red signal') {
-        requested = 0;
-      } else if (stationMetrics && stationGap > stationMetrics.tolerance + 2 && stationGap < 60 && state.speed < 0.06) {
-        requested = 0.14;
-      } else if (desiredSpeed < 0.05) {
-        requested = state.speed > 0.04 ? -1 : 0;
-      } else if (error > 2.2) {
-        requested = 1;
-      } else if (error > 0.8) {
-        requested = 0.3;
-      } else if (error > 0.15) {
-        requested = 0.1;
-      } else if (error < -2.0) {
-        requested = -1;
-      } else if (error < -0.7) {
-        requested = -0.7;
-      } else if (error < -0.15) {
-        requested = -0.14;
-      } else {
-        requested = 0;
-      }
-
-      if (stationMetrics && stationGap < 40 && state.speed > 0.2) {
-        requested = -1;
-      }
-      if (currentLimit.limit != null && state.speed > currentLimit.limit - 0.6) {
-        requested = Math.min(requested, -0.4);
-      }
-      if (redSignal && !config.timeWarpStops) {
-        const redGap = redSignal.distance - state.distance;
-        if (redGap < 520 && state.speed > 16) {
-          requested = -1;
-        } else if (redGap < 360 && state.speed > 9) {
-          requested = -1;
-        } else if (redGap < 240 && state.speed > 4.8) {
-          requested = -1;
-        } else if (redGap < 160 && state.speed > 2.0) {
-          requested = -1;
-        } else if (redGap < 110 && state.speed > 0.8) {
-          requested = -1;
-        } else if (redGap < 70 && state.speed > 0.3) {
-          requested = -1;
-        } else if (redGap < 180 && state.speed > 2.6) {
-          requested = -1;
-        } else if (redGap < 100 && state.speed > 1.3) {
-          requested = -1;
-        } else if (redGap < 45 && state.speed > 0.45) {
-          requested = -1;
-        }
-      }
-
-      // Preserve the controller's acceleration/braking demand on gradients.
-      // Small creep requests otherwise stall uphill before red stop zones.
-      if (!handledRedWait && state.signalStatus?.message !== 'Stopped at red signal' && desiredSpeed >= 0.05) {
-        const gravity = -TUNING.physics.gravity * Math.sin(Math.atan(getConsistGrade()));
-        const demand = requested >= 0 ? requested * TUNING.physics.tractionForce
-          : requested * TUNING.physics.brakingForce;
-        const compensated = demand - gravity;
-        requested = compensated >= 0 ? compensated / TUNING.physics.tractionForce
-          : compensated / TUNING.physics.brakingForce;
-      }
-      state.requestedControl = clampLocal(requested, -1, 1);
-      keys.accelerate = false;
-      keys.brake = false;
-
-      if (state.derailment) {
-        updateDerailment(config.dt);
-      } else if (!handledRedWait) {
-        state.elapsed += config.dt;
-        updateControls(config.dt);
-        updatePhysics(config.dt);
-        updateDieselExhaust(config.dt);
-        if (!processSignalPasses()) {
-          processSignals(config.dt);
-          if (!checkFailureConditions()) {
-            updatePenalties(config.dt);
-            updateStations();
-          }
-        }
-      }
-
-      if (state.stationIndex !== controller.lastStationIndex) {
+      if (state.stationIndex !== driver.lastStationIndex) {
         logs.push({ event: 'station', snapshot: snapshot() });
-        controller.lastStationIndex = state.stationIndex;
+        driver.lastStationIndex = state.stationIndex;
       }
-
-      if (controller.totalSteps % config.tickLogEvery === 0) {
-        logs.push({ event: 'tick', snapshot: snapshot() });
+      if (driver.totalSteps % config.tickLogEvery === 0) logs.push({ event: 'tick', snapshot: snapshot() });
+      if (driver.totalSteps % config.renderEverySteps === 0) {
+        updateStationAssist();
+        render();
       }
     }
-
-    refreshUi(0, true);
-    updateStationAssist();
-    render();
-
-    return {
-      finished: state.finished,
-      failed: state.failed,
-      success: state.finished && !state.failed && !state.stationResults.some((result) => result.missed),
-      finishTitle: document.getElementById('finishTitle')?.textContent?.trim() ?? null,
-      failReason: state.failReason,
-      elapsed: Number(state.elapsed.toFixed(1)),
-      penalties: Number(state.penalties.toFixed(1)),
-      totalSteps: controller.totalSteps,
-    };
+    return { finished: state.finished };
   }, batchSteps);
 }
 
-async function finalizeAutopilot(page) {
+async function runAutopilot(page, overrides = {}) {
+  const config = getAutopilotConfig(overrides);
+  await initializeAutopilot(page, config);
+  const batchSteps = Math.max(1, config.batchSteps);
+  for (let batch = 0; batch < Math.ceil(config.maxSteps / batchSteps); batch++) {
+    const result = await stepAutopilot(page, batchSteps);
+    if (result.finished) break;
+    if (config.postStepDelayMs > 0) await page.waitForTimeout(config.postStepDelayMs);
+  }
+  if (config.settleDelayMs > 0) await page.waitForTimeout(config.settleDelayMs);
+  if (config.keepBrowserOpenMs > 0) await page.waitForTimeout(config.keepBrowserOpenMs);
   return page.evaluate(() => {
-    const controller = window.__trainDriverAutopilot;
-    if (!controller) {
-      throw new Error('Autopilot state missing at finalize.');
-    }
-
+    const driver = window.__trainDriverAutopilot;
     refreshUi(0, true);
     updateStationAssist();
     render();
-
     const result = {
-      success: state.finished && !state.failed && !state.stationResults.some((result) => result.missed),
+      success: state.finished && !state.failed && !state.stationResults.some(stop => stop.missed),
       finished: state.finished,
       failed: state.failed,
-      finishTitle: document.getElementById('finishTitle')?.textContent?.trim() ?? null,
+      finishTitle: finishTitle.textContent.trim(),
       failReason: state.failReason,
       elapsed: Number(state.elapsed.toFixed(1)),
       penalties: Number(state.penalties.toFixed(1)),
-      stationResults: state.stationResults.map((result) => ({
-        name: result.name,
-        missed: result.missed,
-        error: Number(result.error.toFixed(2)),
-      })),
-      logs: controller.logs,
+      totalSteps: driver.totalSteps,
+      stationResults: state.stationResults.map(stop => ({ ...stop, error: Number(stop.error.toFixed(2)) })),
+      logs: driver.logs,
     };
-
     delete window.__trainDriverAutopilot;
     return result;
   });
 }
 
-async function runAutopilot(page, config = {}) {
-  const mergedConfig = getAutopilotConfig(config);
-  await initializeAutopilot(page, mergedConfig);
-
-  const batchSteps = Math.max(1, mergedConfig.batchSteps || 1);
-  const maxBatches = Math.ceil(mergedConfig.maxSteps / batchSteps);
-
-  let status = null;
-  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
-    status = await stepAutopilot(page, batchSteps);
-    if (status.finished) {
-      break;
-    }
-    if (mergedConfig.postStepDelayMs > 0) {
-      await page.waitForTimeout(mergedConfig.postStepDelayMs);
-    }
-  }
-
-  if (mergedConfig.settleDelayMs > 0) {
-    await page.waitForTimeout(mergedConfig.settleDelayMs);
-  }
-  if (mergedConfig.keepBrowserOpenMs > 0) {
-    await page.waitForTimeout(mergedConfig.keepBrowserOpenMs);
-  }
-
-  return finalizeAutopilot(page);
-}
-
-module.exports = {
-  getAutopilotConfig,
-  runAutopilot,
-};
+module.exports = { getAutopilotConfig, runAutopilot };

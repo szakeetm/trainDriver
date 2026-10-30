@@ -1,5 +1,28 @@
 # Playwright Findings
 
+## Current harness (2026-10-30)
+
+The driver now changes only the requested control and advances the production
+`update(dt)` loop. It uses a conservative braking envelope and grade/drag
+compensation; it never overwrites train position, speed, actual control, station
+results, or signal state. `autopilot-integrity.spec.js` monitors state writes
+and confirms every physics step belongs to a production update.
+
+Win specs now run fixed routes without retries. The graded seeds are `alpine`,
+`ridge`, and `valley`; fast and watch signal specs use `signal-run`. The older
+assisted driver below could clamp speed, snap station positions, and bypass
+physics while waiting at reds even with time warping disabled. Its passes did
+not establish unassisted completion.
+
+The red stop line is now inclusive for a stationary stop. Crossing it is a
+failure even if the wait would finish on that tick, preserving update order.
+Station overruns immediately advance to the next target and add 60 seconds
+per missed station. The configured acceptance tolerance is now honored.
+
+See [app-repairs.md](app-repairs.md) for current validation and terrain results.
+
+## Historical findings (assisted harness)
+
 ## Scope
 
 - Goal: drive the full game route automatically and finish with a clean win.

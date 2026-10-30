@@ -12,6 +12,8 @@ Scripts share a global lexical scope. Top-level `let`/`const` bindings such as
 `state` and `route` are accessible in `page.evaluate`, but are not properties of
 `window`. Preserve the script order in `index.html`:
 
+`js/diagnostics.js` loads first to report script/startup/runtime errors.
+
 1. `js/core.js`: DOM references, default tuning, mutable globals.
 2. `js/audio.js`: Web Audio graph and gesture-based audio unlock.
 3. `js/shared.js`: configuration, formatting, input, sizing, train poses.
@@ -49,7 +51,13 @@ are documentation/media assets. `docs/` contains test findings and code review n
   stations, audio, and throttled HUD updates in that order. Signal processing order
   affects boundary failures; do not reorder as a cosmetic refactor.
 - Controls range from -1 (braking) to +1 (power), with delayed actual response.
-  Keyboard and pointer holds share `keys`; blur clears held controls.
+  Up/Down are the only keyboard controls. Source sets aggregate keyboard and
+  pointer holds into `keys`; blur, visibility loss, and restart clear them.
+- Station tolerance comes from `stations.stopWindow`. Overrunning that window
+  immediately advances the target and adds `stations.missPenalty` seconds per
+  missed stop; the last overrun finishes with delays in the same update.
+- Red stop zones include the signal line. Strictly greater chainage crosses
+  the line; pass processing still precedes red waiting/clearance.
 - World `x/y` are horizontal meters; `elevation` is vertical meters. Track grade
   is rise/run and pitch is radians. Route distance remains horizontal chainage.
   `updatePhysics()` applies gravity along the average grade under the consist,
@@ -59,7 +67,11 @@ are documentation/media assets. `docs/` contains test findings and code review n
   sufficient braking holds the train.
 - `getTrackElevation()` uses smooth transitions up to 8% and level station zones.
   `getTerrainHeight()` blends surrounding hills into track earthworks, using a
-  route-owned spatial index. Terrain vertices share a bounded route-owned cache.
+  route-owned spatial index. Terrain vertices and derived triangle lighting
+  have separate route-owned caches, each bounded by `terrain.cacheLimit`.
+  Vertex projections are reused only within one terrain draw. A stopped view
+  can reuse one backing-store-sized terrain bitmap; camera/size/palette changes
+  invalidate it, moving drops it, and restart replaces all caches.
 - Both regular and derailed poses include elevation. `createRenderFrameContext()`
   supplies all consist units, camera metrics, biome blend, and overlay labels.
 - Scenery clearance runs once after route/index generation. It checks full prop
@@ -101,10 +113,18 @@ Playwright expects an already-running server at `http://127.0.0.1:4173`;
 config does not start one.
 
 `tests/win-autopilot.js` drives `state.requestedControl` using accelerated
-in-page updates. The win specs allow up to six randomized routes and assert
-`Run complete` with zero penalties. Passing them proves an eventual clean win,
-not success on every route or complete input coverage. Inspect
-`docs/playwright-findings.md` for signal and station edge cases.
+production `update()` calls. It cannot teleport, overwrite physics, or manually
+clear signals. Win specs use fixed seeds without retry and assert `Run complete`
+with zero penalties. `tests/autopilot-integrity.spec.js` guards this contract;
+passing fixed routes does not prove every possible generated route or input.
+Inspect `docs/playwright-findings.md` for signal and station edge cases.
+
+`tests/gameplay-regressions.spec.js` checks input-source isolation, Up/Down only,
+station overruns, red-line equality/crossing, terminal HUD/audio/progress, and
+deterministic segment boundaries. Rendering optimization tests compare pixels
+against `tests/terrain-reference.js` and exercise cache lifetime/eviction.
+Run `node tests/terrain-benchmark.js` with the server running for controlled
+cold/warm, stopped/moving CPU submission measurements.
 
 For rendering changes, check seeded flat/graded track, stations, signals,
 derailments, resize, restart, and mobile layouts. Inspect page errors and terrain

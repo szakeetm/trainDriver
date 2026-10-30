@@ -1,11 +1,10 @@
-function worldToScreen(point, camera, scale, width, anchorY) {
+function worldToScreen(point, camera, scale, width, anchorY, output = {}) {
   const dx = point.x - camera.x;
   const dy = point.y - camera.y;
-  return {
-    x: width * 0.5 + (dx - dy) * Math.SQRT1_2 * scale,
-    y: anchorY + ((dx + dy) / Math.sqrt(6)
-      - ((point.elevation ?? 0) - camera.elevation) * Math.sqrt(2 / 3)) * scale,
-  };
+  output.x = width * 0.5 + (dx - dy) * Math.SQRT1_2 * scale;
+  output.y = anchorY + ((dx + dy) / Math.sqrt(6)
+    - ((point.elevation ?? 0) - camera.elevation) * Math.sqrt(2 / 3)) * scale;
+  return output;
 }
 
 // Fixed isometric axes: world x/y are horizontal; elevation is vertical.

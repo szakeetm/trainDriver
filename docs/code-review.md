@@ -1,5 +1,8 @@
 # Code review and optimization opportunities
 
+For the current app, see [app-repairs.md](app-repairs.md). The notes below are
+historical and include opportunities already resolved by the 2026-10-30 repairs.
+
 The isometric terrain version supersedes the 3D inset implementation described
 below. The inset and its lifecycle/sleeper tests have been removed. See
 [isometric-terrain.md](isometric-terrain.md) for the current renderer and validation.

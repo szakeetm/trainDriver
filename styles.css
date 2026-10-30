@@ -473,6 +473,7 @@ button {
 .control-button {
   padding: 12px 14px;
   color: white;
+  touch-action: none;
 }
 
 .control-button.accel {
@@ -1011,4 +1012,109 @@ button {
 .speed-card .speed-readout .speed-limit {
   font-size: 0.65em;
   color: var(--accent);
+}
+
+/* Short landscape screens need the scene and touch controls at the same time. */
+@media (orientation: landscape) and (max-height: 600px) and (min-width: 640px) {
+  .app-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    height: 100dvh;
+    min-height: 0;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .canvas-wrap {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .hud-panel {
+    display: flex;
+    flex-direction: column;
+    position: static;
+    height: 100%;
+    max-height: 100%;
+    min-width: 0;
+    overflow: auto;
+    padding: 0;
+    gap: 8px;
+  }
+
+  .hud-panel > * {
+    flex-shrink: 0;
+  }
+
+  .drive-card {
+    order: -1;
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    z-index: 6;
+    padding: 12px;
+    background: var(--panel-strong);
+  }
+
+  .control-button {
+    min-height: 48px;
+    padding: 10px 8px;
+    font-size: 0.85rem;
+  }
+
+  .station-assist {
+    left: 10px;
+    bottom: 10px;
+    width: calc(100% - 20px);
+    max-width: calc(100% - 20px);
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .station-assist .eyebrow {
+    display: none;
+  }
+
+  .station-assist h3 {
+    margin: 0 0 3px;
+    font-size: 0.8rem;
+  }
+
+  .assist-copy {
+    min-height: 0;
+    margin: 0 0 5px;
+    font-size: 0.7rem;
+    line-height: 1.15;
+  }
+
+  .assist-scale {
+    height: 28px;
+    border-radius: 8px;
+  }
+
+  .assist-window {
+    top: 4px;
+    bottom: 4px;
+  }
+
+  .assist-target,
+  .assist-front {
+    top: 3px;
+    bottom: 3px;
+  }
+
+  .assist-front::before {
+    top: 4px;
+    height: 16px;
+  }
+
+  .assist-front::after {
+    width: 8px;
+    height: 8px;
+  }
+
+  .assist-legend {
+    margin-top: 3px;
+    font-size: 0.6rem;
+  }
 }

@@ -1,5 +1,5 @@
-function projectPoint(point, frame) {
-  return worldToScreen(point, frame.view.camera, frame.view.scale, frame.width, frame.view.anchorY);
+function projectPoint(point, frame, output) {
+  return worldToScreen(point, frame.view.camera, frame.view.scale, frame.width, frame.view.anchorY, output);
 }
 
 function fillPolygon(points, color, stroke = null) {
@@ -20,7 +20,63 @@ function isVisible(point, frame, margin = 100) {
     && point.y >= -margin && point.y <= frame.height + margin;
 }
 
+function projectTerrainVertex(point, frame, version) {
+  if (point.projectionVersion !== version) {
+    point.screen = projectPoint(point, frame, point.screen);
+    point.projectionVersion = version;
+  }
+  return point.screen;
+}
+
+function getTerrainTone(a, b, c, noise) {
+  const ux = b.x - a.x, uy = b.y - a.y, uz = b.elevation - a.elevation;
+  const vx = c.x - a.x, vy = c.y - a.y, vz = c.elevation - a.elevation;
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const light = (nx * -0.45 + ny * -0.3 + nz * 0.84) / Math.hypot(nx, ny, nz);
+  return 0.75 + light * 0.32 + noise * 0.035;
+}
+
+function getTerrainColor(red, green, blue, tone) {
+  return `rgb(${Math.round(clamp(red * tone, 0, 255))},${Math.round(clamp(green * tone, 0, 255))},${Math.round(clamp(blue * tone, 0, 255))})`;
+}
+
+function fillTerrainTriangle(a, b, c, color) {
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.6;
+  ctx.stroke();
+}
+
+function trimTerrainCaches() {
+  for (const cache of [route.terrainHeightCache, route.terrainCellCache]) {
+    while (cache.size > TUNING.terrain.cacheLimit) cache.delete(cache.keys().next().value);
+  }
+}
+
 function drawBackground(frame) {
+  const stationary = state.speed === 0 || state.finished;
+  const camera = frame.view.camera;
+  const blend = frame.biomeBlend;
+  const backdropKey = stationary ? [frame.width, frame.height, canvas.width, canvas.height,
+    camera.x, camera.y, camera.elevation, frame.view.scale, frame.view.anchorY,
+    blend.primary, blend.secondary, blend.mix].join("|") : null;
+  let backdrop = route.terrainBackdrop;
+  if (stationary && backdrop?.key === backdropKey) {
+    trimTerrainCaches();
+    // Copy exact backing-store pixels, bypassing the CSS-pixel transform.
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(backdrop.canvas, 0, 0);
+    ctx.restore();
+    return;
+  }
+  if (!stationary) route.terrainBackdrop = null;
   ctx.fillStyle = "#78976b";
   ctx.fillRect(0, 0, frame.width, frame.height);
   // Cover the inverse viewport at both landscape height extremes. Extra cells
@@ -40,35 +96,78 @@ function drawBackground(frame) {
   const maxX = Math.ceil(Math.max(...corners.map((p) => p.x)) / size) + 1;
   const minY = Math.floor(Math.min(...corners.map((p) => p.y)) / size) - 1;
   const maxY = Math.ceil(Math.max(...corners.map((p) => p.y)) / size) + 1;
-  const blend = frame.biomeBlend;
   const primary = getBiomePalette(blend.primary).base;
   const secondary = getBiomePalette(blend.secondary).base;
-  const base = primary.map((value, index) => lerp(value, secondary[index], blend.mix));
+  const red = lerp(primary[0], secondary[0], blend.mix);
+  const green = lerp(primary[1], secondary[1], blend.mix);
+  const blue = lerp(primary[2], secondary[2], blend.mix);
+  const paletteKey = `${red},${green},${blue}`;
+  if (route.terrainPaletteKey !== paletteKey) {
+    route.terrainPaletteKey = paletteKey;
+    route.terrainPaletteVersion += 1;
+  }
+  const paletteVersion = route.terrainPaletteVersion;
+  const projectionVersion = ++route.terrainProjectionVersion;
+  const cells = route.terrainCellCache;
+  // Screen x is independent of elevation. Clip each diagonal before visiting
+  // its cells, so the corners of the inverse viewport's world-space box do
+  // not trigger height queries and projections that cannot reach the screen.
+  const tileAcross = size * Math.SQRT1_2 * frame.view.scale;
+  const centerAcross = frame.width * 0.5
+    + (frame.view.camera.y - frame.view.camera.x) * Math.SQRT1_2 * frame.view.scale;
+  const minAcross = (-2 - centerAcross) / tileAcross - 1;
+  const maxAcross = (frame.width + 2 - centerAcross) / tileAcross + 1;
   // Draw rows from far to near. All terrain shares vertices; triangles carry
   // surface lighting rather than screen-space texture that would swim on hills.
   for (let diagonal = minX + minY; diagonal <= maxX + maxY; diagonal += 1) {
-    for (let gx = Math.max(minX, diagonal - maxY); gx <= Math.min(maxX, diagonal - minY); gx += 1) {
+    // One guard cell on either side absorbs floating-point boundary rounding.
+    const rowMin = Math.max(minX, diagonal - maxY, Math.ceil((diagonal + minAcross) * 0.5) - 1);
+    const rowMax = Math.min(maxX, diagonal - minY, Math.floor((diagonal + maxAcross) * 0.5) + 1);
+    for (let gx = rowMin; gx <= rowMax; gx += 1) {
       const gy = diagonal - gx;
-      const points = [getTerrainVertex(gx, gy), getTerrainVertex(gx + 1, gy),
-        getTerrainVertex(gx + 1, gy + 1), getTerrainVertex(gx, gy + 1)];
-      const screen = points.map((p) => projectPoint(p, frame));
-      if (screen.every((p) => p.x < -2) || screen.every((p) => p.x > frame.width + 2)
-        || screen.every((p) => p.y < -2) || screen.every((p) => p.y > frame.height + 2)) continue;
-      for (const indices of [[0, 1, 2], [0, 2, 3]]) {
-        const [a, b, c] = indices.map((index) => points[index]);
-        const ux = b.x - a.x, uy = b.y - a.y, uz = b.elevation - a.elevation;
-        const vx = c.x - a.x, vy = c.y - a.y, vz = c.elevation - a.elevation;
-        const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
-        const light = (nx * -0.45 + ny * -0.3 + nz * 0.84) / Math.hypot(nx, ny, nz);
-        const tone = 0.75 + light * 0.32 + hashNoise(gx, gy) * 0.035;
-        const color = `rgb(${base.slice(0, 3).map((value) => Math.round(clamp(value * tone, 0, 255))).join(",")})`;
-        fillPolygon(indices.map((index) => screen[index]), color, color);
+      const a = getTerrainVertex(gx, gy), b = getTerrainVertex(gx + 1, gy);
+      const c = getTerrainVertex(gx + 1, gy + 1), d = getTerrainVertex(gx, gy + 1);
+      const pa = projectTerrainVertex(a, frame, projectionVersion);
+      const pb = projectTerrainVertex(b, frame, projectionVersion);
+      const pc = projectTerrainVertex(c, frame, projectionVersion);
+      const pd = projectTerrainVertex(d, frame, projectionVersion);
+      if ((pa.x < -2 && pb.x < -2 && pc.x < -2 && pd.x < -2)
+        || (pa.x > frame.width + 2 && pb.x > frame.width + 2 && pc.x > frame.width + 2 && pd.x > frame.width + 2)
+        || (pa.y < -2 && pb.y < -2 && pc.y < -2 && pd.y < -2)
+        || (pa.y > frame.height + 2 && pb.y > frame.height + 2 && pc.y > frame.height + 2 && pd.y > frame.height + 2)) continue;
+      const key = a.key;
+      let cell = cells.get(key);
+      if (!cell) {
+        const noise = hashNoise(gx, gy);
+        // Keep only derived scalars here. Retaining vertex references would
+        // defeat height-cache eviction as the train visits more of the route.
+        cell = { toneA: getTerrainTone(a, b, c, noise), toneB: getTerrainTone(a, c, d, noise) };
+        cells.set(key, cell);
       }
+      if (cell.paletteVersion !== paletteVersion) {
+        cell.colorA = getTerrainColor(red, green, blue, cell.toneA);
+        cell.colorB = getTerrainColor(red, green, blue, cell.toneB);
+        cell.paletteVersion = paletteVersion;
+      }
+      fillTerrainTriangle(pa, pb, pc, cell.colorA);
+      fillTerrainTriangle(pa, pc, pd, cell.colorB);
     }
   }
   // FIFO eviction bounds memory on long runs; route replacement drops all caches.
-  const cache = route.terrainHeightCache;
-  while (cache.size > TUNING.terrain.cacheLimit) cache.delete(cache.keys().next().value);
+  trimTerrainCaches();
+  if (stationary) {
+    if (!backdrop) {
+      const bitmap = document.createElement("canvas");
+      backdrop = { canvas: bitmap, context: bitmap.getContext("2d"), key: null };
+    }
+    if (backdrop.context) {
+      if (backdrop.canvas.width !== canvas.width) backdrop.canvas.width = canvas.width;
+      if (backdrop.canvas.height !== canvas.height) backdrop.canvas.height = canvas.height;
+      backdrop.context.drawImage(canvas, 0, 0);
+      backdrop.key = backdropKey;
+      route.terrainBackdrop = backdrop;
+    }
+  }
 }
 
 function offsetRoutePoint(distance, offset = 0, lift = 0) {

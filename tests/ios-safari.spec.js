@@ -72,3 +72,47 @@ test('a startup exception is readable on the phone', async ({ page }) => {
   await expect(page.getByRole('alert')).toContainText('Startup test failure');
   await expect(page.getByRole('alert')).toContainText('main.js:1');
 });
+
+test('landscape phones show driving controls beside the scene without page scrolling', async ({ page }) => {
+  await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
+  await page.goto('/?seed=alpine');
+  for (const viewport of [{ width: 932, height: 430 }, { width: 844, height: 390 }, { width: 740, height: 360 }]) {
+    await page.setViewportSize(viewport);
+    const bounds = await page.evaluate(() => {
+      const visible = element => {
+        const rect = element.getBoundingClientRect();
+        return rect.left >= 0 && rect.top >= 0 && rect.right <= innerWidth && rect.bottom <= innerHeight;
+      };
+      return { brake: visible(brakeButton), power: visible(accelerateButton),
+        canvas: visible(canvas), scrolling: document.documentElement.scrollHeight > innerHeight };
+    });
+    expect(bounds).toEqual({ brake: true, power: true, canvas: true, scrolling: false });
+    const button = await page.locator('#accelerateButton').boundingBox();
+    await page.mouse.move(button.x + button.width / 2, button.y + button.height / 2);
+    await page.mouse.down();
+    expect(await page.evaluate(() => { updateControls(0.1); return keys.accelerate; })).toBe(true);
+    await page.mouse.up();
+    expect(await page.evaluate(() => keys.accelerate)).toBe(false);
+  }
+});
+
+test('landscape stop assist leaves the train visible during a station approach', async ({ page }) => {
+  await page.addInitScript(() => { window.requestAnimationFrame = () => 0; });
+  await page.goto('/?seed=alpine');
+  for (const viewport of [{ width: 932, height: 430 }, { width: 844, height: 390 }, { width: 740, height: 360 }]) {
+    await page.setViewportSize(viewport);
+    const visible = await page.evaluate(() => {
+      state.distance = getStationStopMetrics(route.stations[1]).targetDistance - 75;
+      state.speed = 1;
+      updateStationAssist();
+      const assist = stationAssist.getBoundingClientRect();
+      const rect = canvas.getBoundingClientRect();
+      const frame = createRenderFrameContext(canvas.clientWidth, canvas.clientHeight);
+      return frame.renderedUnits.every(unit => {
+        const point = projectPoint({ x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation }, frame);
+        return point.y + rect.top + 12 < assist.top;
+      });
+    });
+    expect(visible).toBe(true);
+  }
+});

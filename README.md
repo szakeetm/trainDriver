@@ -27,8 +27,8 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 
 ## Controls
 
-- `W` / `ArrowUp`: increase power
-- `S` / `ArrowDown`: increase braking
+- `ArrowUp`: increase power
+- `ArrowDown`: increase braking
 - On-screen buttons also support pointer/touch input
 
 ## Run Locally
@@ -54,8 +54,16 @@ Bridges, tunnels, and grade-separated crossings are outside this version's scope
 
 Gameplay tuning and shared globals start in [`js/core.js`](js/core.js).
 
+Stations accept a stop within the configured tolerance (42.9 m by default).
+Overrunning that window immediately targets the next station and adds a
+60-second penalty. Overrunning the final station ends the run with delays.
+A locomotive stopped exactly at a red signal can wait for clearance; crossing
+the stop line while it is red ends the run.
+
 Agent architecture and workflow context is in [`AGENTS.md`](AGENTS.md).
-See [`docs/code-review.md`](docs/code-review.md) for optimization findings and validation.
+See [`docs/app-repairs.md`](docs/app-repairs.md) for current fixes, terrain
+measurements, and validation. [`docs/code-review.md`](docs/code-review.md)
+retains the historical review of the removed 3D renderer.
 
 ## Testing
 
@@ -88,3 +96,16 @@ Then run one of these in a second terminal:
 - `npm run test:win:headed`: headed watch mode using the reusable win spec
 
 The visible modes drive the full route in a watchable browser window. The fast mode is intended for quick verification.
+
+The driver requests power/braking and advances the production `update()` loop;
+it does not teleport the train, overwrite its speed, or clear signals itself.
+Win tests use fixed seeds and fail on the first unsuccessful run.
+
+For a controlled comparison of the original and current terrain renderer:
+
+```powershell
+node tests/terrain-benchmark.js
+```
+
+The benchmark includes cold caches, stopped views, and moving cameras at
+desktop DPR 1 and phone DPR 2. It measures CPU submission time, not hardware FPS.
