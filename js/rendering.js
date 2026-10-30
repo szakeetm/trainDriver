@@ -441,6 +441,7 @@ function queueTrain(frame, queue) {
 }
 
 function drawWorld(frame) {
+  if (drawThreeWorldFrame(frame)) return;
   drawTerrainBackground(frame);
   drawTrack(frame);
   const queue = [];
@@ -467,6 +468,10 @@ function drawWorld(frame) {
     ctx.fillStyle = `rgba(48,58,52,${Math.max(0, (1 - progress) * puff.opacity)})`;
     ctx.beginPath(); ctx.arc(point.x, point.y, (puff.radius + puff.growth * progress) * frame.view.scale, 0, Math.PI * 2); ctx.fill();
   }
+  drawWorldLabels(frame);
+}
+
+function drawWorldLabels(frame) {
   // Labels stay readable above scenery and never rotate with the world.
   ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
   for (const label of frame.labels) {
@@ -476,6 +481,12 @@ function drawWorld(frame) {
     ctx.fillStyle = "rgba(19,39,32,0.83)"; ctx.beginPath();
     ctx.roundRect(point.x - width * 0.5, point.y - 16, width, 24, 6); ctx.fill();
     ctx.fillStyle = label.color; ctx.fillText(label.text, point.x, point.y);
+  }
+  ctx.font = "700 11px sans-serif";
+  ctx.fillStyle = "#303b2e";
+  for (const label of frame.signTexts || []) {
+    const point = projectPoint(label.point, frame);
+    if (isVisible(point, frame, 60)) ctx.fillText(label.text, point.x, point.y + 3);
   }
 }
 

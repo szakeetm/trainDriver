@@ -3,6 +3,7 @@
 window.addEventListener("error", (event) => {
   const script = event.target;
   const scriptFailed = script instanceof HTMLScriptElement;
+  if (scriptFailed && script.dataset.optional === "true") return;
   if (!scriptFailed && (!event.filename || !event.message)) return;
   const source = scriptFailed ? script.src : event.filename;
   const url = new URL(source, location.href);

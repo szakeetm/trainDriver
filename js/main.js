@@ -53,6 +53,7 @@ function startRun() {
   uiRefreshCarry = UI_REFRESH_INTERVAL;
   state = createInitialState();
   if (webglTerrain) webglTerrain.resetRoute(route);
+  if (threeWorld) threeWorld.resetRoute(route);
   state.started = true;
   finishCard.classList.add("hidden");
   resizeCanvas();
@@ -68,15 +69,22 @@ restartButton.addEventListener("click", () => {
   startRun();
 });
 
-function initializeGame() {
+async function initializeGame() {
+  const rendererMode = new URLSearchParams(location.search).get("renderer") || "webgl2";
+  if (rendererMode === "three") await loadThreeWorldLibrary();
   initializeAudioUnlock();
 
   applyTuning();
-  setTerrainRendererMode(new URLSearchParams(location.search).get("renderer") || "webgl2");
+  setTerrainRendererMode(rendererMode);
   syncAssistLegend();
   lastFrame = performance.now();
   startRun();
   requestAnimationFrame(loop);
 }
 
-initializeGame();
+initializeGame().catch(error => {
+  // Route/bootstrap failures inside async initialization still belong to the
+  // existing visible diagnostics path, rather than an unhandled rejection.
+  window.dispatchEvent(new ErrorEvent("error", { error,
+    message: error?.message || String(error), filename: new URL("js/main.js", location.href).href }));
+});

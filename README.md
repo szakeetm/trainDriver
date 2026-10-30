@@ -12,6 +12,13 @@ when WebGL 2 is unavailable. Gameplay and audio are shared between renderers.
 See [the experiment report](docs/webgl2-experiment.md) for scope, validation,
 and controlled performance comparisons. The prototype is not a full 3D port.
 
+Use `index.html?renderer=three&seed=alpine` for
+the further Three.js world experiment. Track, stations, scenery, signals,
+vehicles, and exhaust use retained GPU geometry on the same WebGL context as
+the existing terrain. Text and HUD remain on Canvas/DOM. The existing local
+Three.js r128 bundle loads only in this mode. See
+[the Three.js comparison](docs/threejs-experiment.md) for measurements and tradeoffs.
+
 You drive a 100 m consist across a procedurally generated route with stations, signals, curves, speed limits, isometric hills, elevated track, biome-driven scenery, and derailment penalties for major mistakes.
 
 [Play it on GitHub Pages](https://szakeetm.github.io/trainDriver/)
@@ -33,6 +40,7 @@ You drive a 100 m consist across a procedurally generated route with stations, s
 - `js/simulation.js`: controls, physics, stations, and failure handling
 - `js/rendering.js`: heightfield shading, depth-sorted scenery/trains, and HUD overlays
 - `js/terrain-webgl2.js`: experimental chunked GPU terrain, mode selection, and fallback
+- `js/three-world.js`: optional retained Three.js world and shared-context handoff
 - `js/main.js`: game bootstrap and frame loop
 - `js/view.js`: isometric projection and camera
 
@@ -132,3 +140,13 @@ and reports cold terrain, moving/stopped submission, full-frame submission,
 animation pacing, GPU queries when available, and separate capture completion
 diagnostics. Set `TRAIN_DRIVER_BROWSER=msedge` to use installed Edge instead.
 Phone-sized results use the host GPU and are not physical-phone measurements.
+
+Compare terrain-only WebGL 2 with the opt-in Three.js world:
+
+```powershell
+node tests/three-world-benchmark.js
+```
+
+The comparison uses the same seed/camera paths, hardware backend, and viewport
+sizes. Warm submission, per-RAF costs, cold full-frame preparation, geometry
+memory, and capture-completion diagnostics are reported separately.

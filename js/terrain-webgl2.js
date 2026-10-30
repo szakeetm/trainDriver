@@ -237,24 +237,29 @@ function resizeTerrainSurface(width, height) {
   if (terrainSurface.width !== width) terrainSurface.width = width;
   if (terrainSurface.height !== height) terrainSurface.height = height;
   if (webglTerrain) webglTerrain.lastViewKey = null;
+  if (threeWorld) threeWorld.lastViewKey = null;
 }
 
 function setTerrainRendererMode(mode) {
-  terrainRendererRequested = mode === "canvas" ? "canvas" : "webgl2";
+  terrainRendererRequested = mode === "canvas" ? "canvas" : mode === "three" ? "three" : "webgl2";
   terrainRendererActive = "canvas";
   terrainRendererReason = null;
-  if (terrainRendererRequested === "webgl2") {
+  if (terrainRendererRequested !== "canvas") {
     try {
       if (!webglTerrain) webglTerrain = new WebglTerrainRenderer(terrainSurface);
       if (!webglTerrain.lost) {
         terrainRendererActive = "webgl2";
         webglTerrain.lastViewKey = null;
+        if (terrainRendererRequested === "three" && window.THREE) {
+          if (!threeWorld) threeWorld = new ThreeWorldRenderer(webglTerrain);
+          terrainRendererActive = "three";
+        }
       }
     } catch (error) {
       terrainRendererReason = error.message;
     }
   }
-  terrainSurface.hidden = terrainRendererActive !== "webgl2";
+  terrainSurface.hidden = terrainRendererActive === "canvas";
   resizeTerrainSurface(canvas.width, canvas.height);
   return terrainRendererActive;
 }
@@ -267,8 +272,10 @@ function getTerrainRendererStatus() {
 }
 
 function drawTerrainBackground(frame) {
-  if (terrainRendererActive === "webgl2") {
+  if (terrainRendererActive !== "canvas") {
     try {
+      if (threeWorld?.ownsContext) threeWorld.prepareRaw();
+      if (terrainRendererActive === "three") threeWorld.lastViewKey = null;
       if (webglTerrain.draw(frame)) {
         ctx.clearRect(0, 0, frame.width, frame.height);
         trimTerrainCaches();

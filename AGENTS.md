@@ -24,7 +24,8 @@ Scripts share a global lexical scope. Top-level `let`/`const` bindings such as
 7. `js/ui.js`: DOM HUD and station assist.
 8. `js/rendering.js`: terrain mesh, track ribbons, depth-sorted props/trains, labels, HUD.
 9. `js/terrain-webgl2.js`: experimental terrain backend, chunk resources, renderer selection/fallback.
-10. `js/main.js`: initialization, restart, update, animation loop.
+10. `js/three-world.js`: optional retained Three.js world and lazy library loader.
+11. `js/main.js`: initialization, restart, update, animation loop.
 
 `styles.css` contains layout and responsive styling; `screens/` and `cover.jpg`
 are documentation/media assets. `docs/` contains test findings and code review notes.
@@ -89,7 +90,17 @@ are documentation/media assets. `docs/` contains test findings and code review n
   GPU surface and enables Canvas; restoration rebuilds shaders/buffers. A route
   change releases GPU chunk buffers. The cache is capped at 48 chunks of 16x16
   cells; cell-depth ordering preserves the terrain cutaway presentation.
-  The unused vendored `three.min.js` remains untouched and is not loaded.
+  The vendored `three.min.js` remains untouched and is not loaded in the
+  `webgl2` or `canvas` modes.
+- The opt-in `renderer=three` mode lazily loads the unchanged
+  vendored Three.js r128 bundle. Raw terrain and Three world share one context;
+  resetState handoffs invalidate Three's cached GL/VAO state. Static track/props
+  use merged 512m route chunks, vehicles use retained meshes, and couplers/puffs
+  use a dynamic buffer sized for the existing 20-puff cap. Restart disposes all
+  route geometry/render lists; shared materials persist. Cached stopped frames
+  must be invalidated after exhaust so the final puff is erased. Text/HUD remain
+  Canvas/DOM. Optional library-load errors fall back without a fatal banner;
+  asynchronous startup failures are forwarded to the normal diagnostics.
 
 ## Running and verification
 
@@ -139,6 +150,12 @@ in hardware Chromium/D3D11 and records renderer/GPU metadata; it refuses silent
 software comparisons unless `TRAIN_DRIVER_ALLOW_SOFTWARE` is set. Report
 submission, frame pacing, GPU timing, and capture-completion diagnostics as
 different quantities. Phone viewport results still use the host GPU.
+
+For the Three world, run `tests/three-world.spec.js` and
+`node tests/three-world-benchmark.js`. Compare with the current WebGL2+Canvas
+world in the same page; do not compare only to older software-rendered timing
+reports. Three uses geometric object depth and simplified outlines/shadows,
+so it is visually close rather than pixel-identical.
 
 For rendering changes, check seeded flat/graded track, stations, signals,
 derailments, resize, restart, and mobile layouts. Inspect page errors and terrain
