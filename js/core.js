@@ -183,18 +183,18 @@ const DEFAULT_TUNING = {
     farOffsetMax: 500, // Maximum lateral offset for scenery farther from the track.
     distanceJitterMin: -30, // Minimum forward/backward jitter applied within a scenery cluster.
     distanceJitterMax: 30, // Maximum forward/backward jitter applied within a scenery cluster.
-    windmillThreshold: 0.97, // Random-roll cutoff above which an object becomes a windmill.
-    siloThreshold: 0.93, // Random-roll cutoff above which an object becomes a silo.
-    barnThreshold: 0.88, // Random-roll cutoff above which an object becomes a barn.
-    billboardThreshold: 0.82, // Random-roll cutoff above which an object becomes a billboard.
-    pondThreshold: 0.73, // Random-roll cutoff above which an object becomes a pond.
-    ruinThreshold: 0.63, // Random-roll cutoff above which an object becomes ruins.
-    hutThreshold: 0.54, // Random-roll cutoff above which an object becomes a hut.
-    cactusThreshold: 0.46, // Random-roll cutoff above which an object becomes a cactus.
-    rockThreshold: 0.38, // Random-roll cutoff above which an object becomes a rock.
-    stumpThreshold: 0.31, // Random-roll cutoff above which an object becomes a stump.
-    hayBaleThreshold: 0.24, // Random-roll cutoff above which an object becomes a hay bale.
-    bushThreshold: 0.16, // Random-roll cutoff above which an object becomes a bush.
+    windmillThreshold: 0.98, // Random-roll cutoff above which an object becomes a windmill.
+    siloThreshold: 0.95, // Random-roll cutoff above which an object becomes a silo.
+    barnThreshold: 0.92, // Random-roll cutoff above which an object becomes a barn.
+    billboardThreshold: 0.87, // Random-roll cutoff above which an object becomes a billboard.
+    pondThreshold: 0.8, // Random-roll cutoff above which an object becomes a pond.
+    ruinThreshold: 0.71, // Random-roll cutoff above which an object becomes ruins.
+    hutThreshold: 0.63, // Random-roll cutoff above which an object becomes a hut.
+    cactusThreshold: 0.56, // Random-roll cutoff above which an object becomes a cactus.
+    rockThreshold: 0.5, // Random-roll cutoff above which an object becomes a rock.
+    stumpThreshold: 0.44, // Random-roll cutoff above which an object becomes a stump.
+    hayBaleThreshold: 0.38, // Random-roll cutoff above which an object becomes a hay bale.
+    bushThreshold: 0.32, // Random-roll cutoff above which an object becomes a bush.
     objectMargin: 60, // Minimum distance from route start/end allowed for scenery objects.
     sizeMin: 0.72, // Minimum random scale multiplier for scenery objects.
     sizeMax: 1.55, // Maximum random scale multiplier for scenery objects.
@@ -202,8 +202,8 @@ const DEFAULT_TUNING = {
     rotationMax: 0.35, // Maximum random rotation in radians for scenery objects.
     tintMin: -12, // Minimum random tint offset used to vary scenery colors.
     tintMax: 12, // Maximum random tint offset used to vary scenery colors.
-    spacingMin: 58, // Minimum spacing in meters between scenery clusters.
-    spacingMax: 102, // Maximum spacing in meters between scenery clusters.
+    spacingMin: 28, // Minimum spacing in meters between scenery clusters.
+    spacingMax: 50, // Maximum spacing in meters between scenery clusters.
   },
   controls: {
     requestAccelRate: 1.1, // Rate per second at which the driver's power request rises.
