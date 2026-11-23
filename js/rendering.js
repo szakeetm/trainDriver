@@ -318,6 +318,24 @@ function drawGroundZone(start, end, halfWidth, color, frame) {
   fillPolygon(points.map((p) => projectPoint(p, frame)), color);
 }
 
+// Platforms are long boxes parallel to the track, so center depth misorders them
+// against train units offset along the platform. For units alongside, order by
+// the across-track side instead: near platforms after the train, far ones before.
+function getPlatformSortDepth(platform, stationPoint, platformLength, frame) {
+  const depth = platform.x + platform.y;
+  const sideDepth = depth - (stationPoint.x + stationPoint.y);
+  if (Math.abs(sideDepth) < 1e-6) return depth;
+  const fx = Math.cos(stationPoint.heading), fy = Math.sin(stationPoint.heading);
+  let result = depth;
+  for (const unit of frame.renderedUnits) {
+    const along = (unit.renderX - stationPoint.x) * fx + (unit.renderY - stationPoint.y) * fy;
+    if (Math.abs(along) > (platformLength + unit.length) * 0.5) continue;
+    const unitDepth = unit.renderX + unit.renderY;
+    result = sideDepth > 0 ? Math.max(result, unitDepth + 0.01) : Math.min(result, unitDepth - 0.01);
+  }
+  return result;
+}
+
 function queueRouteMarkers(frame, queue) {
   for (let index = 0; index < route.stations.length; index += 1) {
     const station = route.stations[index];
@@ -332,7 +350,7 @@ function queueRouteMarkers(frame, queue) {
     const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
     for (const side of [-1, 1]) {
       const platform = offsetRoutePoint(station.distance, side * 13);
-      queue.push({ depth: platform.x + platform.y, draw: () => {
+      queue.push({ depth: getPlatformSortDepth(platform, point, metrics.zoneLength, frame), draw: () => {
         drawIsoBox(platform, metrics.zoneLength, 10, 2, point.heading,
           [active ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"], frame);
         strokeWorldLine([offsetRoutePoint(station.distance - metrics.zoneLength * 0.5, side * 8.5, 2.1),
