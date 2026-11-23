@@ -61,7 +61,7 @@ async function compareFixture(page, fixture) {
         : fixture.kind === 'zone' ? mesh === threeWorld.markerMeshes[1] : threeWorld.markerMeshes.includes(mesh);
     // No foreground fade in these isolated fixtures; its lifetime is covered
     // by the full-scene comparisons and renderer regressions.
-    threeWorld.uniforms.trainBounds.value.set(-1000, -1000, -900, -900);
+    threeWorld.uniforms.fadeCount.value = 0;
     threeWorld.renderer.setClearColor('#788880', 1);
     threeWorld.renderer.clear(true, true, false);
     threeWorld.renderer.render(threeWorld.scene, threeWorld.camera);

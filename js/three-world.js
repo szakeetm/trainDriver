@@ -1,7 +1,7 @@
 // Experimental retained GPU world. Three.js is loaded only for renderer=three.
 let threeWorld = null;
 const threeWorldColors = new Map();
-const THREE_WORLD_STRIDE = 23;
+const THREE_WORLD_STRIDE = 25;
 
 // Fixed-pixel details are rasterized once at DPR 2, then rendered as GPU
 // billboards. Keeping Canvas's own roundRect/shadow kernel avoids approximating
@@ -58,6 +58,8 @@ class ThreeWorldGeometry {
     this.layer = 0.1;
     this.anchor = { x: 0, y: 0, elevation: 0 };
     this.fade = 0;
+    this.propRadius = 0;
+    this.propHeight = 0;
     this.side = 0;
     this.lineWidth = 0;
     this.minPixels = 0;
@@ -81,6 +83,7 @@ class ThreeWorldGeometry {
     data[i++] = this.anchor.x; data[i++] = this.anchor.y; data[i++] = this.anchor.elevation;
     data[i++] = this.fade; data[i++] = this.layer;
     data[i++] = this.normalX; data[i++] = this.normalY;
+    data[i++] = this.propRadius; data[i++] = this.propHeight;
     this.cursor = i;
     const b = this.bounds;
     b[0] = Math.min(b[0], point.x); b[1] = Math.min(b[1], point.y); b[2] = Math.min(b[2], point.elevation);
@@ -199,7 +202,7 @@ class ThreeWorldGeometry {
     const geometry = new THREE.BufferGeometry();
     for (const [name, size, offset] of [["position", 3, 0], ["tint", 4, 3], ["lineOther", 3, 7],
       ["lineInfo", 3, 10], ["pixelOffset", 2, 13], ["pixelScale", 1, 15], ["propAnchor", 3, 16],
-      ["fadeable", 1, 19], ["layerDepth", 1, 20], ["faceNormal", 2, 21]]) {
+      ["fadeable", 1, 19], ["layerDepth", 1, 20], ["faceNormal", 2, 21], ["propSize", 2, 23]]) {
       geometry.setAttribute(name, new THREE.InterleavedBufferAttribute(data, size, offset));
     }
     geometry.setDrawRange(0, this.cursor / THREE_WORLD_STRIDE);
@@ -221,7 +224,12 @@ class ThreeWorldRenderer {
     this.scene = new THREE.Scene();
     this.camera = new THREE.Camera();
     this.uniforms = { viewOrigin: { value: new THREE.Vector3() }, viewportSize: { value: new THREE.Vector2() },
-      zoomScale: { value: 1 }, anchorY: { value: 0 }, trainBounds: { value: new THREE.Vector4() }, warning: { value: 0 },
+      zoomScale: { value: 1 }, anchorY: { value: 0 }, warning: { value: 0 },
+      fadeCount: { value: 0 }, fadeSoftness: { value: 1 },
+      fadeScreen: { value: Array.from({ length: SCENERY_FADE_MAX_UNITS }, () => new THREE.Vector4()) },
+      fadeShape: { value: Array.from({ length: SCENERY_FADE_MAX_UNITS }, () => new THREE.Vector4()) },
+      fadeWorld: { value: Array.from({ length: SCENERY_FADE_MAX_UNITS }, () => new THREE.Vector4()) },
+      fadeExtent: { value: Array.from({ length: SCENERY_FADE_MAX_UNITS }, () => new THREE.Vector4()) },
       spriteAtlas: { value: createThreeWorldSpriteAtlas(1) } };
     this.atlasPixelRatio = 1;
     const vertexShader = `
@@ -234,12 +242,18 @@ class ThreeWorldRenderer {
       attribute float fadeable;
       attribute float layerDepth;
       attribute vec2 faceNormal;
+      attribute vec2 propSize;
       uniform vec3 viewOrigin;
       uniform vec2 viewportSize;
       uniform float zoomScale;
       uniform float anchorY;
-      uniform vec4 trainBounds;
       uniform float warning;
+      uniform int fadeCount;
+      uniform float fadeSoftness;
+      uniform vec4 fadeScreen[${SCENERY_FADE_MAX_UNITS}];
+      uniform vec4 fadeShape[${SCENERY_FADE_MAX_UNITS}];
+      uniform vec4 fadeWorld[${SCENERY_FADE_MAX_UNITS}];
+      uniform vec4 fadeExtent[${SCENERY_FADE_MAX_UNITS}];
       varying vec4 vertexTint;
       varying vec2 spriteUv;
       varying float isSprite;
@@ -247,6 +261,41 @@ class ThreeWorldRenderer {
         vec3 d = point - viewOrigin;
         return vec2(viewportSize.x * 0.5 + (d.x-d.y) * 0.7071067811865476 * zoomScale,
           anchorY + ((d.x+d.y) * 0.4082482904638631 - d.z * 0.816496580927726) * zoomScale);
+      }
+      // Mirrors getSceneryFadeAlpha(): fade props in front of a unit whose
+      // projected box (zonotope) overlaps the prop's screen rectangle.
+      float axisGap(vec2 k, vec2 delta, vec4 screen, vec4 shape, vec2 rectHalf) {
+        float len = length(k);
+        if (len < 0.000001) return -1e9;
+        k /= len;
+        return abs(dot(delta, k)) - abs(dot(screen.zw, k)) - abs(dot(shape.xy, k)) - abs(shape.z * k.y)
+          - rectHalf.x * abs(k.x) - rectHalf.y * abs(k.y);
+      }
+      float sceneryFadeAlpha(vec3 anchor, vec2 size) {
+        vec2 base = project(anchor);
+        vec2 rect = vec2(base.x, base.y - size.y * 0.5 * 0.816496580927726 * zoomScale);
+        vec2 rectHalf = vec2(size.x, size.y * 0.5 * 0.816496580927726 + size.x * 0.5773502691896258) * zoomScale;
+        float amount = 0.0;
+        for (int i = 0; i < ${SCENERY_FADE_MAX_UNITS}; i++) {
+          if (i >= fadeCount) break;
+          vec4 world = fadeWorld[i];
+          vec4 extent = fadeExtent[i];
+          vec2 d = anchor.xy - world.xy;
+          float along = clamp(dot(d, world.zw), -extent.x, extent.x);
+          vec2 q = d - world.zw * along;
+          float frontness = (q.x + q.y) * 0.7071067811865476 - extent.y * abs(world.z - world.w) * 0.7071067811865476;
+          float front = smoothstep(-1.0, 1.5, frontness);
+          if (front <= 0.0) continue;
+          vec4 screen = fadeScreen[i];
+          vec4 shape = fadeShape[i];
+          vec2 delta = screen.xy - rect;
+          float gap = max(max(axisGap(vec2(1.0, 0.0), delta, screen, shape, rectHalf),
+            axisGap(vec2(0.0, 1.0), delta, screen, shape, rectHalf)),
+            max(axisGap(vec2(-screen.w, screen.z), delta, screen, shape, rectHalf),
+            axisGap(vec2(-shape.y, shape.x), delta, screen, shape, rectHalf)));
+          amount = max(amount, front * (1.0 - smoothstep(0.0, fadeSoftness, gap)));
+        }
+        return 1.0 - ${(1 - SCENERY_FADE_ALPHA).toFixed(4)} * amount;
       }
       void main() {
         vec3 point = (modelMatrix * vec4(position, 1.0)).xyz;
@@ -264,11 +313,7 @@ class ThreeWorldRenderer {
         isSprite = lineInfo.x == 2.0 ? 1.0 : 0.0;
         spriteUv = lineInfo.yz;
         if (fadeable > 1.5) vertexTint.rgb = mix(tint.rgb, vec3(1.0, 0.60784, 0.42745), warning);
-        if (fadeable > 0.5 && fadeable < 1.5) {
-          vec2 base = project(propAnchor);
-          if (base.x > trainBounds.x && base.x < trainBounds.z && base.y > trainBounds.y && base.y-100.0 < trainBounds.w)
-            vertexTint.a *= 0.35;
-        }
+        if (fadeable > 0.5 && fadeable < 1.5) vertexTint.a *= sceneryFadeAlpha(propAnchor, propSize);
         float depth = layerDepth - ((point.x-viewOrigin.x) + (point.y-viewOrigin.y) + point.z) * 0.00001;
         gl_Position = vec4(screen.x * 2.0 / viewportSize.x - 1.0, 1.0-screen.y * 2.0 / viewportSize.y, depth, 1.0);
       }`;
@@ -344,8 +389,10 @@ class ThreeWorldRenderer {
     }
     for (const item of route.scenery) {
       const builder = batch(props, item.distance), point = getSceneryPoint(item);
+      const bounds = getSceneryBounds(item);
       builder.anchor = point; builder.fade = 1;
-      const { size } = getSceneryBounds(item);
+      builder.propRadius = bounds.radius; builder.propHeight = bounds.height;
+      const { size } = bounds;
       if (["tree", "bush", "cactus", "stump"].includes(item.kind)) {
         const radius = ["bush", "stump"].includes(item.kind) ? size * 0.4 : size;
         builder.treeShadow(point, radius);
@@ -491,9 +538,15 @@ class ThreeWorldRenderer {
     u.viewOrigin.value.set(camera.x, camera.y, camera.elevation);
     u.viewportSize.value.set(frame.width, frame.height);
     u.zoomScale.value = scale; u.anchorY.value = anchorY; u.warning.value = warning ? 1 : 0;
-    const screens = frame.renderedUnits.map(unit => projectPoint({ x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation }, frame));
-    u.trainBounds.value.set(Math.min(...screens.map(p => p.x))-25, Math.min(...screens.map(p => p.y))-20,
-      Math.max(...screens.map(p => p.x))+25, Math.max(...screens.map(p => p.y))+20);
+    const occluders = getTrainFadeOccluders(frame);
+    u.fadeCount.value = occluders.length;
+    u.fadeSoftness.value = SCENERY_FADE_SOFTNESS * scale;
+    occluders.forEach((occ, i) => {
+      u.fadeScreen.value[i].set(occ.screenX, occ.screenY, occ.ax, occ.ay);
+      u.fadeShape.value[i].set(occ.bx, occ.by, occ.vy, 0);
+      u.fadeWorld.value[i].set(occ.worldX, occ.worldY, occ.fx, occ.fy);
+      u.fadeExtent.value[i].set(occ.halfLength, occ.halfWidth, 0, 0);
+    });
     const screen = {};
     for (const mesh of this.staticMeshes) {
       const b = mesh.geometry.userData.bounds;

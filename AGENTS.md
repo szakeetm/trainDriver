@@ -85,7 +85,10 @@ are documentation/media assets. `docs/` contains test findings and code review n
   footprints and projected height against all track sections, rejecting overlaps.
   Keep `getSceneryBounds()` synchronized with the Canvas prop geometry.
 - Terrain draws first, then track ribbons and ground zones, then depth-sorted
-  props/trains. Labels and HUD draw last. Foreground scenery fades near the train.
+  props/trains. Labels and HUD draw last. Foreground scenery fades (to 35%) only when it is in
+  front of a train unit and its screen silhouette overlaps that unit's projected
+  box, easing over a zoom-scaled margin; `getSceneryFadeAlpha()` and the Three
+  shader's `sceneryFadeAlpha()` must stay in sync.
   Bridges, tunnels, and grade-separated crossings are not modeled; object sorting
   is approximate for intersecting large geometry.
 - Browser audio requires a user gesture; preserve the unlock/retry paths.

@@ -284,8 +284,9 @@ function queueScenery(frame, queue) {
   for (const item of route.scenery) {
     const point = getSceneryPoint(item);
     if (!isVisible(projectPoint(point, frame), frame, 120)) continue;
-    queue.push({ depth: point.x + point.y, sceneryBase: projectPoint(point, frame), draw: () => {
-      const { size } = getSceneryBounds(item);
+    const bounds = getSceneryBounds(item);
+    queue.push({ depth: point.x + point.y, fade: { point, radius: bounds.radius, height: bounds.height }, draw: () => {
+      const { size } = bounds;
       if (["tree", "bush", "cactus", "stump"].includes(item.kind)) {
         drawTree(point, item.kind === "bush" || item.kind === "stump" ? size * 0.4 : size, frame, item.tint);
       } else if (item.kind === "pond") {
@@ -477,6 +478,70 @@ function queueTrain(frame, queue) {
   }
 }
 
+// Foreground scenery fade. A prop fades only when it stands in front of a
+// train unit and its screen silhouette overlaps that unit's silhouette; the
+// fade eases over a zoom-scaled margin so moving props never pop. Shared by
+// the Canvas world and the Three world shader (same math, same packing).
+const SCENERY_FADE_ALPHA = 0.35;
+const SCENERY_FADE_SOFTNESS = 5; // Meters of soft edge around the train silhouette.
+const SCENERY_FADE_MAX_UNITS = 8;
+const ISO_X = Math.SQRT1_2;
+const ISO_Y = 1 / Math.sqrt(6);
+const ISO_Z = Math.sqrt(2 / 3);
+
+// Each unit's projected box is a zonotope: center plus segments ±A (length),
+// ±B (width), and ±V (half the height, vertical on screen).
+function getTrainFadeOccluders(frame) {
+  const scale = frame.view.scale;
+  const height = TUNING.train.bodyHeight + 3.4; // Chassis, body, and cab roof.
+  return frame.renderedUnits.slice(0, SCENERY_FADE_MAX_UNITS).map((unit) => {
+    const fx = Math.cos(unit.renderHeading), fy = Math.sin(unit.renderHeading);
+    const halfLength = unit.length * 0.5, halfWidth = (unit.width + 1.8) * 0.5;
+    const base = projectPoint({ x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation }, frame);
+    const halfHeight = height * 0.5 * ISO_Z * scale;
+    return {
+      screenX: base.x, screenY: base.y - halfHeight,
+      ax: (fx - fy) * ISO_X * halfLength * scale, ay: (fx + fy) * ISO_Y * halfLength * scale,
+      bx: (-fy - fx) * ISO_X * halfWidth * scale, by: (-fy + fx) * ISO_Y * halfWidth * scale,
+      vy: halfHeight,
+      worldX: unit.renderX, worldY: unit.renderY, fx, fy, halfLength, halfWidth,
+    };
+  });
+}
+
+function getSceneryFadeAlpha(anchor, radius, height, occluders, frame) {
+  if (!occluders.length) return 1;
+  const scale = frame.view.scale;
+  const base = projectPoint(anchor, frame);
+  const rectX = base.x, rectY = base.y - height * 0.5 * ISO_Z * scale;
+  const rectHalfX = radius * scale, rectHalfY = (height * 0.5 * ISO_Z + radius * ISO_Z * ISO_X) * scale;
+  let amount = 0;
+  for (const occ of occluders) {
+    // In front: depth from the nearest point on the unit's centerline,
+    // minus the body's own half-width toward the camera.
+    const dx = anchor.x - occ.worldX, dy = anchor.y - occ.worldY;
+    const along = clamp(dx * occ.fx + dy * occ.fy, -occ.halfLength, occ.halfLength);
+    const frontness = (dx - occ.fx * along + dy - occ.fy * along) * ISO_X
+      - occ.halfWidth * Math.abs(occ.fx - occ.fy) * ISO_X;
+    const front = smoothstep(-1, 1.5, frontness);
+    if (front <= 0) continue;
+    // Separating-axis gap between the prop rectangle and the unit zonotope.
+    let gap = -Infinity;
+    for (const [kx0, ky0] of [[1, 0], [0, 1], [-occ.ay, occ.ax], [-occ.by, occ.bx]]) {
+      const length = Math.hypot(kx0, ky0);
+      if (length < 1e-6) continue;
+      const kx = kx0 / length, ky = ky0 / length;
+      const separation = Math.abs((occ.screenX - rectX) * kx + (occ.screenY - rectY) * ky)
+        - Math.abs(occ.ax * kx + occ.ay * ky) - Math.abs(occ.bx * kx + occ.by * ky) - Math.abs(occ.vy * ky)
+        - rectHalfX * Math.abs(kx) - rectHalfY * Math.abs(ky);
+      gap = Math.max(gap, separation);
+    }
+    const overlap = 1 - smoothstep(0, SCENERY_FADE_SOFTNESS * scale, gap);
+    amount = Math.max(amount, front * overlap);
+  }
+  return 1 - (1 - SCENERY_FADE_ALPHA) * amount;
+}
+
 function drawWorld(frame) {
   if (drawThreeWorldFrame(frame)) return;
   drawTerrainBackground(frame);
@@ -485,16 +550,13 @@ function drawWorld(frame) {
   queueRouteMarkers(frame, queue);
   queueScenery(frame, queue);
   queueTrain(frame, queue);
-  const trainScreens = frame.renderedUnits.map((unit) => projectPoint({
-    x: unit.renderX, y: unit.renderY, elevation: unit.renderElevation }, frame));
-  const trainBounds = { left: Math.min(...trainScreens.map((p) => p.x)) - 25,
-    right: Math.max(...trainScreens.map((p) => p.x)) + 25,
-    top: Math.min(...trainScreens.map((p) => p.y)) - 20,
-    bottom: Math.max(...trainScreens.map((p) => p.y)) + 20 };
+  const occluders = getTrainFadeOccluders(frame);
   queue.sort((a, b) => a.depth - b.depth).forEach((entry) => {
     ctx.save();
-    if (entry.sceneryBase && entry.sceneryBase.x > trainBounds.left && entry.sceneryBase.x < trainBounds.right
-      && entry.sceneryBase.y > trainBounds.top && entry.sceneryBase.y - 100 < trainBounds.bottom) ctx.globalAlpha = 0.35;
+    if (entry.fade) {
+      const alpha = getSceneryFadeAlpha(entry.fade.point, entry.fade.radius, entry.fade.height, occluders, frame);
+      if (alpha < 0.999) ctx.globalAlpha = alpha;
+    }
     entry.draw();
     ctx.restore();
   });
