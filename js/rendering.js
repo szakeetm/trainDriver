@@ -614,36 +614,6 @@ function drawRoutePredictor(width, height, compactHud = false) {
   ctx.restore();
 }
 
-function drawSpeedEffects(width, height) {
-  const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, TUNING.visuals.speedEffectMaxFactor);
-  if (speedFactor < TUNING.visuals.speedEffectThreshold) {
-    return;
-  }
-
-  const boostedSpeedFactor = Math.pow(speedFactor, 0.7);
-
-  ctx.save();
-  ctx.globalCompositeOperation = "screen";
-  ctx.strokeStyle = `rgba(120, 215, 255, ${0.04 + boostedSpeedFactor * 0.08})`;
-  ctx.lineWidth = TUNING.visuals.speedEffectLineWidthBase
-    + boostedSpeedFactor * TUNING.visuals.speedEffectLineWidthBySpeed;
-  const bandTop = height * TUNING.visuals.speedEffectBandTop;
-  for (let index = 0; index < TUNING.visuals.speedEffectCount; index += 1) {
-    const offset = ((state.distance * TUNING.visuals.speedEffectTravel)
-      + index * TUNING.visuals.speedEffectSpacing) % (width + 120) - 60;
-    const streakLength = TUNING.visuals.speedEffectBaseLength
-      + boostedSpeedFactor * TUNING.visuals.speedEffectLengthBySpeed;
-    const laneY = bandTop + index * TUNING.visuals.speedEffectBandStep + Math.sin(state.distance * 0.018 + index) * 5;
-    ctx.beginPath();
-    ctx.moveTo(offset, laneY);
-    ctx.lineTo(offset + streakLength, laneY - streakLength * (0.08 + boostedSpeedFactor * 0.04));
-    ctx.moveTo(width - offset, laneY + 6);
-    ctx.lineTo(width - offset - streakLength * 0.82, laneY + 6 - streakLength * (0.06 + boostedSpeedFactor * 0.035));
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
 function drawElevationReadout(frame) {
   const { width, trainPose } = frame;
   const elevation = trainPose.elevation.toFixed(0);
@@ -680,7 +650,6 @@ function render() {
   const frame = createRenderFrameContext(width, height);
 
   drawWorld(frame);
-  drawSpeedEffects(width, height);
   drawHudOverlay(width, height);
   drawElevationReadout(frame);
 }

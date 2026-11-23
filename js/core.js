@@ -245,17 +245,6 @@ const DEFAULT_TUNING = {
     routePredictorHeight: 172, // Height in pixels of the lower-left route predictor panel.
     routePredictorMaxEntries: 4, // Maximum number of upcoming curves and signals listed in the predictor.
     trackSampleStep: 10, // Route sampling step in meters when drawing the track.
-    speedEffectThreshold: 0.16, // Minimum normalized speed before foreground speed streaks appear.
-    speedEffectMaxFactor: 1.35, // Max normalized speed used by foreground speed streak intensity.
-    speedEffectCount: 14, // Number of foreground speed streaks rendered per frame.
-    speedEffectTravel: 7.5, // How quickly foreground streaks move with train distance.
-    speedEffectSpacing: 56, // Horizontal spacing between successive foreground streaks.
-    speedEffectBaseLength: 22, // Base length in pixels of foreground speed streaks.
-    speedEffectLengthBySpeed: 52, // Extra speed-streak length added as speed rises.
-    speedEffectBandTop: 0.58, // Vertical start position of foreground streak band as a fraction of canvas height.
-    speedEffectBandStep: 12, // Vertical spacing between foreground streak lines in pixels.
-    speedEffectLineWidthBase: 1.1, // Base stroke width of the foreground speed streaks.
-    speedEffectLineWidthBySpeed: 0.9, // Extra stroke width added as speed rises.
   },
 };
 

@@ -20,7 +20,7 @@ when requested. `renderer=webgl2` remains the terrain-only comparison backend;
 - All vehicles use retained local meshes updated with the existing unit poses,
   including grade and derailment. Couplers and exhaust use reusable dynamic
   buffers. Signs, poles, and signal lights use GPU geometry/billboards.
-- Text labels, route predictor, elevation readout, speed streaks, and HTML HUD
+- Text labels, route predictor, elevation readout, and HTML HUD
   remain on Canvas/DOM. This is a world-graphics experiment, not a rewrite of the
   game or a claim of pixel identity. Terrain keeps the current cutaway layer;
   world objects use geometric depth within their layer.
@@ -117,7 +117,7 @@ biome-case regression; they also do not measure display FPS.
   work, so this is not a pixel-identical, equal-rasterization comparison.
 - The raw terrain, route geometry, scoring, controls, speed limits, signals,
   station handling, audio, and win logic remain shared. Labels, sign numerals,
-  predictor, elevation readout, speed streaks, and HTML HUD remain Canvas/DOM.
+  predictor, elevation readout, and HTML HUD remain Canvas/DOM.
 
 ### Validation
 
