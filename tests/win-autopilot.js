@@ -45,7 +45,9 @@ async function stepAutopilot(page, batchSteps) {
       driver.totalSteps++;
       const multiplier = TUNING.physics.visibleSpeedMultiplier;
       const planningDeceleration = 0.65;
-      const responseSeconds = 6;
+      // Longer consists build brake force more slowly; stretch the planned lag.
+      const handling = getConsistHandling();
+      const responseSeconds = 6 * TUNING.controls.brakeApplyFromPowerRate / handling.brakeApplyFromPowerRate;
       // Include response lag in the braking envelope. The driver only requests
       // power/braking; speed, position, clearance, and scoring belong to update().
       const approachSpeed = (gap, targetSpeed = 0) => {
@@ -87,7 +89,7 @@ async function stepAutopilot(page, batchSteps) {
       const predictedSpeed = state.speed + state.acceleration * 3;
       const demand = (desiredSpeed - predictedSpeed) * 0.7 - gradeForce + drag;
       const fadeRatio = Math.min(state.speed / TUNING.physics.tractionFadeReferenceSpeed, 1);
-      const traction = TUNING.physics.tractionForce * Math.max(TUNING.physics.tractionMinFactor,
+      const traction = handling.tractionForce * Math.max(TUNING.physics.tractionMinFactor,
         1 - Math.pow(fadeRatio, TUNING.physics.tractionFadeExponent) * TUNING.physics.tractionFadeAmount);
       state.requestedControl = waitingAtRed ? -1 : clamp(demand / (demand >= 0 ? traction : TUNING.physics.brakingForce), -1, 1);
       update(config.dt);

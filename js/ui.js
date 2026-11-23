@@ -62,6 +62,7 @@ function updateUi() {
   elapsedTime.textContent = formatTime(state.elapsed);
   penaltyTime.textContent = String(Math.floor(Math.max(0, state.penalties)));
   stopError.textContent = state.lastStopError == null ? "—" : `${state.lastStopError.toFixed(1)} m`;
+  if (consistInfo) consistInfo.textContent = `${state.carCount} cars · ${Math.round(TRAIN_TOTAL_LENGTH)} m`;
   renderRemainingStations();
 
   updateBar(actualFill, state.actualControl);

@@ -20,6 +20,7 @@ const remainingStations = document.getElementById("remainingStations");
 const elapsedTime = document.getElementById("elapsedTime");
 const penaltyTime = document.getElementById("penaltyTime");
 const stopError = document.getElementById("stopError");
+const consistInfo = document.getElementById("consistInfo");
 const actualFill = document.getElementById("actualFill");
 const requestedMarker = document.getElementById("requestedMarker");
 const requestedLabel = document.getElementById("requestedLabel");
@@ -85,7 +86,7 @@ const DEFAULT_TUNING = {
         roofColor: "rgba(255,255,255,0.9)", // Roof highlight color.
       },
       {
-        type: "car", // Vehicle role used for rendering details.
+        type: "car", // Vehicle role used for rendering details; car templates repeat up to progression.maxCars.
         length: 34, // Vehicle length in meters along the track.
         width: 5.5, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#8da4bc", // Main fill color of the vehicle body.
@@ -99,6 +100,18 @@ const DEFAULT_TUNING = {
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
     ],
+  },
+  // Difficulty progression: cars are coupled at every station (stopped or
+  // overrun). Handling multipliers apply to the base controls/physics values
+  // above and interpolate linearly from startCars ([0]) to maxCars ([1]).
+  progression: {
+    startCars: 2, // Cars behind the locomotive on the first leg.
+    carsPerStop: 2, // Cars coupled at each station, including overrun stations.
+    maxCars: 10, // Cars on the final leg.
+    tractionScale: [1.35, 0.75], // Acceleration (tractionForce).
+    brakeBuildScale: [2.0, 0.75], // brakeApplyFromPowerRate and brakeBuildRate.
+    powerBuildScale: [1.5, 0.75], // powerBuildRate.
+    brakeReleaseScale: [1.5, 0.9], // brakeReleaseRate and brakeReleaseToPowerRate.
   },
   terrain: {
     cellSize: 32, // Heightfield grid spacing in meters.
@@ -257,6 +270,7 @@ let STATION_ASSIST_ZOOM = 0;
 let OVERSPEED_FAIL_MARGIN = 0;
 let TRACK_WIDTH = 0;
 let TRAIN_CONSIST = [];
+let TRAIN_CONSIST_FULL = [];
 let COUPLER_GAP = 0;
 let MAX_POWER_KW = 0;
 let MAX_BRAKE_PRESSURE_BAR = 0;

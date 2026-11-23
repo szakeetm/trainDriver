@@ -423,8 +423,9 @@ class ThreeWorldRenderer {
     }
     for (const builder of track.values()) this.mesh(builder, this.opaque, true);
     for (const builder of props.values()) this.mesh(builder, this.transparent, true);
-    for (const unit of TRAIN_CONSIST) this.buildVehicle(unit);
-    this.dynamic = new ThreeWorldGeometry(Math.max(1024, (TRAIN_CONSIST.length - 1) * 6 + 20 * 36));
+    // Meshes exist for every car the run can reach; uncoupled ones stay hidden.
+    for (const unit of TRAIN_CONSIST_FULL) this.buildVehicle(unit);
+    this.dynamic = new ThreeWorldGeometry(Math.max(1024, (TRAIN_CONSIST_FULL.length - 1) * 6 + 20 * 36));
     this.dynamicMesh = new THREE.Mesh(this.dynamic.geometry(true), this.overlay);
     this.dynamicMesh.frustumCulled = false;
     this.scene.add(this.dynamicMesh);
@@ -560,7 +561,9 @@ class ThreeWorldRenderer {
       this.trainMeshes[i].matrix.set(c, -s, 0, unit.renderX, s, c, 0, unit.renderY,
         Math.tan(unit.renderPitch), 0, 1, unit.renderElevation + 1, 0, 0, 0, 1);
       this.trainMeshes[i].matrixWorldNeedsUpdate = true;
+      this.trainMeshes[i].visible = true;
     }
+    for (let i = frame.renderedUnits.length; i < this.trainMeshes.length; i++) this.trainMeshes[i].visible = false;
     const dynamic = this.dynamic;
     dynamic.cursor = 0;
     for (let i = 0; i < frame.renderedUnits.length - 1; i++) {

@@ -391,6 +391,7 @@ function createGameAudio() {
     crashBuffer: createCrashBuffer(context),
     chimeMix,
     stationResultCount: 0,
+    carCount: 0,
     pendingOneShots: 0,
     stateRef: null,
     rpm: AUDIO_ENGINE.idleRpm,
@@ -759,9 +760,21 @@ function updateGameAudio(dt = 0) {
       audio.moving = false;
       audio.derailmentHandled = false;
       audio.stationResultCount = state.stationResults?.length || 0;
+      audio.carCount = state.carCount || 0;
     }
 
     const contextRunning = audio.context.state === "running";
+    // Newly coupled cars: one clunk per coupler, front to back.
+    if ((state.carCount || 0) > audio.carCount) {
+      const added = state.carCount - audio.carCount;
+      audio.carCount = state.carCount;
+      if (contextRunning) {
+        const now = audio.context.currentTime;
+        for (let index = 0; index < added; index += 1) {
+          playAudioOneShot(audio, audio.couplerClunkBuffer, now + 0.45 + index * 0.35, 0.18, 0.85 + Math.random() * 0.2);
+        }
+      }
+    }
     const stationResults = state.stationResults || [];
     if (stationResults.length > audio.stationResultCount) {
       const newResults = stationResults.slice(audio.stationResultCount);

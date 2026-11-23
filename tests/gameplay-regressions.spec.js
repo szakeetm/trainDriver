@@ -89,7 +89,7 @@ test('station acceptance uses the configured tolerance', async ({ page }) => {
     DEFAULT_TUNING.stations.stopWindow = 10;
     applyTuning();
     startRun();
-    const target = route.stations[1].distance + TRAIN_TOTAL_LENGTH * 0.5;
+    const target = getStationStopMetrics(route.stations[1]).targetDistance;
     state.distance = target - 11;
     updateStations();
     const outside = state.stationIndex;
@@ -102,7 +102,7 @@ test('station acceptance uses the configured tolerance', async ({ page }) => {
 
 test('overrunning the acceptance window targets the next station and penalizes once', async ({ page }) => {
   const result = await page.evaluate(() => {
-    state.distance = route.stations[1].distance + TRAIN_TOTAL_LENGTH * 0.5 + TUNING.stations.stopWindow + 0.01;
+    state.distance = getStationStopMetrics(route.stations[1]).targetDistance + TUNING.stations.stopWindow + 0.01;
     state.speed = 1;
     updateStations();
     updateUi();
@@ -122,7 +122,7 @@ test('overrunning the acceptance window targets the next station and penalizes o
 
 test('all overrun stations are accounted for in the same update', async ({ page }) => {
   const result = await page.evaluate(() => {
-    state.distance = route.stations[2].distance + TRAIN_TOTAL_LENGTH * 0.5 + TUNING.stations.stopWindow + 1;
+    state.distance = getStationStopMetrics(route.stations[2]).targetDistance + TUNING.stations.stopWindow + 1;
     state.speed = 1;
     updateStations();
     return { index: state.stationIndex, penalty: state.penalties,
@@ -134,7 +134,7 @@ test('all overrun stations are accounted for in the same update', async ({ page 
 test('overrunning the last station ends the run with a penalty immediately', async ({ page }) => {
   const result = await page.evaluate(() => {
     state.stationIndex = route.stations.length - 1;
-    state.distance = route.stations.at(-1).distance + TRAIN_TOTAL_LENGTH * 0.5 + TUNING.stations.stopWindow + 1;
+    state.distance = getStationStopMetrics(route.stations.at(-1)).targetDistance + TUNING.stations.stopWindow + 1;
     state.speed = 1;
     updateStations();
     return { finished: state.finished, penalty: state.penalties, title: finishTitle.textContent };
@@ -209,4 +209,48 @@ test('exact route boundaries use the next segment regardless of lookup history',
     return { fromBefore, fromAfter, final };
   });
   expect(result).toEqual({ fromBefore: true, fromAfter: true, final: true });
+});
+
+test('cars are coupled at every station, stopped or overrun, up to the final consist', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    startRun();
+    const counts = [{ cars: state.carCount, units: TRAIN_CONSIST.length, length: TRAIN_TOTAL_LENGTH }];
+    const stationLengths = route.stations.slice(1).map(station => station.trainLength);
+    // Clean stop at station 1.
+    state.distance = getStationStopMetrics(route.stations[1]).targetDistance;
+    state.speed = 0;
+    updateStations();
+    counts.push({ cars: state.carCount, units: TRAIN_CONSIST.length, length: TRAIN_TOTAL_LENGTH });
+    // Overrun station 2.
+    state.distance = getStationStopMetrics(route.stations[2]).targetDistance + TUNING.stations.stopWindow + 1;
+    state.speed = 5;
+    updateStations();
+    counts.push({ cars: state.carCount, units: TRAIN_CONSIST.length, length: TRAIN_TOTAL_LENGTH });
+    const finalCars = getCarCountForStation(route.stations.length - 1);
+    return { counts, stationLengths, finalCars, finalLength: getTrainLengthForCars(finalCars),
+      stations: route.stations.length };
+  });
+  expect(result.stations).toBe(6);
+  expect(result.counts.map(entry => entry.cars)).toEqual([2, 4, 6]);
+  expect(result.counts.map(entry => entry.units)).toEqual([3, 5, 7]);
+  expect(result.counts[0].length).toBe(100);
+  expect(result.finalCars).toBe(10);
+  expect(result.finalLength).toBe(404);
+  // Each station is sized for the train arriving there.
+  expect(result.stationLengths).toEqual([100, 176, 252, 328, 404]);
+});
+
+test('handling slows as cars are coupled: agile short train, slower than base when full', async ({ page }) => {
+  const result = await page.evaluate(() => ({
+    base: { traction: TUNING.physics.tractionForce, brakeBuild: TUNING.controls.brakeBuildRate,
+      powerBuild: TUNING.controls.powerBuildRate, release: TUNING.controls.brakeReleaseRate },
+    short: getConsistHandling(2),
+    full: getConsistHandling(10),
+  }));
+  expect(result.short.tractionForce).toBeCloseTo(result.base.traction * 1.35, 6);
+  expect(result.short.brakeBuildRate).toBeCloseTo(result.base.brakeBuild * 2, 6);
+  expect(result.full.tractionForce).toBeCloseTo(result.base.traction * 0.75, 6);
+  expect(result.full.brakeBuildRate).toBeCloseTo(result.base.brakeBuild * 0.75, 6);
+  expect(result.full.powerBuildRate).toBeCloseTo(result.base.powerBuild * 0.75, 6);
+  expect(result.full.brakeReleaseRate).toBeCloseTo(result.base.release * 0.9, 6);
 });

@@ -31,7 +31,7 @@ function buildRandomizedConsist(consist) {
   return consist.map((unit, index) => {
     const hueOffset = unit.type === "locomotive"
       ? Math.random() * 36 - 18
-      : (index - 1) * 22 + (Math.random() * 28 - 14);
+      : ((index - 1) % 4) * 22 + (Math.random() * 28 - 14);
     const hue = (sharedHue + hueOffset + 360) % 360;
     const saturation = unit.type === "locomotive"
       ? 72 + Math.random() * 18
@@ -60,19 +60,65 @@ function applyTuning() {
   STATION_ASSIST_ZOOM = TUNING.stations.assistZoom;
   OVERSPEED_FAIL_MARGIN = TUNING.limits.overspeedFailMarginKph / KPH_PER_MPS;
   TRACK_WIDTH = TUNING.train.trackWidth;
-  TRAIN_CONSIST = buildRandomizedConsist(TUNING.train.consist);
   COUPLER_GAP = TUNING.train.couplerGap;
+  // Build every car the run can reach once, so colors stay stable as cars
+  // are coupled; the active consist is a prefix of this list.
+  const [locomotive, ...carTemplates] = TUNING.train.consist;
+  const fullTemplates = [locomotive, ...Array.from({ length: TUNING.progression.maxCars },
+    (_, index) => carTemplates[index % carTemplates.length])];
+  TRAIN_CONSIST_FULL = buildRandomizedConsist(fullTemplates);
+  setActiveCarCount(TUNING.progression.startCars);
   MAX_POWER_KW = TUNING.train.maxPowerKw;
   MAX_BRAKE_PRESSURE_BAR = TUNING.train.maxBrakePressureBar;
-  TRAIN_TOTAL_LENGTH = TRAIN_CONSIST.reduce(
-    (sum, unit, index) => sum + unit.length + (index === 0 ? 0 : COUPLER_GAP),
-    0,
-  );
   TOTAL_STATIONS = TUNING.stations.total;
 }
 
-function getStationZoneLength() {
-  return TRAIN_TOTAL_LENGTH * 1.2;
+function getConsistLength(consist) {
+  return consist.reduce((sum, unit, index) => sum + unit.length + (index === 0 ? 0 : COUPLER_GAP), 0);
+}
+
+// Cars behind the locomotive while driving toward route.stations[stationIndex].
+function getCarCountForStation(stationIndex) {
+  const progression = TUNING.progression;
+  const count = progression.startCars + progression.carsPerStop * (Math.max(1, stationIndex) - 1);
+  return clamp(count, 0, Math.min(progression.maxCars, TRAIN_CONSIST_FULL.length - 1));
+}
+
+function getTrainLengthForCars(carCount) {
+  return getConsistLength(TRAIN_CONSIST_FULL.slice(0, carCount + 1));
+}
+
+function setActiveCarCount(carCount) {
+  TRAIN_CONSIST = TRAIN_CONSIST_FULL.slice(0, carCount + 1);
+  TRAIN_TOTAL_LENGTH = getConsistLength(TRAIN_CONSIST);
+}
+
+// Effective handling for the current consist: short trains respond quickly,
+// the full train is slower than the base tuning.
+function getConsistHandling(carCount = TRAIN_CONSIST.length - 1) {
+  const progression = TUNING.progression;
+  const t = clamp((carCount - progression.startCars) / Math.max(1, progression.maxCars - progression.startCars), 0, 1);
+  const scale = ([start, end]) => lerp(start, end, t);
+  const controls = TUNING.controls;
+  const brakeBuild = scale(progression.brakeBuildScale);
+  const brakeRelease = scale(progression.brakeReleaseScale);
+  return {
+    tractionForce: TUNING.physics.tractionForce * scale(progression.tractionScale),
+    brakeApplyFromPowerRate: controls.brakeApplyFromPowerRate * brakeBuild,
+    brakeBuildRate: controls.brakeBuildRate * brakeBuild,
+    powerBuildRate: controls.powerBuildRate * scale(progression.powerBuildScale),
+    brakeReleaseRate: controls.brakeReleaseRate * brakeRelease,
+    brakeReleaseToPowerRate: controls.brakeReleaseToPowerRate * brakeRelease,
+  };
+}
+
+// Stations are sized for the train arriving there.
+function getStationTrainLength(station) {
+  return station?.trainLength ?? TRAIN_TOTAL_LENGTH;
+}
+
+function getStationZoneLength(station) {
+  return getStationTrainLength(station) * 1.2;
 }
 
 function getStationStopTolerance() {
@@ -80,13 +126,13 @@ function getStationStopTolerance() {
 }
 
 function getStationStopMetrics(station) {
-  const zoneLength = getStationZoneLength();
+  const zoneLength = getStationZoneLength(station);
   const zoneHalfLength = zoneLength * 0.5;
   return {
     zoneLength,
     zoneStart: station.distance - zoneHalfLength,
     zoneEnd: station.distance + zoneHalfLength,
-    targetDistance: station.distance + TRAIN_TOTAL_LENGTH * 0.5,
+    targetDistance: station.distance + getStationTrainLength(station) * 0.5,
     tolerance: getStationStopTolerance(),
   };
 }

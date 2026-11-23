@@ -196,10 +196,9 @@ function generateRoute(seed = null) {
 
 function buildRoute() {
   const stationNames = TUNING.stations.names;
-  const stationCurveClearDistance = getStationZoneLength() * 0.5;
 
   const segments = [];
-  const stations = [{ name: "Origin", distance: 0 }];
+  const stations = [{ name: "Origin", distance: 0, trainLength: getTrainLengthForCars(getCarCountForStation(1)) }];
   let cursor = {
     x: 0,
     y: 0,
@@ -210,7 +209,9 @@ function buildRoute() {
   for (let stationIndex = 1; stationIndex < TOTAL_STATIONS; stationIndex += 1) {
     const spacing = rand(TUNING.route.stationSpacingMin, TUNING.route.stationSpacingMax);
     const stationDistance = cursor.distance + spacing;
-    const approachDistance = stationDistance - TUNING.stations.approachOffset;
+    const arrivingLength = getTrainLengthForCars(getCarCountForStation(stationIndex));
+    const approachDistance = stationDistance
+      - Math.max(TUNING.stations.approachOffset, arrivingLength * 0.6 + 40);
 
     while (cursor.distance < approachDistance - TUNING.stations.approachClearance) {
       const remaining = approachDistance - cursor.distance;
@@ -261,9 +262,13 @@ function buildRoute() {
     stations.push({
       name: choose(stationNames.filter((name) => !stations.some((station) => station.name === name))),
       distance: stationDistance,
+      trainLength: arrivingLength,
       visual: createStationVisual(),
     });
 
+    // Keep the whole stopped train (front beyond the station) on straight track.
+    const stationCurveClearDistance = Math.max(getStationZoneLength(stations.at(-1)) * 0.5,
+      arrivingLength * 0.5 + TUNING.stations.stopWindow + 20);
     if (stationIndex < TOTAL_STATIONS - 1 && stationCurveClearDistance > 1) {
       const built = makeSegment(cursor, stationCurveClearDistance, 0, null);
       segments.push(built.segment);

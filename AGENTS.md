@@ -60,6 +60,17 @@ are documentation/media assets. `docs/` contains test findings and code review n
 - Controls range from -1 (braking) to +1 (power), with delayed actual response.
   Up/Down are the only keyboard controls. Source sets aggregate keyboard and
   pointer holds into `keys`; blur, visibility loss, and restart clear them.
+- Difficulty progresses via `TUNING.progression`: the run starts with 2 cars and
+  couples `carsPerStop` (2) at every station, whether stopped or overrun, up to
+  10 cars (404 m) on the final leg. `applyTuning()` builds `TRAIN_CONSIST_FULL`
+  once; `setActiveCarCount()` makes `TRAIN_CONSIST` a prefix of it and updates
+  `TRAIN_TOTAL_LENGTH`. `getConsistHandling()` scales traction and brake/power
+  build/release rates from agile (2 cars) to slower than base tuning (10 cars);
+  `updateControls()`, `updatePhysics()`, and the test autopilot read it. Each
+  station stores the `trainLength` arriving there, and `getStationStopMetrics()`
+  sizes the platform/zone/target from it; route generation keeps the whole
+  stopped train (including the stop window) on straight track. The Three world
+  builds meshes for the full consist and hides uncoupled vehicles.
 - Station tolerance comes from `stations.stopWindow`. Overrunning that window
   immediately advances the target and adds `stations.missPenalty` seconds per
   missed stop; the last overrun finishes with delays in the same update.

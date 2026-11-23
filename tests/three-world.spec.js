@@ -38,10 +38,20 @@ test('Three.js world renders all vehicles and retained route geometry over the s
     render();
     return { status: getThreeWorldStatus(), active: getTerrainRendererStatus().active,
       unchanged: driving === JSON.stringify(state), revision: THREE.REVISION,
-      error: webglTerrain.gl.getError() };
+      error: webglTerrain.gl.getError(), fullConsist: TRAIN_CONSIST_FULL.length,
+      visibleVehicles: threeWorld.trainMeshes.filter(mesh => mesh.visible).length,
+      coupledVisible: (() => {
+        state.distance = getStationStopMetrics(route.stations[1]).targetDistance; state.speed = 0;
+        updateStations(); render();
+        return threeWorld.trainMeshes.filter(mesh => mesh.visible).length;
+      })() };
   });
   expect(result.active).toBe('three');
-  expect(result.status.vehicles).toBe(3);
+  // Meshes exist for the full consist; only coupled vehicles are visible.
+  expect(result.status.vehicles).toBe(result.fullConsist);
+  expect(result.fullConsist).toBe(11);
+  expect(result.visibleVehicles).toBe(3);
+  expect(result.coupledVisible).toBe(5);
   expect(result.status.staticVertices).toBeGreaterThan(1000);
   expect(result.status.drawCalls).toBeGreaterThan(0);
   expect(result.unchanged).toBe(true);

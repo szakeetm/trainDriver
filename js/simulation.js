@@ -1,6 +1,9 @@
 function createInitialState() {
+  const carCount = getCarCountForStation(1);
+  setActiveCarCount(carCount);
   route = generateRoute(new URLSearchParams(location.search).get("seed"));
   return {
+    carCount,
     started: false,
     finished: false,
     failed: false,
@@ -15,7 +18,7 @@ function createInitialState() {
     stationIndex: 1,
     stationResults: [],
     message: "Waiting to depart",
-    detail: "You are handling a 100 m train. Build speed early and leave room for delayed braking.",
+    detail: `You are handling a ${Math.round(TRAIN_TOTAL_LENGTH)} m train. Cars are coupled at every station.`,
     signalStatus: null,
     derailment: null,
     lastStopError: null,
@@ -310,22 +313,24 @@ function updateControls(dt) {
     return;
   }
 
+  // Build/release rates depend on consist length; see getConsistHandling().
+  const handling = getConsistHandling();
   let rate = TUNING.controls.responseDefault;
   if (difference < 0) {
     if (state.requestedControl < 0 && state.actualControl >= 0) {
-      rate = TUNING.controls.brakeApplyFromPowerRate;
+      rate = handling.brakeApplyFromPowerRate;
     } else if (state.requestedControl < 0) {
-      rate = TUNING.controls.brakeBuildRate;
+      rate = handling.brakeBuildRate;
     } else {
       rate = TUNING.controls.powerCoastRate;
     }
   } else if (difference > 0) {
     if (state.actualControl < 0 && state.requestedControl >= 0) {
-      rate = TUNING.controls.brakeReleaseToPowerRate;
+      rate = handling.brakeReleaseToPowerRate;
     } else if (state.actualControl < 0) {
-      rate = TUNING.controls.brakeReleaseRate;
+      rate = handling.brakeReleaseRate;
     } else {
-      rate = TUNING.controls.powerBuildRate;
+      rate = handling.powerBuildRate;
     }
   }
 
@@ -357,7 +362,7 @@ function updatePhysics(dt) {
   const tractionFade = 1
     - Math.pow(Math.min(speedRatio, 1), TUNING.physics.tractionFadeExponent) * TUNING.physics.tractionFadeAmount;
   const traction = Math.max(0, state.actualControl)
-    * TUNING.physics.tractionForce
+    * getConsistHandling().tractionForce
     * Math.max(TUNING.physics.tractionMinFactor, tractionFade);
   const braking = Math.max(0, -state.actualControl) * TUNING.physics.brakingForce;
   const drag = TUNING.physics.baseDrag + state.speed * state.speed * TUNING.physics.quadraticDrag;
@@ -481,6 +486,23 @@ function getStationStopGrade(error) {
   return error < 4 ? "excellent" : error < 10 ? "solid" : "safe";
 }
 
+// Couple cars at the rear for the leg toward the current target station.
+// Runs after both successful stops and overruns; returns cars added.
+function coupleCarsForNextStation() {
+  if (state.stationIndex >= route.stations.length) return 0;
+  const carCount = getCarCountForStation(state.stationIndex);
+  const added = carCount - state.carCount;
+  if (added <= 0) return 0;
+  state.carCount = carCount;
+  setActiveCarCount(carCount);
+  return added;
+}
+
+function describeCoupling(added) {
+  if (added <= 0) return "";
+  return ` ${added} car${added === 1 ? "" : "s"} coupled: ${state.carCount} cars, ${Math.round(TRAIN_TOTAL_LENGTH)} m.`;
+}
+
 function updateStations() {
   // No reverse gear: once the front is beyond the acceptance window, the
   // station cannot be recovered. Account for every overrun before choosing
@@ -498,8 +520,9 @@ function updateStations() {
     missedStation = station;
   }
   if (missedStation) {
+    const coupled = coupleCarsForNextStation();
     state.message = `Missed ${missedStation.name}`;
-    state.detail = `A ${TUNING.stations.missPenalty} s penalty applies per missed stop. Next station is now targeted.`;
+    state.detail = `A ${TUNING.stations.missPenalty} s penalty applies per missed stop.${describeCoupling(coupled)}`;
     uiRefreshCarry = UI_REFRESH_INTERVAL;
   }
   const nextStation = route.stations[state.stationIndex];
@@ -526,7 +549,9 @@ function updateStations() {
     uiRefreshCarry = UI_REFRESH_INTERVAL;
     state.message = `Stopped at ${nextStation.name}`;
     const grade = getStationStopGrade(error);
-    state.detail = grade === "excellent" ? "Excellent stop." : grade === "solid" ? "Solid stop." : "Safe, but you can be more precise.";
+    const coupled = coupleCarsForNextStation();
+    state.detail = (grade === "excellent" ? "Excellent stop." : grade === "solid" ? "Solid stop." : "Safe, but you can be more precise.")
+      + describeCoupling(coupled);
     state.requestedControl = 0;
     state.actualControl = lerp(state.actualControl, 0, 0.5);
     if (state.stationIndex >= route.stations.length) {
@@ -539,7 +564,7 @@ function updateStations() {
   if (missedStation) return;
   if (gap < 600 && gap > -stopMetrics.tolerance) {
     state.message = `Approaching ${nextStation.name}`;
-    state.detail = "A 100 m train takes space. Start easing off well before the station target.";
+    state.detail = `A ${Math.round(TRAIN_TOTAL_LENGTH)} m train takes space. Start easing off well before the station target.`;
   } else if (gap >= 600) {
     state.message = "Running between stations";
     state.detail = "Run fast on tangents, but read the next curve and station well ahead.";
