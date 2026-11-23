@@ -89,6 +89,10 @@ are documentation/media assets. `docs/` contains test findings and code review n
   Bridges, tunnels, and grade-separated crossings are not modeled; object sorting
   is approximate for intersecting large geometry.
 - Browser audio requires a user gesture; preserve the unlock/retry paths.
+  Audio models a diesel-electric: engine RPM follows the quantized throttle
+  notch (not road speed); speed drives traction-motor whine, rolling/wind noise,
+  and rail-joint clicks scheduled per axle from chainage (25 m joints). One-shots
+  are capped at 48 pending voices and only scheduled while the context runs.
 - This branch defaults to WebGL 2 terrain; `?renderer=canvas` avoids creating a
   WebGL context. Unsupported WebGL falls back to Canvas. Context loss hides the
   GPU surface and enables Canvas; restoration rebuilds shaders/buffers. A route
