@@ -349,6 +349,11 @@ function createGameAudio() {
   oneShotMix.gain.value = 1;
   oneShotMix.connect(mix);
 
+  // Reward chimes bypass the run master so the final stop still rings out.
+  const chimeMix = context.createGain();
+  chimeMix.gain.value = 1;
+  chimeMix.connect(limiter);
+
   return {
     context,
     master,
@@ -384,6 +389,8 @@ function createGameAudio() {
     railJointBuffers: [0, 1, 2].map(() => createRailJointBuffer(context)),
     couplerClunkBuffer: createCouplerClunkBuffer(context),
     crashBuffer: createCrashBuffer(context),
+    chimeMix,
+    stationResultCount: 0,
     pendingOneShots: 0,
     stateRef: null,
     rpm: AUDIO_ENGINE.idleRpm,
@@ -491,6 +498,82 @@ function scheduleRailJointClicks(audio, previousDistance, distance, dt) {
       );
     }
   });
+}
+
+// Station chime: soft bell notes with quickly decaying upper partials.
+// Excellent stops get a rising major triad, solid stops a rising fourth.
+const AUDIO_CHIME_NOTES = {
+  excellent: [1046.5, 1318.5, 1568],
+  solid: [784, 1046.5],
+};
+
+function playStationChime(audio, grade) {
+  const notes = AUDIO_CHIME_NOTES[grade];
+  if (!audio?.chimeMix || !notes) {
+    return;
+  }
+
+  const context = audio.context;
+  const start = context.currentTime + 0.03;
+  notes.forEach((frequency, noteIndex) => {
+    const noteStart = start + noteIndex * 0.14;
+    const level = noteIndex === notes.length - 1 ? 0.085 : 0.065;
+    [[1, 1, 1.4], [2, 0.35, 0.5], [3.01, 0.12, 0.25]].forEach(([ratio, amplitude, decay]) => {
+      const oscillator = context.createOscillator();
+      const envelope = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.value = frequency * ratio;
+      envelope.gain.setValueAtTime(0, noteStart);
+      envelope.gain.linearRampToValueAtTime(level * amplitude, noteStart + 0.006);
+      envelope.gain.setTargetAtTime(0, noteStart + 0.006, decay / 4);
+      oscillator.connect(envelope);
+      envelope.connect(audio.chimeMix);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        envelope.disconnect();
+      };
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + decay * 1.6 + 0.05);
+    });
+  });
+}
+
+// Missed station: two short, harsh low buzzes from detuned sawtooths.
+function playMissedStationBuzz(audio) {
+  if (!audio?.chimeMix) {
+    return;
+  }
+
+  const context = audio.context;
+  const start = context.currentTime + 0.03;
+  const filter = context.createBiquadFilter();
+  filter.type = "lowpass";
+  filter.frequency.value = 900;
+  filter.Q.value = 2;
+  filter.connect(audio.chimeMix);
+  const end = start + 0.62;
+  [0, 0.3].forEach((offset) => {
+    const pulseStart = start + offset;
+    const envelope = context.createGain();
+    envelope.gain.setValueAtTime(0, pulseStart);
+    envelope.gain.linearRampToValueAtTime(0.07, pulseStart + 0.01);
+    envelope.gain.setValueAtTime(0.07, pulseStart + 0.2);
+    envelope.gain.linearRampToValueAtTime(0, pulseStart + 0.24);
+    envelope.connect(filter);
+    [110, 116.5].forEach((frequency) => {
+      const oscillator = context.createOscillator();
+      oscillator.type = "sawtooth";
+      oscillator.frequency.value = frequency;
+      oscillator.connect(envelope);
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        envelope.disconnect();
+      };
+      oscillator.start(pulseStart);
+      oscillator.stop(pulseStart + 0.25);
+    });
+  });
+  setTimeout(() => filter.disconnect(), (end - context.currentTime + 0.2) * 1000);
 }
 
 function playCouplerSlackRun(audio, gain) {
@@ -675,9 +758,24 @@ function updateGameAudio(dt = 0) {
       audio.hissLevel = 0;
       audio.moving = false;
       audio.derailmentHandled = false;
+      audio.stationResultCount = state.stationResults?.length || 0;
     }
 
     const contextRunning = audio.context.state === "running";
+    const stationResults = state.stationResults || [];
+    if (stationResults.length > audio.stationResultCount) {
+      const newResults = stationResults.slice(audio.stationResultCount);
+      audio.stationResultCount = stationResults.length;
+      const best = newResults
+        .filter((result) => !result.missed)
+        .map((result) => getStationStopGrade(result.error))
+        .find((grade) => grade === "excellent" || grade === "solid");
+      if (contextRunning && newResults.some((result) => result.missed)) {
+        playMissedStationBuzz(audio);
+      } else if (best && contextRunning) {
+        playStationChime(audio, best);
+      }
+    }
     const derailed = Boolean(state.derailment);
     const speed = Math.max(0, state.speed || 0);
     const throttle = clamp(Math.max(0, state.actualControl), 0, 1);

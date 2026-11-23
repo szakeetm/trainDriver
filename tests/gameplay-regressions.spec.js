@@ -178,6 +178,25 @@ test('finished audio fades out despite frozen nonzero speed and control', async 
   await expect.poll(() => page.evaluate(() => gameAudio.master.gain.value)).toBeLessThan(0.01);
 });
 
+test('good station stops chime once, missed stops buzz, safe stops stay silent', async ({ page }) => {
+  await page.locator('#accelerateButton').click();
+  await expect.poll(() => page.evaluate(() => gameAudio?.context.state)).toBe('running');
+  const grades = await page.evaluate(() => {
+    const played = [];
+    playStationChime = (audio, grade) => played.push(grade);
+    playMissedStationBuzz = () => played.push('missed');
+    updateGameAudio(0.05);
+    for (const result of [{ error: 2, missed: false }, { error: 7, missed: false },
+      { error: 20, missed: false }, { error: 90, missed: true }]) {
+      state.stationResults.push({ name: 'Test', ...result });
+      updateGameAudio(0.05);
+      updateGameAudio(0.05);
+    }
+    return played;
+  });
+  expect(grades).toEqual(['excellent', 'solid', 'missed']);
+});
+
 test('exact route boundaries use the next segment regardless of lookup history', async ({ page }) => {
   const result = await page.evaluate(() => {
     const index = route.segments.findIndex((segment, i) => i > 0 && segment.speedLimit !== route.segments[i - 1].speedLimit);

@@ -476,6 +476,11 @@ function updatePenalties(dt) {
   }
 }
 
+// Stop quality by distance from the target mark; shared by HUD text and audio.
+function getStationStopGrade(error) {
+  return error < 4 ? "excellent" : error < 10 ? "solid" : "safe";
+}
+
 function updateStations() {
   // No reverse gear: once the front is beyond the acceptance window, the
   // station cannot be recovered. Account for every overrun before choosing
@@ -520,7 +525,8 @@ function updateStations() {
     state.stationIndex += 1;
     uiRefreshCarry = UI_REFRESH_INTERVAL;
     state.message = `Stopped at ${nextStation.name}`;
-    state.detail = error < 4 ? "Excellent stop." : error < 10 ? "Solid stop." : "Safe, but you can be more precise.";
+    const grade = getStationStopGrade(error);
+    state.detail = grade === "excellent" ? "Excellent stop." : grade === "solid" ? "Solid stop." : "Safe, but you can be more precise.";
     state.requestedControl = 0;
     state.actualControl = lerp(state.actualControl, 0, 0.5);
     if (state.stationIndex >= route.stations.length) {
