@@ -479,6 +479,14 @@ button {
   margin-top: 14px;
 }
 
+.button-row,
+.control-button {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .control-button {
   padding: 12px 14px;
   color: white;
@@ -913,7 +921,7 @@ button {
     border-radius: 18px;
     font-size: 0.92rem;
     font-weight: 800;
-    touch-action: manipulation;
+    touch-action: none;
   }
 
   .tiny-help {

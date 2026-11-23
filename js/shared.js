@@ -333,10 +333,50 @@ function setButtonHold(button, key) {
   button.addEventListener("click", (event) => {
     unlockGameAudioFromGesture(event, { forceRetry: true });
   });
+  // Long-press on mobile can start text selection or open a callout; when the
+  // browser takes over the gesture it may never deliver the release events.
+  button.addEventListener("contextmenu", (event) => event.preventDefault());
+  button.addEventListener("selectstart", (event) => event.preventDefault());
 }
 
 setButtonHold(accelerateButton, "accelerate");
 setButtonHold(brakeButton, "brake");
+
+// Document-level release fallback: a pointer/touch that ends anywhere (or a
+// gesture the browser hijacked) must never leave a control latched.
+function releaseControlSource(source) {
+  for (const key of Object.keys(heldControlInputs)) setControlInput(key, source, false);
+}
+
+function releaseAllTouchControls() {
+  for (const key of Object.keys(heldControlInputs)) {
+    for (const source of [...heldControlInputs[key]]) {
+      if (source !== "keyboard" && source !== "mouse") setControlInput(key, source, false);
+    }
+  }
+}
+
+if (window.PointerEvent) {
+  const releasePointer = (event) => releaseControlSource(`pointer-${event.pointerId}`);
+  document.addEventListener("pointerup", releasePointer, true);
+  document.addEventListener("pointercancel", releasePointer, true);
+}
+const releaseEndedTouches = (event) => {
+  for (const touch of event.changedTouches) releaseControlSource(`touch-${touch.identifier}`);
+  if (event.touches.length === 0) releaseAllTouchControls();
+};
+document.addEventListener("touchend", releaseEndedTouches, { capture: true, passive: true });
+document.addEventListener("touchcancel", releaseEndedTouches, { capture: true, passive: true });
+document.addEventListener("selectionchange", () => {
+  const selection = window.getSelection && window.getSelection();
+  if (!selection || selection.isCollapsed) return;
+  const node = selection.anchorNode;
+  const element = node && (node.nodeType === 1 ? node : node.parentElement);
+  if (element && element.closest && element.closest(".control-button")) {
+    selection.removeAllRanges();
+    releaseAllTouchControls();
+  }
+});
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "ArrowUp") {
