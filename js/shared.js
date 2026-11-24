@@ -147,7 +147,7 @@ function getStationStopTolerance() {
 
 function getStationStopMetrics(station) {
   const zoneLength = getStationZoneLength(station);
-  const targetDistance = station.distance + getStationTrainLength(station) * 0.5;
+  const targetDistance = station.stopTarget ?? station.distance + getStationTrainLength(station) * 0.5;
   const zoneEnd = targetDistance + getStationTrainLength(station) * 0.1;
   return {
     zoneLength,

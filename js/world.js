@@ -198,7 +198,9 @@ function buildRoute() {
   const stationNames = TUNING.stations.names;
 
   const segments = [];
-  const stations = [{ name: "Origin", distance: 0, trainLength: getTrainLengthForCars(getCarCountForStation(1)) }];
+  // The run starts with the locomotive front at 0, so Origin's stop target is 0.
+  const stations = [{ name: "Origin", distance: 0, stopTarget: 0,
+    trainLength: getTrainLengthForCars(getCarCountForStation(1)) }];
   let cursor = {
     x: 0,
     y: 0,
