@@ -599,11 +599,11 @@ class ThreeWorldRenderer {
 
   labels(frame) {
     frame.signTexts = [];
+    frame.stationSigns = [];
     for (let i = 0; i < route.stations.length; i++) {
-      const station = route.stations[i], visual = station.visual || { buildingSide: 1 };
-      const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);
-      frame.labels.push({ point: { ...building, elevation: building.elevation + 25 }, text: station.name,
-        color: i === state.stationIndex ? "#dcffbd" : "#edf3e1" });
+      const station = route.stations[i], metrics = getStationStopMetrics(station);
+      for (const side of [-1, 1]) frame.stationSigns.push({ point: getStationSignPoint(metrics, side),
+        name: station.name, active: i === state.stationIndex });
     }
     for (const segment of route.segments) {
       if (segment.speedLimit == null) continue;

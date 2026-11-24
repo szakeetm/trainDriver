@@ -66,7 +66,7 @@ function startRun() {
   state.started = true;
   finishCard.classList.add("hidden");
   resizeCanvas();
-  state.message = "Departing Origin";
+  state.message = `Departing ${route.stations[0].name}`;
   state.detail = `A short ${Math.round(TRAIN_TOTAL_LENGTH)} m consist to start. Cars are coupled at every station, and each one slows acceleration and brake response.`;
   updateGameAudio(0);
   refreshUi(0, true);

@@ -351,12 +351,15 @@ function queueRouteMarkers(frame, queue) {
     const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
     for (const side of [-1, 1]) {
       const platform = offsetRoutePoint(metrics.zoneCenter, side * 13);
-      queue.push({ depth: getPlatformSortDepth(platform, point, metrics.zoneLength, frame), draw: () => {
+      const platformDepth = getPlatformSortDepth(platform, point, metrics.zoneLength, frame);
+      queue.push({ depth: platformDepth, draw: () => {
         drawIsoBox(platform, metrics.zoneLength, 10, 2, point.heading,
           [active ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"], frame);
         strokeWorldLine([offsetRoutePoint(metrics.zoneStart, side * 8.5, 2.1),
           offsetRoutePoint(metrics.zoneEnd, side * 8.5, 2.1)], "#f2d87e", 2, frame);
       } });
+      const sign = getStationSignPoint(metrics, side);
+      queue.push({ depth: platformDepth + 0.005, draw: () => paintStationSign(sign, station.name, active, frame) });
     }
     const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);
     queue.push({ depth: building.x + building.y, draw: () => {
@@ -365,8 +368,6 @@ function queueRouteMarkers(frame, queue) {
       drawIsoBox({ ...building, elevation: building.elevation + 14 }, 39, 25, 3, point.heading,
         [visual.roofColor, "#665b4c", "#514d43"], frame);
     } });
-    frame.labels.push({ point: { ...building, elevation: building.elevation + 25 }, text: station.name,
-      color: active ? "#dcffbd" : "#edf3e1" });
   }
   for (const segment of route.segments) {
     if (segment.speedLimit == null) continue;
@@ -412,6 +413,33 @@ function paintRouteMarker(painter, x, y, kind, color, shadowScale = 1) {
   painter.beginPath(); painter.roundRect(x - 7, y - 10, 14, 21, 5); painter.fill();
   painter.fillStyle = color; painter.shadowColor = color; painter.shadowBlur = 8 * shadowScale;
   painter.beginPath(); painter.arc(x, y, 4, 0, Math.PI * 2); painter.fill(); painter.shadowBlur = 0;
+}
+
+// Station nameboard on two posts, standing on the platform beside the track.
+// Boards sit at opposite platform ends so a stopped train does not hide both.
+// Shared by the Canvas world (depth-sorted) and the Three world overlay.
+function getStationSignPoint(metrics, side) {
+  return offsetRoutePoint(side > 0 ? metrics.zoneEnd - 6 : metrics.zoneStart + 6, side * 15, 2);
+}
+
+function paintStationSign(point, name, active, frame) {
+  if (!isVisible(projectPoint(point, frame), frame, 120)) return;
+  const base = projectPoint(point, frame);
+  const top = projectPoint({ ...point, elevation: point.elevation + 5 }, frame);
+  ctx.font = "700 12px sans-serif"; ctx.textAlign = "center";
+  const width = ctx.measureText(name).width + 18, height = 20;
+  ctx.strokeStyle = "#3b4a52"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (const dx of [-0.3, 0.3]) {
+    ctx.moveTo(base.x + dx * width, base.y); ctx.lineTo(top.x + dx * width, top.y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = "#f4f6ef";
+  ctx.beginPath(); ctx.roundRect(top.x - width * 0.5 - 2, top.y - height - 2, width + 4, height + 4, 4); ctx.fill();
+  ctx.fillStyle = active ? "#1d5b3c" : "#1f3d5c";
+  ctx.beginPath(); ctx.roundRect(top.x - width * 0.5, top.y - height, width, height, 3); ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(name, top.x, top.y - 6);
 }
 
 function queueSign(point, text, color, frame, queue) {
@@ -587,6 +615,7 @@ function drawWorldLabels(frame) {
     const point = projectPoint(label.point, frame);
     if (isVisible(point, frame, 60)) ctx.fillText(label.text, point.x, point.y + 3);
   }
+  for (const sign of frame.stationSigns || []) paintStationSign(sign.point, sign.name, sign.active, frame);
 }
 
 function drawHudOverlay(width, height) {

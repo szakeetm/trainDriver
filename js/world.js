@@ -188,6 +188,10 @@ function generateRoute(seed = null) {
       }
     }
     generated.scenery = filterSceneryForTrack(generated);
+    // Name the first station last so it does not shift the seeded geometry stream.
+    const firstStation = generated.stations[0];
+    firstStation.name = choose(TUNING.stations.names.filter((name) =>
+      !generated.stations.some((station) => station.name === name)));
     return generated;
   } finally {
     worldRandom = previousRandom;
@@ -198,8 +202,8 @@ function buildRoute() {
   const stationNames = TUNING.stations.names;
 
   const segments = [];
-  // The run starts with the locomotive front at 0, so Origin's stop target is 0.
-  const stations = [{ name: "Origin", distance: 0, stopTarget: 0,
+  // The run starts with the locomotive front at 0, so the first stop target is 0.
+  const stations = [{ name: null, distance: 0, stopTarget: 0,
     trainLength: getTrainLengthForCars(getCarCountForStation(1)) }];
   let cursor = {
     x: 0,
