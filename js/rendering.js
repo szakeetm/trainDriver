@@ -351,16 +351,15 @@ function queueRouteMarkers(frame, queue) {
     const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
     for (const side of [-1, 1]) {
       const platform = offsetRoutePoint(metrics.zoneCenter, side * 13);
-      const platformDepth = getPlatformSortDepth(platform, point, metrics.zoneLength, frame);
-      queue.push({ depth: platformDepth, draw: () => {
+      queue.push({ depth: getPlatformSortDepth(platform, point, metrics.zoneLength, frame), draw: () => {
         drawIsoBox(platform, metrics.zoneLength, 10, 2, point.heading,
           [active ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"], frame);
         strokeWorldLine([offsetRoutePoint(metrics.zoneStart, side * 8.5, 2.1),
           offsetRoutePoint(metrics.zoneEnd, side * 8.5, 2.1)], "#f2d87e", 2, frame);
       } });
-      const sign = getStationSignPoint(metrics, side);
-      queue.push({ depth: platformDepth + 0.005, draw: () => paintStationSign(sign, station.name, active, frame) });
     }
+    const sign = getStationSignPoint(station, metrics);
+    queue.push({ depth: sign.x + sign.y, draw: () => paintStationSign(sign, station.name, active, frame) });
     const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);
     queue.push({ depth: building.x + building.y, draw: () => {
       drawIsoBox(building, 34, 20, 14, point.heading,
@@ -415,31 +414,62 @@ function paintRouteMarker(painter, x, y, kind, color, shadowScale = 1) {
   painter.beginPath(); painter.arc(x, y, 4, 0, Math.PI * 2); painter.fill(); painter.shadowBlur = 0;
 }
 
-// Station nameboard on two posts, standing on the platform beside the track.
-// Boards sit at opposite platform ends so a stopped train does not hide both.
+// Station nameboard before the platform entrance. Its two legs stand side by
+// side across the track so the board faces oncoming trains, on whichever side
+// projects upward on screen. The board keeps a fixed pixel size, so painting
+// slides it sideways or raises it until it clears the track bed.
 // Shared by the Canvas world (depth-sorted) and the Three world overlay.
-function getStationSignPoint(metrics, side) {
-  return offsetRoutePoint(side > 0 ? metrics.zoneEnd - 6 : metrics.zoneStart + 6, side * 15, 2);
+const STATION_SIGN_BED_HALF_WIDTH = 11; // Matches the outer ballast ribbon in drawTrack().
+
+function getStationSignPoint(station, metrics) {
+  const distance = metrics.zoneStart - 14;
+  const heading = evaluateRoute(distance).heading;
+  // Screen y of the +offset lateral direction is proportional to cos - sin.
+  const side = Math.cos(heading) - Math.sin(heading) > 0 ? -1 : 1;
+  return { ...offsetRoutePoint(distance, side * 16),
+    posts: [offsetRoutePoint(distance, side * 14), offsetRoutePoint(distance, side * 18)],
+    bedEdge: [offsetRoutePoint(distance - 50, side * STATION_SIGN_BED_HALF_WIDTH),
+      offsetRoutePoint(distance + 50, side * STATION_SIGN_BED_HALF_WIDTH)] };
 }
 
 function paintStationSign(point, name, active, frame) {
-  if (!isVisible(projectPoint(point, frame), frame, 120)) return;
-  const base = projectPoint(point, frame);
-  const top = projectPoint({ ...point, elevation: point.elevation + 5 }, frame);
+  if (!isVisible(projectPoint(point, frame), frame, 160)) return;
   ctx.font = "700 12px sans-serif"; ctx.textAlign = "center";
-  const width = ctx.measureText(name).width + 18, height = 20;
+  const width = ctx.measureText(name).width + 22, height = 24, margin = 4;
+  const bases = point.posts.map((post) => projectPoint(post, frame));
+  const tops = point.posts.map((post) => projectPoint({ ...post, elevation: post.elevation + 6 }, frame));
+  const [e0, e1] = point.bedEdge.map((edge) => projectPoint(edge, frame));
+  // Unit normal of the projected bed edge, pointing toward the legs.
+  let nx = e0.y - e1.y, ny = e1.x - e0.x;
+  const length = Math.hypot(nx, ny) || 1;
+  nx /= length; ny /= length;
+  if (nx * (bases[0].x - e0.x) + ny * (bases[0].y - e0.y) < 0) { nx = -nx; ny = -ny; }
+  const minX = Math.min(tops[0].x, tops[1].x), maxX = Math.max(tops[0].x, tops[1].x);
+  const bottom = Math.min(tops[0].y, tops[1].y);
+  let best = null;
+  for (const left of [(minX + maxX - width) * 0.5, minX - 4, maxX + 4 - width]) {
+    let worst = Infinity;
+    for (const [x, y] of [[left, bottom], [left + width, bottom], [left, bottom - height], [left + width, bottom - height]]) {
+      worst = Math.min(worst, nx * (x - e0.x) + ny * (y - e0.y) - margin);
+    }
+    // Raising the board by h pixels changes its clearance by -ny * h.
+    const raise = worst >= 0 ? 0 : -ny > 0.05 ? -worst / -ny : Infinity;
+    if (!best || raise < best.raise) best = { left, raise };
+  }
+  const raise = Math.min(best.raise, 240);
+  const boardBottom = bottom - raise;
   ctx.strokeStyle = "#3b4a52"; ctx.lineWidth = 2;
   ctx.beginPath();
-  for (const dx of [-0.3, 0.3]) {
-    ctx.moveTo(base.x + dx * width, base.y); ctx.lineTo(top.x + dx * width, top.y);
+  for (let index = 0; index < 2; index += 1) {
+    ctx.moveTo(bases[index].x, bases[index].y); ctx.lineTo(tops[index].x, boardBottom);
   }
   ctx.stroke();
   ctx.fillStyle = "#f4f6ef";
-  ctx.beginPath(); ctx.roundRect(top.x - width * 0.5 - 2, top.y - height - 2, width + 4, height + 4, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(best.left - 2, boardBottom - height - 2, width + 4, height + 4, 4); ctx.fill();
   ctx.fillStyle = active ? "#1d5b3c" : "#1f3d5c";
-  ctx.beginPath(); ctx.roundRect(top.x - width * 0.5, top.y - height, width, height, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(best.left, boardBottom - height, width, height, 3); ctx.fill();
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(name, top.x, top.y - 6);
+  ctx.fillText(name, best.left + width * 0.5, boardBottom - 8);
 }
 
 function queueSign(point, text, color, frame, queue) {

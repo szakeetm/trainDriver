@@ -602,7 +602,7 @@ class ThreeWorldRenderer {
     frame.stationSigns = [];
     for (let i = 0; i < route.stations.length; i++) {
       const station = route.stations[i], metrics = getStationStopMetrics(station);
-      for (const side of [-1, 1]) frame.stationSigns.push({ point: getStationSignPoint(metrics, side),
+      frame.stationSigns.push({ point: getStationSignPoint(station, metrics),
         name: station.name, active: i === state.stationIndex });
     }
     for (const segment of route.segments) {
