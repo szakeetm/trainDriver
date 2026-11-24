@@ -341,7 +341,7 @@ function queueRouteMarkers(frame, queue) {
   for (let index = 0; index < route.stations.length; index += 1) {
     const station = route.stations[index];
     const metrics = getStationStopMetrics(station);
-    const point = evaluateRoute(station.distance);
+    const point = evaluateRoute(metrics.zoneCenter);
     if (!isVisible(projectPoint(point, frame), frame, metrics.zoneLength * frame.view.scale)) continue;
     const active = index === state.stationIndex;
     drawGroundZone(metrics.targetDistance - metrics.tolerance, metrics.targetDistance + metrics.tolerance,
@@ -350,12 +350,12 @@ function queueRouteMarkers(frame, queue) {
       offsetRoutePoint(metrics.targetDistance, 10, 0.8)], "#e1ffbc", 2, frame);
     const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
     for (const side of [-1, 1]) {
-      const platform = offsetRoutePoint(station.distance, side * 13);
+      const platform = offsetRoutePoint(metrics.zoneCenter, side * 13);
       queue.push({ depth: getPlatformSortDepth(platform, point, metrics.zoneLength, frame), draw: () => {
         drawIsoBox(platform, metrics.zoneLength, 10, 2, point.heading,
           [active ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"], frame);
-        strokeWorldLine([offsetRoutePoint(station.distance - metrics.zoneLength * 0.5, side * 8.5, 2.1),
-          offsetRoutePoint(station.distance + metrics.zoneLength * 0.5, side * 8.5, 2.1)], "#f2d87e", 2, frame);
+        strokeWorldLine([offsetRoutePoint(metrics.zoneStart, side * 8.5, 2.1),
+          offsetRoutePoint(metrics.zoneEnd, side * 8.5, 2.1)], "#f2d87e", 2, frame);
       } });
     }
     const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);

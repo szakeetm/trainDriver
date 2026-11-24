@@ -123,8 +123,22 @@ function getStationTrainLength(station) {
   return station?.trainLength ?? TRAIN_TOTAL_LENGTH;
 }
 
+// Length after coupling at this station; the platform must fit it on departure.
+function getStationDepartLength(station) {
+  return Math.max(station?.departLength ?? 0, getStationTrainLength(station));
+}
+
+// The platform extends 10% of the arriving length beyond the stop target and
+// behind the rear of the departing (longer) train.
 function getStationZoneLength(station) {
-  return getStationTrainLength(station) * 1.2;
+  return getStationDepartLength(station) + getStationTrainLength(station) * 0.2;
+}
+
+// 0 for the starting consist, 1 for the longest; drives the camera zoom-out.
+function getConsistLengthFactor(trainLength = TRAIN_TOTAL_LENGTH) {
+  const shortest = getTrainLengthForCars(getCarCountForStation(1));
+  const longest = getTrainLengthForCars(getCarCountForStation(Infinity));
+  return longest > shortest ? clamp((trainLength - shortest) / (longest - shortest), 0, 1) : 0;
 }
 
 function getStationStopTolerance() {
@@ -133,12 +147,14 @@ function getStationStopTolerance() {
 
 function getStationStopMetrics(station) {
   const zoneLength = getStationZoneLength(station);
-  const zoneHalfLength = zoneLength * 0.5;
+  const targetDistance = station.distance + getStationTrainLength(station) * 0.5;
+  const zoneEnd = targetDistance + getStationTrainLength(station) * 0.1;
   return {
     zoneLength,
-    zoneStart: station.distance - zoneHalfLength,
-    zoneEnd: station.distance + zoneHalfLength,
-    targetDistance: station.distance + getStationTrainLength(station) * 0.5,
+    zoneStart: zoneEnd - zoneLength,
+    zoneEnd,
+    zoneCenter: zoneEnd - zoneLength * 0.5,
+    targetDistance,
     tolerance: getStationStopTolerance(),
   };
 }

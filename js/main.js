@@ -1,4 +1,13 @@
+// Ease the camera toward the zoom-out for the current consist length so
+// coupling cars never snaps the view.
+function updateCameraLengthZoom(dt) {
+  const target = getConsistLengthFactor();
+  const current = state.cameraLengthZoom ?? target;
+  state.cameraLengthZoom = current + (target - current) * Math.min(1, dt * TUNING.camera.lengthZoomRate);
+}
+
 function update(dt) {
+  updateCameraLengthZoom(dt);
   if (!state.started || state.finished) {
     updateGameAudio(dt);
     refreshUi(dt);

@@ -4,6 +4,7 @@ function createInitialState() {
   route = generateRoute(new URLSearchParams(location.search).get("seed"));
   return {
     carCount,
+    cameraLengthZoom: 0,
     started: false,
     finished: false,
     failed: false,

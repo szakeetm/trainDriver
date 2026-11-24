@@ -471,15 +471,15 @@ class ThreeWorldRenderer {
       zones.polygon(points, style, true);
     };
     for (let i = 0; i < route.stations.length; i++) {
-      const station = route.stations[i], metrics = getStationStopMetrics(station), point = evaluateRoute(station.distance);
+      const station = route.stations[i], metrics = getStationStopMetrics(station), point = evaluateRoute(metrics.zoneCenter);
       zone(metrics.targetDistance - metrics.tolerance, metrics.targetDistance + metrics.tolerance,
         [113/255, 245/255, 171/255, i === state.stationIndex ? 0.36 : 0.15]);
       zones.line(offsetRoutePoint(metrics.targetDistance, -10, 0.8), offsetRoutePoint(metrics.targetDistance, 10, 0.8), "#e1ffbc", 0, 2);
       for (const side of [-1, 1]) {
-        b.box(offsetRoutePoint(station.distance, side * 13), metrics.zoneLength, 10, 2, point.heading,
+        b.box(offsetRoutePoint(metrics.zoneCenter, side * 13), metrics.zoneLength, 10, 2, point.heading,
           [i === state.stationIndex ? "#dae0c8" : "#bbc6b2", "#8b998a", "#6e8075"]);
-        b.line(offsetRoutePoint(station.distance - metrics.zoneLength * 0.5, side * 8.5, 2.1),
-          offsetRoutePoint(station.distance + metrics.zoneLength * 0.5, side * 8.5, 2.1), "#f2d87e", 0, 2);
+        b.line(offsetRoutePoint(metrics.zoneStart, side * 8.5, 2.1),
+          offsetRoutePoint(metrics.zoneEnd, side * 8.5, 2.1), "#f2d87e", 0, 2);
       }
       const visual = station.visual || { buildingSide: 1, buildingColor: "#c7b28b", roofColor: "#6c6251" };
       const building = offsetRoutePoint(station.distance - 25, visual.buildingSide * 36);

@@ -12,7 +12,8 @@ function getViewMetrics(width, height, trainPose = evaluateRoute(state.distance)
   const speedFactor = clamp(state.speed / MAX_LINE_SPEED, 0, 1);
   const scale = Math.min(width / TUNING.camera.worldWidth, height / TUNING.camera.worldHeight)
     * (width <= 820 ? TUNING.camera.mobileZoom : 1)
-    / (1 + speedFactor * TUNING.camera.speedZoomOut);
+    / (1 + speedFactor * TUNING.camera.speedZoomOut)
+    / (1 + (state.cameraLengthZoom ?? 0) * TUNING.camera.lengthZoomOut);
   const leadDistance = TUNING.camera.leadDistance + speedFactor * TUNING.camera.leadDistanceBySpeed;
   const camera = {
     x: trainPose.x + Math.cos(trainPose.heading) * leadDistance,

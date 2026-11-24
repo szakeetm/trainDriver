@@ -137,7 +137,7 @@ const DEFAULT_TUNING = {
     relief: 96, // Landscape relief in meters, away from the railway.
     corridorWidth: 24, // Flat railway corridor half-width in meters.
     blendWidth: 150, // Distance over which earthworks blend into the landscape.
-    stationFlatLength: 240, // Level track on either side of each station.
+    stationFlatLength: 300, // Level track on either side of each station (fits the longest platform).
     maxGrade: 0.08, // Maximum generated rise per horizontal meter (8%).
     stationElevationMin: 35, // Lower station altitude in meters.
     stationElevationMax: 280, // Upper station altitude in meters.
@@ -148,6 +148,8 @@ const DEFAULT_TUNING = {
     worldHeight: 440, // Vertical world span used to fit the isometric viewport.
     mobileZoom: 1.7, // Extra zoom for compact canvases up to 820 CSS pixels wide.
     speedZoomOut: 0.65, // Extra world span at maximum reference speed.
+    lengthZoomOut: 0.3, // Extra world span with the longest consist (progression.maxCars).
+    lengthZoomRate: 0.6, // Per-second easing rate toward the length zoom after coupling.
     leadDistance: 45, // Camera lead along the track in meters when stopped.
     leadDistanceBySpeed: 100, // Additional camera lead at maximum reference speed.
     anchorY: 0.54, // Vertical camera anchor as a fraction of canvas height.
