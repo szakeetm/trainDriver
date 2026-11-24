@@ -414,62 +414,67 @@ function paintRouteMarker(painter, x, y, kind, color, shadowScale = 1) {
   painter.beginPath(); painter.arc(x, y, 4, 0, Math.PI * 2); painter.fill(); painter.shadowBlur = 0;
 }
 
-// Station nameboard before the platform entrance. Its two legs stand side by
-// side across the track so the board faces oncoming trains, on whichever side
-// projects upward on screen. The board keeps a fixed pixel size, so painting
-// slides it sideways or raises it until it clears the track bed.
+// Station nameboard before the platform entrance, standing on two equal
+// vertical legs under its ends, on whichever side of the track projects upward
+// on screen. The board keeps a fixed pixel size, so painting picks the nearest
+// ground spot (and horizontal alignment) where board and legs clear the track bed.
 // Shared by the Canvas world (depth-sorted) and the Three world overlay.
 const STATION_SIGN_BED_HALF_WIDTH = 11; // Matches the outer ballast ribbon in drawTrack().
+const STATION_SIGN_OFFSETS = Array.from({ length: 24 }, (_, index) => 14 + index * 2);
+const stationSignPoints = new WeakMap(); // Per station; route restart drops old entries.
 
 function getStationSignPoint(station, metrics) {
+  if (stationSignPoints.has(station)) return stationSignPoints.get(station);
   const distance = metrics.zoneStart - 14;
   const heading = evaluateRoute(distance).heading;
   // Screen y of the +offset lateral direction is proportional to cos - sin.
   const side = Math.cos(heading) - Math.sin(heading) > 0 ? -1 : 1;
-  return { ...offsetRoutePoint(distance, side * 16),
-    posts: [offsetRoutePoint(distance, side * 14), offsetRoutePoint(distance, side * 18)],
+  const signPoint = { ...offsetRoutePoint(distance, side * 16),
+    spots: STATION_SIGN_OFFSETS.map((offset) => offsetRoutePoint(distance, side * offset)),
     bedEdge: [offsetRoutePoint(distance - 50, side * STATION_SIGN_BED_HALF_WIDTH),
       offsetRoutePoint(distance + 50, side * STATION_SIGN_BED_HALF_WIDTH)] };
+  stationSignPoints.set(station, signPoint);
+  return signPoint;
 }
 
 function paintStationSign(point, name, active, frame) {
-  if (!isVisible(projectPoint(point, frame), frame, 160)) return;
+  if (!isVisible(projectPoint(point, frame), frame, 200)) return;
   ctx.font = "700 12px sans-serif"; ctx.textAlign = "center";
-  const width = ctx.measureText(name).width + 22, height = 24, margin = 4;
-  const bases = point.posts.map((post) => projectPoint(post, frame));
-  const tops = point.posts.map((post) => projectPoint({ ...post, elevation: post.elevation + 6 }, frame));
+  const width = ctx.measureText(name).width + 22, height = 24, margin = 4, inset = 8;
+  const legHeight = Math.max(10, 5 * Math.sqrt(2 / 3) * frame.view.scale);
   const [e0, e1] = point.bedEdge.map((edge) => projectPoint(edge, frame));
-  // Unit normal of the projected bed edge, pointing toward the legs.
+  // Unit normal of the projected bed edge, pointing away from the track.
   let nx = e0.y - e1.y, ny = e1.x - e0.x;
   const length = Math.hypot(nx, ny) || 1;
   nx /= length; ny /= length;
-  if (nx * (bases[0].x - e0.x) + ny * (bases[0].y - e0.y) < 0) { nx = -nx; ny = -ny; }
-  const minX = Math.min(tops[0].x, tops[1].x), maxX = Math.max(tops[0].x, tops[1].x);
-  const bottom = Math.min(tops[0].y, tops[1].y);
-  let best = null;
-  for (const left of [(minX + maxX - width) * 0.5, minX - 4, maxX + 4 - width]) {
-    let worst = Infinity;
-    for (const [x, y] of [[left, bottom], [left + width, bottom], [left, bottom - height], [left + width, bottom - height]]) {
-      worst = Math.min(worst, nx * (x - e0.x) + ny * (y - e0.y) - margin);
-    }
-    // Raising the board by h pixels changes its clearance by -ny * h.
-    const raise = worst >= 0 ? 0 : -ny > 0.05 ? -worst / -ny : Infinity;
-    if (!best || raise < best.raise) best = { left, raise };
+  const far = projectPoint(point.spots.at(-1), frame);
+  if (nx * (far.x - e0.x) + ny * (far.y - e0.y) < 0) { nx = -nx; ny = -ny; }
+  const clears = (left, ground) => [[left, ground], [left + width, ground],
+    [left, ground - legHeight - height], [left + width, ground - legHeight - height]]
+    .every(([x, y]) => nx * (x - e0.x) + ny * (y - e0.y) >= margin);
+  let left = 0, ground = 0;
+  for (const spot of point.spots) {
+    const base = projectPoint(spot, frame);
+    ground = base.y;
+    // Prefer a centered board; otherwise let it extend away from the track.
+    const options = [base.x - width * 0.5, base.x - inset, base.x + inset - width];
+    const clear = options.find((option) => clears(option, ground));
+    left = clear ?? options[0];
+    if (clear != null) break;
   }
-  const raise = Math.min(best.raise, 240);
-  const boardBottom = bottom - raise;
+  const boardBottom = ground - legHeight;
   ctx.strokeStyle = "#3b4a52"; ctx.lineWidth = 2;
   ctx.beginPath();
-  for (let index = 0; index < 2; index += 1) {
-    ctx.moveTo(bases[index].x, bases[index].y); ctx.lineTo(tops[index].x, boardBottom);
+  for (const x of [left + inset, left + width - inset]) {
+    ctx.moveTo(x, ground); ctx.lineTo(x, boardBottom);
   }
   ctx.stroke();
   ctx.fillStyle = "#f4f6ef";
-  ctx.beginPath(); ctx.roundRect(best.left - 2, boardBottom - height - 2, width + 4, height + 4, 4); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(left - 2, boardBottom - height - 2, width + 4, height + 4, 4); ctx.fill();
   ctx.fillStyle = active ? "#1d5b3c" : "#1f3d5c";
-  ctx.beginPath(); ctx.roundRect(best.left, boardBottom - height, width, height, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(left, boardBottom - height, width, height, 3); ctx.fill();
   ctx.fillStyle = "#ffffff";
-  ctx.fillText(name, best.left + width * 0.5, boardBottom - 8);
+  ctx.fillText(name, left + width * 0.5, boardBottom - 8);
 }
 
 function queueSign(point, text, color, frame, queue) {
