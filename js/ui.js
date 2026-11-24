@@ -65,11 +65,13 @@ function updateUi() {
   if (consistInfo) consistInfo.textContent = `${state.carCount} cars · ${Math.round(TRAIN_TOTAL_LENGTH)} m`;
   renderRemainingStations();
 
-  updateBar(actualFill, state.actualControl);
+  // Power side shows turbo-limited output; braking shows the applied brake.
+  const appliedControl = state.actualControl > 0 ? state.tractionOutput ?? state.actualControl : state.actualControl;
+  updateBar(actualFill, appliedControl);
   updateMarker(requestedMarker, state.requestedControl);
   requestedLabel.textContent = `Target ${controlLabel(state.requestedControl)}`;
-  actualLabel.textContent = controlLabel(state.actualControl);
-  const delta = Math.abs(state.requestedControl - state.actualControl);
+  actualLabel.textContent = controlLabel(appliedControl);
+  const delta = Math.abs(state.requestedControl - appliedControl);
   controlDelta.textContent = delta < 0.04 ? "Tracking" : `Lag ${Math.round(delta * 100)}%`;
 
   accelerateButton.classList.toggle("active", keys.accelerate);
@@ -92,8 +94,21 @@ function updateBar(element, value) {
   element.style.width = `${magnitude}%`;
   element.style.left = value >= 0 ? `${center}%` : `${center - magnitude}%`;
   element.style.background = value >= 0
-    ? "linear-gradient(90deg, #f6a23f, #ffc160)"
+    ? getPowerBarGradient(value)
     : "linear-gradient(90deg, #58a8ff, #7ed3ff)";
+}
+
+// The turbo-gated top band of power fades from amber toward white.
+function getPowerBarGradient(value) {
+  const turboStart = 1 - TUNING.engine.turboPowerShare;
+  if (value <= turboStart) {
+    return "linear-gradient(90deg, #f6a23f, #ffc160)";
+  }
+  const boost = clamp((value - turboStart) / TUNING.engine.turboPowerShare, 0, 1);
+  const channel = (from) => Math.round(lerp(from, 255, boost));
+  const stop = (turboStart / value) * 100;
+  return `linear-gradient(90deg, #f6a23f 0%, #ffc160 ${stop.toFixed(1)}%, `
+    + `rgb(${channel(255)}, ${channel(193)}, ${channel(96)}) 100%)`;
 }
 
 function updateMarker(element, value) {

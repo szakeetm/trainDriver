@@ -93,8 +93,13 @@ function setActiveCarCount(carCount) {
   TRAIN_TOTAL_LENGTH = getConsistLength(TRAIN_CONSIST);
 }
 
-// Effective handling for the current consist: short trains respond quickly,
-// the full train is slower than the base tuning.
+function getConsistMassTonnes(consist = TRAIN_CONSIST) {
+  return consist.reduce((sum, unit) => sum + unit.massTonnes, 0);
+}
+
+// Effective handling for the current consist. Locomotive tractive effort is
+// fixed, so acceleration (kN / t = m/s^2) falls as mass is coupled. Brake build
+// and power build times scale with consist length.
 function getConsistHandling(carCount = TRAIN_CONSIST.length - 1) {
   const progression = TUNING.progression;
   const t = clamp((carCount - progression.startCars) / Math.max(1, progression.maxCars - progression.startCars), 0, 1);
@@ -103,7 +108,8 @@ function getConsistHandling(carCount = TRAIN_CONSIST.length - 1) {
   const brakeBuild = scale(progression.brakeBuildScale);
   const brakeRelease = scale(progression.brakeReleaseScale);
   return {
-    tractionForce: TUNING.physics.tractionForce * scale(progression.tractionScale),
+    tractionForce: TUNING.train.tractiveEffortKn
+      / getConsistMassTonnes(TRAIN_CONSIST_FULL.slice(0, carCount + 1)),
     brakeApplyFromPowerRate: controls.brakeApplyFromPowerRate * brakeBuild,
     brakeBuildRate: controls.brakeBuildRate * brakeBuild,
     powerBuildRate: controls.powerBuildRate * scale(progression.powerBuildScale),

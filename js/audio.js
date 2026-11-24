@@ -32,15 +32,12 @@ function setAudioParam(audioParam, value, smoothing = 0.08) {
   }
 }
 
-// Diesel-electric locomotive model. Engine speed follows the throttle notch,
-// not road speed; road speed drives traction motors, wheels, and rail joints.
+// Diesel-electric locomotive model. Engine speed follows the throttle notch
+// (simulated from TUNING.engine), not road speed; road speed drives traction
+// motors, wheels, and rail joints.
 const AUDIO_ENGINE = {
   cylinders: 12, // Four-stroke V12: one firing per cylinder every two revolutions.
-  idleRpm: 450,
-  fullRpm: 1050,
-  notches: 8,
-  rpmRiseRate: 130, // RPM per second while notching up.
-  rpmFallRate: 95, // RPM per second while notching down.
+  idleRpm: DEFAULT_TUNING.engine.idleRpm,
 };
 const AUDIO_RAIL_JOINT_SPACING = 25; // Classic jointed rail length in meters.
 const AUDIO_AXLE_HALF_WHEELBASE = 1.3; // Half the axle spacing within one bogie.
@@ -146,25 +143,29 @@ function normalizeChannel(channel, peak = 0.95) {
   }
 }
 
-// Wheel striking a rail joint: sharp impact, short rail/wheel ring, body thump.
+// Wheel striking a rail joint: dull low-passed impact, short low rail ring,
+// and a heavy body thump. Low frequencies keep it from sounding tinny.
 function createRailJointBuffer(context) {
-  const duration = 0.14;
+  const duration = 0.18;
   const sampleRate = context.sampleRate;
   const buffer = context.createBuffer(1, Math.floor(sampleRate * duration), sampleRate);
   const channel = buffer.getChannelData(0);
-  const ringA = 1000 + Math.random() * 300;
-  const ringB = 2400 + Math.random() * 500;
-  const ringC = 560 + Math.random() * 120;
-  const thump = 75 + Math.random() * 20;
+  const ringA = 380 + Math.random() * 90;
+  const ringB = 820 + Math.random() * 160;
+  const ringC = 190 + Math.random() * 40;
+  const thump = 48 + Math.random() * 12;
+  const impactSmoothing = 1 - Math.exp(-2 * Math.PI * 900 / sampleRate);
+  let impactFiltered = 0;
   for (let index = 0; index < channel.length; index += 1) {
     const t = index / sampleRate;
-    const impact = (Math.random() * 2 - 1) * Math.exp(-t / 0.0025) * 0.8;
+    impactFiltered += ((Math.random() * 2 - 1) - impactFiltered) * impactSmoothing;
+    const impact = impactFiltered * Math.exp(-t / 0.004) * 1.6;
     const ring = (
       Math.sin(2 * Math.PI * ringA * t) * 0.5
-      + Math.sin(2 * Math.PI * ringB * t + 1) * 0.28
-      + Math.sin(2 * Math.PI * ringC * t + 2) * 0.4
-    ) * Math.exp(-t / 0.018) * 0.45;
-    const body = Math.sin(2 * Math.PI * thump * t * (1 - t * 2)) * Math.exp(-t / 0.035) * 0.9;
+      + Math.sin(2 * Math.PI * ringB * t + 1) * 0.16
+      + Math.sin(2 * Math.PI * ringC * t + 2) * 0.5
+    ) * Math.exp(-t / 0.012) * 0.3;
+    const body = Math.sin(2 * Math.PI * thump * t * (1 - t * 1.5)) * Math.exp(-t / 0.05) * 1.1;
     channel[index] = impact + ring + body;
   }
   normalizeChannel(channel);
@@ -476,7 +477,7 @@ function scheduleRailJointClicks(audio, previousDistance, distance, dt) {
   const now = audio.context.currentTime;
   const speedFactor = clamp(state.speed / 30, 0, 1.4);
   const baseGain = 0.04 + 0.09 * Math.min(speedFactor, 1);
-  const playbackBase = 0.88 + 0.2 * Math.min(speedFactor, 1);
+  const playbackBase = 0.9 + 0.12 * Math.min(speedFactor, 1);
   getAudioAxleOffsets().forEach((offset, axleIndex) => {
     const start = previousDistance - offset;
     const end = distance - offset;
@@ -753,7 +754,6 @@ function updateGameAudio(dt = 0) {
       audio.stateRef = state;
       audio.lastDistance = null;
       audio.rpm = AUDIO_ENGINE.idleRpm;
-      audio.load = 0;
       audio.turboSpool = 0;
       audio.previousBrake = 0;
       audio.hissLevel = 0;
@@ -809,18 +809,12 @@ function updateGameAudio(dt = 0) {
       : 0;
     audio.curveTightnessSmoothed = curveTightness;
 
-    // Prime mover. Throttle is quantized into notches; RPM ramps between them.
-    const notch = throttle > 0.02 ? Math.ceil(throttle * AUDIO_ENGINE.notches - 1e-6) : 0;
-    const targetRpm = AUDIO_ENGINE.idleRpm
-      + (AUDIO_ENGINE.fullRpm - AUDIO_ENGINE.idleRpm) * (notch / AUDIO_ENGINE.notches);
-    const rpmRate = targetRpm > audio.rpm ? AUDIO_ENGINE.rpmRiseRate : AUDIO_ENGINE.rpmFallRate;
-    const rpmStep = rpmRate * dt;
-    audio.rpm = Math.abs(targetRpm - audio.rpm) <= rpmStep
-      ? targetRpm
-      : audio.rpm + Math.sign(targetRpm - audio.rpm) * rpmStep;
-    const rpmNorm = (audio.rpm - AUDIO_ENGINE.idleRpm) / (AUDIO_ENGINE.fullRpm - AUDIO_ENGINE.idleRpm);
-    audio.load += (throttle - audio.load) * smoothing(0.35);
-    const load = audio.load;
+    // Prime mover and turbo are simulated (state.engineRpm/turboSpool) so the
+    // turbo whine matches the top band of power it unlocks.
+    const engine = TUNING.engine;
+    audio.rpm = state.engineRpm ?? engine.idleRpm;
+    const rpmNorm = (audio.rpm - engine.idleRpm) / (engine.fullRpm - engine.idleRpm);
+    const load = state.engineLoad ?? 0;
     const cycleHz = audio.rpm / 120;
     const firingHz = cycleHz * AUDIO_ENGINE.cylinders;
 
@@ -834,8 +828,7 @@ function updateGameAudio(dt = 0) {
     setAudioParam(audio.combustionFilter.frequency, 420 + rpmNorm * 500 + load * 300, 0.15);
 
     // Turbo spools with exhaust energy and lags several seconds behind.
-    const turboTarget = clamp(rpmNorm * (0.3 + 0.7 * load), 0, 1);
-    audio.turboSpool += (turboTarget - audio.turboSpool) * smoothing(turboTarget > audio.turboSpool ? 2.4 : 3.8);
+    audio.turboSpool = state.turboSpool ?? 0;
     const turboHz = 1300 + audio.turboSpool * 4300;
     setAudioParam(audio.turboTone.frequency, turboHz, 0.2);
     setAudioParam(audio.turboToneGain.gain, Math.pow(audio.turboSpool, 2) * 0.006, 0.2);

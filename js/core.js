@@ -75,12 +75,14 @@ const DEFAULT_TUNING = {
     bodyHeight: 7.2, // Rendered body height above the chassis, shared by both world renderers.
     couplerGap: 4, // Gap in meters between each vehicle in the consist.
     maxPowerKw: 5500, // Full traction output represented when the power controller reaches 100%.
+    tractiveEffortKn: 470, // Locomotive tractive effort at full power; constant as cars are coupled.
     maxBrakePressureBar: 6.5, // Full brake pipe pressure reduction represented when braking reaches 100%.
     // Vehicle definitions, front to back.
     consist: [
       {
         type: "locomotive", // Vehicle role used for rendering details.
         length: 24, // Vehicle length in meters along the track.
+        massTonnes: 140, // Vehicle mass; acceleration is tractive effort divided by consist mass.
         width: 6, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#53c8ff", // Main fill color of the vehicle body.
         roofColor: "rgba(255,255,255,0.9)", // Roof highlight color.
@@ -88,6 +90,7 @@ const DEFAULT_TUNING = {
       {
         type: "car", // Vehicle role used for rendering details; car templates repeat up to progression.maxCars.
         length: 34, // Vehicle length in meters along the track.
+        massTonnes: 32, // Vehicle mass; acceleration is tractive effort divided by consist mass.
         width: 5.5, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#8da4bc", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
@@ -95,20 +98,36 @@ const DEFAULT_TUNING = {
       {
         type: "car", // Vehicle role used for rendering details.
         length: 34, // Vehicle length in meters along the track.
+        massTonnes: 32, // Vehicle mass; acceleration is tractive effort divided by consist mass.
         width: 5.5, // Vehicle width in meters before the rendering shell/chassis margins.
         bodyColor: "#9fb7cf", // Main fill color of the vehicle body.
         roofColor: "rgba(232, 240, 248, 0.9)", // Roof highlight color.
       },
     ],
   },
+  // Diesel prime mover. RPM follows the quantized throttle notch; the turbo
+  // spools behind RPM and load and gates the top turboPowerShare of output.
+  engine: {
+    idleRpm: 450,
+    fullRpm: 1050,
+    notches: 8,
+    rpmRiseRate: 130, // RPM per second while notching up.
+    rpmFallRate: 95, // RPM per second while notching down.
+    loadTimeConstant: 0.35, // Seconds for engine load to follow applied power.
+    turboSpoolUpTime: 1.1, // Time constant in seconds while the turbo spools up (~5 s from 85% to full power).
+    turboSpoolDownTime: 3.8, // Time constant in seconds while the turbo runs down.
+    turboPowerShare: 0.15, // Top fraction of power available only with the turbo spooled.
+  },
   // Difficulty progression: cars are coupled at every station (stopped or
-  // overrun). Handling multipliers apply to the base controls/physics values
-  // above and interpolate linearly from startCars ([0]) to maxCars ([1]).
+  // overrun). Handling multipliers apply to the base controls values above
+  // and interpolate linearly from startCars ([0]) to maxCars ([1]). Traction
+  // is not scaled here: it follows consist mass (train.tractiveEffortKn).
+  // Brake force is per vehicle, so deceleration is independent of length;
+  // only the brake build/release time grows with the brake pipe length.
   progression: {
     startCars: 2, // Cars behind the locomotive on the first leg.
     carsPerStop: 2, // Cars coupled at each station, including overrun stations.
     maxCars: 10, // Cars on the final leg.
-    tractionScale: [1.35, 0.75], // Acceleration (tractionForce).
     brakeBuildScale: [2.0, 0.75], // brakeApplyFromPowerRate and brakeBuildRate.
     powerBuildScale: [1.5, 0.75], // powerBuildRate.
     brakeReleaseScale: [1.5, 0.9], // brakeReleaseRate and brakeReleaseToPowerRate.
@@ -232,7 +251,6 @@ const DEFAULT_TUNING = {
   },
   physics: {
     gravity: 9.81, // Gravitational acceleration in m/s² applied along the consist grade.
-    tractionForce: 1.45, // Base acceleration force at full applied power before fade-off.
     tractionFadeReferenceSpeed: 80, // Speed in m/s used as the reference for traction fade.
     tractionFadeMaxRatio: 1.2, // Maximum normalized speed considered by the traction fade curve.
     tractionFadeExponent: 1.35, // Shape of the traction fade curve as speed rises.

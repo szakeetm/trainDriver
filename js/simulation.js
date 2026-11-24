@@ -12,6 +12,10 @@ function createInitialState() {
     acceleration: 0,
     requestedControl: 0,
     actualControl: 0,
+    engineRpm: TUNING.engine.idleRpm,
+    engineLoad: 0,
+    turboSpool: 0,
+    tractionOutput: 0,
     elapsed: 0,
     penalties: 0,
     overspeedTimer: 0,
@@ -40,7 +44,7 @@ function controlLabel(value) {
 }
 
 function getDieselExhaustIntensity(powerOutput = Math.max(0, state.actualControl), acceleration = Math.max(0, state.acceleration || 0)) {
-  const accelFactor = clamp(acceleration / Math.max(TUNING.physics.tractionForce, 1e-6), 0, 1);
+  const accelFactor = clamp(acceleration / Math.max(getConsistHandling().tractionForce, 1e-6), 0, 1);
   if (powerOutput <= 0.04 || accelFactor <= 0.03) {
     return 0;
   }
@@ -353,6 +357,29 @@ function getConsistGrade(distance = state.distance) {
   return length > 0 ? rise / length : 0;
 }
 
+// Prime mover: RPM follows the throttle notch, the turbo lags RPM and load.
+// Audio reads these values, so the turbo whine and the power it unlocks stay
+// in sync. Returns the applied traction fraction (0..1).
+function updatePowerUnit(dt) {
+  const engine = TUNING.engine;
+  const throttle = clamp(Math.max(0, state.actualControl), 0, 1);
+  const notch = throttle > 0.02 ? Math.ceil(throttle * engine.notches - 1e-6) : 0;
+  const targetRpm = engine.idleRpm + (engine.fullRpm - engine.idleRpm) * (notch / engine.notches);
+  const rpmStep = (targetRpm > state.engineRpm ? engine.rpmRiseRate : engine.rpmFallRate) * dt;
+  state.engineRpm = Math.abs(targetRpm - state.engineRpm) <= rpmStep
+    ? targetRpm
+    : state.engineRpm + Math.sign(targetRpm - state.engineRpm) * rpmStep;
+  const smoothing = (tau) => (dt > 0 ? 1 - Math.exp(-dt / tau) : 0);
+  state.engineLoad += (throttle - state.engineLoad) * smoothing(engine.loadTimeConstant);
+  const rpmNorm = (state.engineRpm - engine.idleRpm) / (engine.fullRpm - engine.idleRpm);
+  const turboTarget = clamp(rpmNorm * (0.3 + 0.7 * state.engineLoad), 0, 1);
+  state.turboSpool += (turboTarget - state.turboSpool)
+    * smoothing(turboTarget > state.turboSpool ? engine.turboSpoolUpTime : engine.turboSpoolDownTime);
+  const turboCap = 1 - engine.turboPowerShare * (1 - state.turboSpool);
+  state.tractionOutput = Math.min(throttle, turboCap);
+  return state.tractionOutput;
+}
+
 function updatePhysics(dt) {
   const speedRatio = clamp(
     state.speed / TUNING.physics.tractionFadeReferenceSpeed,
@@ -361,7 +388,7 @@ function updatePhysics(dt) {
   );
   const tractionFade = 1
     - Math.pow(Math.min(speedRatio, 1), TUNING.physics.tractionFadeExponent) * TUNING.physics.tractionFadeAmount;
-  const traction = Math.max(0, state.actualControl)
+  const traction = updatePowerUnit(dt)
     * getConsistHandling().tractionForce
     * Math.max(TUNING.physics.tractionMinFactor, tractionFade);
   const braking = Math.max(0, -state.actualControl) * TUNING.physics.brakingForce;

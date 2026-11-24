@@ -32,7 +32,9 @@ test('gravity changes power, coast, and braking by the expected amount', async (
       const span = 2000 - TUNING.terrain.stationFlatLength * 2;
       route.elevationNodes = [{ distance: 0, elevation: 150 },
         { distance: 2000, elevation: 150 + sign * span * 0.08 / 1.5 }];
-      Object.assign(state, { distance: 1050, speed: 20, actualControl: control });
+      // Reset the engine/turbo so each case applies identical traction.
+      Object.assign(state, { distance: 1050, speed: 20, actualControl: control,
+        engineRpm: TUNING.engine.idleRpm, engineLoad: 0, turboSpool: 0 });
       const grade = getConsistGrade();
       updatePhysics(0.05);
       return { grade, acceleration: state.acceleration, speed: state.speed,

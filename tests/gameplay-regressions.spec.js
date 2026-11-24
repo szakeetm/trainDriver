@@ -242,15 +242,53 @@ test('cars are coupled at every station, stopped or overrun, up to the final con
 
 test('handling slows as cars are coupled: agile short train, slower than base when full', async ({ page }) => {
   const result = await page.evaluate(() => ({
-    base: { traction: TUNING.physics.tractionForce, brakeBuild: TUNING.controls.brakeBuildRate,
+    base: { effort: TUNING.train.tractiveEffortKn, locoMass: TUNING.train.consist[0].massTonnes,
+      carMass: TUNING.train.consist[1].massTonnes, brakeBuild: TUNING.controls.brakeBuildRate,
       powerBuild: TUNING.controls.powerBuildRate, release: TUNING.controls.brakeReleaseRate },
     short: getConsistHandling(2),
     full: getConsistHandling(10),
   }));
-  expect(result.short.tractionForce).toBeCloseTo(result.base.traction * 1.35, 6);
+  // Same locomotive effort pulls more mass: acceleration = kN / tonnes.
+  expect(result.short.tractionForce).toBeCloseTo(result.base.effort / (result.base.locoMass + 2 * result.base.carMass), 6);
   expect(result.short.brakeBuildRate).toBeCloseTo(result.base.brakeBuild * 2, 6);
-  expect(result.full.tractionForce).toBeCloseTo(result.base.traction * 0.75, 6);
+  expect(result.full.tractionForce).toBeCloseTo(result.base.effort / (result.base.locoMass + 10 * result.base.carMass), 6);
+  // The full train can still restart on the steepest grade before turbo boost.
+  expect(result.full.tractionForce * (1 - 0.15)).toBeGreaterThan(9.81 * Math.sin(Math.atan(0.08)) + 0.05);
   expect(result.full.brakeBuildRate).toBeCloseTo(result.base.brakeBuild * 0.75, 6);
   expect(result.full.powerBuildRate).toBeCloseTo(result.base.powerBuild * 0.75, 6);
   expect(result.full.brakeReleaseRate).toBeCloseTo(result.base.release * 0.9, 6);
+});
+
+test('turbo gates the top 15% of power and spools up slowly', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    state.started = true;
+    state.actualControl = 1;
+    const samples = [];
+    for (let step = 0; step < 400; step++) {
+      updatePowerUnit(0.05);
+      if (step % 40 === 0) samples.push({ output: state.tractionOutput, spool: state.turboSpool });
+    }
+    return { samples, final: state.tractionOutput };
+  });
+  expect(result.samples[0].output).toBeCloseTo(0.85, 2);
+  for (let i = 1; i < result.samples.length; i++) {
+    expect(result.samples[i].output).toBeGreaterThanOrEqual(result.samples[i - 1].output);
+  }
+  expect(result.samples[1].output).toBeLessThan(0.97); // still spooling after 2 s
+  expect(result.final).toBeGreaterThan(0.995);
+});
+
+test('braking deceleration does not depend on train length', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const measure = (cars) => {
+      setActiveCarCount(cars);
+      state.speed = 20;
+      state.actualControl = -1;
+      state.requestedControl = -1;
+      updatePhysics(0.01);
+      return state.acceleration + TUNING.physics.gravity * Math.sin(Math.atan(getConsistGrade()));
+    };
+    return { short: measure(2), full: measure(10) };
+  });
+  expect(result.short).toBeCloseTo(result.full, 6);
 });
